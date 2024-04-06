@@ -105,7 +105,6 @@ pub struct Renderer<'a> {
     model_bind_group: wgpu::BindGroup,
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
-   // glyph_brush: Option<wgpu_glyph::GlyphBrush<()>>,
     frame_times: Vec<f32>,
     frame_timer: std::time::Instant,
     frame_count: u32,
@@ -201,7 +200,7 @@ impl<'a> Renderer<'a> {
         });
        
 
-        let texture_names: &[&str] = &[ "SpriteSheet.png", "Environment.png"];
+        let texture_names: &[&str] = &["GameAssets/SpriteSheet.png"];
         let mut texture_atlases_bind_group = Vec::<wgpu::BindGroup>::new();
 
         for texture_name in texture_names {
@@ -230,7 +229,7 @@ impl<'a> Renderer<'a> {
                     label: Some("character_tex_bind_group"),
                 }
             );
-           // println!("{}",texture.sampler.into());
+
             texture_atlases_bind_group.push(tex_bind_group);
         }
 
@@ -354,9 +353,9 @@ impl<'a> Renderer<'a> {
         });
 
         // Font
-         let brush = BrushBuilder::using_font_bytes(include_bytes!("Arial.ttf")).unwrap()
+         let brush = BrushBuilder::using_font_bytes(include_bytes!("Bold.ttf")).unwrap()
                 .build(&device, config.width, config.height, config.format);
-
+ 
 	Self {
             surface,
             adapter,
@@ -484,7 +483,7 @@ impl<'a> Renderer<'a> {
                                                 frame_rate, avg_frame_time, game_objects.len(), elapsed_game_time, self.adapter.get_info().backend);
 
             let section = TextSection::default().add_text(Text::new(&frame_time_string));
-            self.brush.resize_view(1280.0, 720.0, &self.queue);
+            self.brush.resize_view(self.config.width as f32, self.config.height as f32, &self.queue);
             self.brush.queue(&self.device, &self.queue, vec![&section]).unwrap();
             self.brush.draw(&mut render_pass);
         }

@@ -75,7 +75,7 @@ impl<'a> GameEngine<'a> {
         let asset_manager = AssetManager::new();
 
 		// Load config file
-		let config_file_text = fs::read_to_string("game_config.txt").expect("Missing config files!");
+		let config_file_text = fs::read_to_string("GameAssets/game_config.txt").expect("Missing config files!");
 		let json_file = json::parse(&config_file_text).unwrap();
 		
 		let json_val = json_file["enemy_spawn_timer"].as_f32();

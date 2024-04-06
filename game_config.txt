@@ -1,8 +1,0 @@
-{
-    "enemy_spawn_timer": 0.5,
-    "enemy_speed": 0.5,
-    "max_instances": 10000,
-
-    "// _comment": "for graphics_back_end below, use default vulkan or dx12",
-    "graphics_back_end": "vulkan"
-}
