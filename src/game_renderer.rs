@@ -108,12 +108,13 @@ pub struct Renderer<'a> {
     frame_times: Vec<f32>,
     frame_timer: std::time::Instant,
     frame_count: u32,
-    pub max_instances: usize
+    pub max_instances: usize,
+//    power_preference: wgpu::PowerPreference,
 }
 
 impl<'a> Renderer<'a> {
 
-    pub async fn new(window: Window, graphics_back_name: &str, max_instances: usize) -> Self {
+    pub async fn new(window: Window, graphics_back_name: &str, graphics_power_pref: &str, max_instances: usize) -> Self {
         let size = window.inner_size();
 
         let graphics_back_end = match graphics_back_name {
@@ -121,6 +122,12 @@ impl<'a> Renderer<'a> {
             "webgpu" => { wgpu::Backends::BROWSER_WEBGPU }
             "vulkan" => { wgpu::Backends::VULKAN }
             _ => { wgpu::Backends::all() }
+        };
+
+        let power_preference = match graphics_power_pref {
+            "high" => { wgpu::PowerPreference::HighPerformance }
+            "low" => { wgpu::PowerPreference::LowPower }
+            _ => { wgpu::PowerPreference::None }
         };
 
         // Instance + Surface
@@ -134,7 +141,7 @@ impl<'a> Renderer<'a> {
         // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -473,15 +480,17 @@ impl<'a> Renderer<'a> {
             for frame_time in frame_time_iter {
                 total_frame_times = total_frame_times + frame_time;
             }
+
             let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
             let frame_rate = 1.0 / avg_frame_time;
             let frame_time_string = format!(   "FPS: {:.0} \n\
-                                                Frame time: {:.4}\n\
+                                                Frame time: {:.2} ms\n\
                                                 Num Game Objects: {}\n\
-                                                Elapsed time: {}\n\
-                                                Back End: {:?}",
-                                                frame_rate, avg_frame_time, game_objects.len(), elapsed_game_time, self.adapter.get_info().backend);
-
+                                                Elapsed time: {:.0} secs\n\
+                                                Back End: {:?}\n\
+                                                Graphics: {}\n",
+                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), elapsed_game_time, self.adapter.get_info().backend, self.adapter.get_info().name.as_str());
+                                                
             let section = TextSection::default().add_text(Text::new(&frame_time_string));
             self.brush.resize_view(self.config.width as f32, self.config.height as f32, &self.queue);
             self.brush.queue(&self.device, &self.queue, vec![&section]).unwrap();

@@ -3,6 +3,9 @@
     "enemy_speed": 0.5,
     "max_instances": 10000,
 
-    "// _comment": "for graphics_back_end below, use default vulkan or dx12",
-    "graphics_back_end": "vulkan"
+    "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
+    "graphics_back_end": "vulkan",
+
+    "_comment2": "Valid values for 'graphics_power_pref' are default, low, and high",
+    "graphics_power_pref": "default"
 }

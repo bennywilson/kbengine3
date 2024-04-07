@@ -108,8 +108,17 @@ impl<'a> GameEngine<'a> {
 			None => ()
 		}
 
+		let mut power_pref = "default";
+		let json_val = json_file["graphics_power_pref"].as_str();
+		match json_val {
+			Some(val) => {
+				power_pref = val;
+			}
+			None => ()
+
+		}
 		let window_id = window.id();
-		let renderer = Renderer::new(window, graphics_back_end, max_instances).await;
+		let renderer = Renderer::new(window, graphics_back_end, power_pref, max_instances).await;
 		let cur_time = std::time::Instant::now();
 
 		Self {
