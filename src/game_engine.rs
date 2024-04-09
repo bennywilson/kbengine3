@@ -3,9 +3,24 @@ use winit::{
 	window::WindowId
 };
 
+
+use winit::{
+    event::*,
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+  //  window::*,
+};
+ use winit::platform::web::WindowExtWebSys;
+
+ macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
+
 use std::fs;
 
-use rand::prelude::*;
+//use rand::prelude::*;
 use crate::game_object::*;
 use crate::game_renderer::*;
 use crate::game_input::*;
@@ -18,6 +33,12 @@ const CLOUD_Z:f32 = 20.0;
 const HILL_Z:f32 = 30.0;
 const BUILDING_Z:f32 = 50.0;
 const CHARACTER_Z:f32 = 100.0;
+
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
 
 #[allow(dead_code)] 
 trait GameAsset {
@@ -32,6 +53,12 @@ impl GameAsset for GameTexture {
      fn asset_name(&self) -> &String {
 		 return &self.name;
 	 }
+}
+
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
 }
 
 #[allow(dead_code)] 
@@ -56,27 +83,37 @@ impl AssetManager {
 pub struct GameEngine<'a> {
 	pub input_manager: InputManager,
 	asset_manager: AssetManager,
-	renderer: Renderer<'a>,
-	window_id: WindowId,
+	pub renderer: Option<Renderer<'a>>,
+//	window : Box<winit::window::Window>,
 	game_objects: Vec<GameObject>,
-	game_start_time:  std::time::Instant,
-	current_frame_time:  std::time::Instant,
-	next_enemy_spawn_time: f32,
+	//game_start_time:  std::time::Instant,
+//	current_frame_time:  std::time::Instant,
+	//next_enemy_spawn_time: f32,
 	num_enemies: u32,
 
 	// data
-	enemy_spawn_timer: f32,
+	//enemy_spawn_timer: f32,
 	enemy_speed: f32,
 }
 
+pub trait InitSystem {
+    fn init_system(&mut self);
+}
+
 impl<'a> GameEngine<'a> {
-    pub async fn new(window: Window) -> Self {
+	pub fn wow(&self)
+	{
+
+	}
+
+    pub async fn new(window: std::sync::Arc::<winit::window::Window>) -> Self {
+		println!("new!");
 		let input_manager = InputManager::new();
         let asset_manager = AssetManager::new();
 
 		// Load config file
-		let config_file_text = fs::read_to_string("GameAssets/game_config.txt").expect("Missing config files!");
-		let json_file = json::parse(&config_file_text).unwrap();
+		//let config_file_text = fs::read_to_string("GameAssets/game_config.txt").expect("Missing config files!");
+		let json_file = json::parse(include_str!("game_config.txt").into()).unwrap();
 		
 		let json_val = json_file["enemy_spawn_timer"].as_f32();
 		let mut enemy_spawn_timer = 0.01;
@@ -117,36 +154,36 @@ impl<'a> GameEngine<'a> {
 			None => ()
 
 		}
-		let window_id = window.id();
+	//	let window_id = window.id();
 		let renderer = Renderer::new(window, graphics_back_end, power_pref, max_instances).await;
-		let cur_time = std::time::Instant::now();
+		//let cur_time = std::time::Instant::now();
 
 		Self {
 			input_manager,
 			asset_manager,
-			renderer,
-			window_id,
+			renderer: None,
+			//window: Box::<winit::window::Window>::new(window),
 			game_objects: Vec::<GameObject>::new(),
-			game_start_time:  cur_time,
-			current_frame_time : cur_time,
-			next_enemy_spawn_time: cur_time.elapsed().as_secs_f32() + enemy_spawn_timer,
+			//game_start_time:  cur_time,
+			//current_frame_time : cur_time,
+			//next_enemy_spawn_time: cur_time.elapsed().as_secs_f32() + enemy_spawn_timer,
 			num_enemies: 0,
-			enemy_spawn_timer,
+		//	enemy_spawn_timer,
 			enemy_speed,
 		}
     }
+
+	//pub fn window_id(&self) -> WindowId {
+	//	self.window_id
+	//}
 	
-	pub fn window_id(&self) -> WindowId {
-		self.window_id
-	}
-	
-	pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-		self.renderer.resize(new_size);
-	}
+//	pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+	//	self.renderer.resize(new_size);
+	//}
 
 	pub fn update_enemies(&mut self) {
 
-		if self.game_objects.len() >= self.renderer.max_instances {
+/*		if self.game_objects.len() >= 10 {//self.renderer.max_instances} {
 			return
 		}
 
@@ -159,12 +196,12 @@ impl<'a> GameEngine<'a> {
 			let mut start_x = 1.0;
 			let mut vel_x = -self.enemy_speed;
 
-			let randnum = rand::thread_rng().gen_range(1..=2);
+			let randnum = 1;//rand::thread_rng().gen_range(1..=2);
 		    if randnum == 2 {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos:f32  = rand::thread_rng().gen_range(0.0..=0.75);
+			let y_pos:f32  = 0.0;//rand::thread_rng().gen_range(0.0..=0.75);
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -183,12 +220,12 @@ impl<'a> GameEngine<'a> {
 				gravity_scale: 0.0,
 				is_enemy: true
 			});
-		}
+		}*/
 	}
 
 	pub fn update_projectiles(&mut self) {
 
-		let mut i = 0;
+		/*let mut i = 0;
 		while i < self.game_objects.len() {
 			if matches!(self.game_objects[i].object_type, GameObjectType::Projectile) == false {
 				i = i + 1;
@@ -226,12 +263,12 @@ impl<'a> GameEngine<'a> {
 			}
 
 			i = i + 1;
-		}
+		}*/
 	}
 
 	pub fn tick_frame(&mut self) {
-		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
-        self.current_frame_time = std::time::Instant::now();
+		//let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
+      //  self.current_frame_time = std::time::Instant::now();
 
 		// Player Movement
         let mut move_vec:cgmath::Vector3<f32> = (0.0, 0.0, 0.0).into();
@@ -282,7 +319,7 @@ impl<'a> GameEngine<'a> {
 		// Update game objects
 		let game_object_iter = self.game_objects.iter_mut();
 		for game_object in game_object_iter {
-			game_object.update(_delta_time_secs);
+			game_object.update(0.0);
 		}
 
 		self.render_frame();
@@ -291,13 +328,14 @@ impl<'a> GameEngine<'a> {
 
 	pub fn render_frame(&mut self) -> bool {
 		
-		let render_result = self.renderer.render(&self.game_objects, self.game_start_time.elapsed().as_secs_f32());
+	self.renderer.as_mut().expect("asdads").render(&self.game_objects, 0.0);//self.game_start_time.elapsed().as_secs_f32());
+	/*	let render_result = self.renderer.render(&self.game_objects, self.game_start_time.elapsed().as_secs_f32());
 		match render_result {
 			Ok(_) => {}
 			Err(wgpu::SurfaceError::Lost) => self.renderer.resize(self.renderer.size),
 			Err(wgpu::SurfaceError::OutOfMemory) => { return false }
 			Err(e) => eprintln!("{:?}", e),
-		}
+		}*/
 
 		true
 	}
@@ -363,10 +401,10 @@ impl<'a> GameEngine<'a> {
 		let mut i = 0;
 		while i < 10 {
 
-			let rand_x = rand::thread_rng().gen_range(-1.0..=1.0);
-			let rand_y = rand::thread_rng().gen_range(0.8..=1.1);
-			let x_speed = rand::thread_rng().gen_range(0.05..=0.1);
-			let x_speed = if rand::thread_rng().gen_range(0..=1) == 1 { -x_speed } else { x_speed };
+			let rand_x = 0.0;//rand::thread_rng().gen_range(-1.0..=1.0);
+			let rand_y = 0.9;//rand::thread_rng().gen_range(0.8..=1.1);
+			let x_speed = 0.7;//rand::thread_rng().gen_range(0.05..=0.1);
+			//let x_speed = if rand::thread_rng().gen_range(0..=1) == 1 { -x_speed } else { x_speed };
 
 			// Cloud
 			self.game_objects.push(GameObject { 
@@ -378,7 +416,7 @@ impl<'a> GameEngine<'a> {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: 18 + rand::thread_rng().gen_range(0..=1),
+				sprite_index: 18,// + rand::thread_rng().gen_range(0..=1),
 				anim_frame: 0,
 				life_start_time: std::time::Instant::now(),
 				state_start_time: std::time::Instant::now(),

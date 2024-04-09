@@ -111,11 +111,23 @@ pub struct Renderer<'a> {
     pub max_instances: usize,
 //    power_preference: wgpu::PowerPreference,
 }
-
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
 impl<'a> Renderer<'a> {
 
-    pub async fn new(window: Window, graphics_back_name: &str, graphics_power_pref: &str, max_instances: usize) -> Self {
-        let size = window.inner_size();
+
+    pub fn default() -> Self {
+        Renderer {
+
+        }O
+    }
+
+    pub async fn new(window: std::sync::Arc::<winit::window::Window>, graphics_back_name: &str, graphics_power_pref: &str, max_instances: usize) -> Self {
+        log!("Allocating renderer!");
+    let size = window.inner_size();
 
         let graphics_back_end = match graphics_back_name {
             "dx12" => { wgpu::Backends::DX12 }
@@ -130,13 +142,17 @@ impl<'a> Renderer<'a> {
             _ => { wgpu::PowerPreference::None }
         };
 
+
+          log!("Step 1!");
         // Instance + Surface
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: graphics_back_end,
             ..Default::default()
         });
+          log!("Step 2!");
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
+          log!("Step 3!");
      
         // Adapter
         let adapter = instance.request_adapter(
