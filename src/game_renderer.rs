@@ -3,10 +3,12 @@ use std::fs::File;
 use std::io::Read;
 use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
-use ab_glyph::{FontRef};
+use ab_glyph::FontRef;
 
 use crate::game_texture;
 use crate::game_object::*;
+use crate::GameConfig;
+
 use cgmath::Vector3;
 
 #[repr(C)]  // Do what C does.  The order, size, and alignment are what you expect from C, C++S
@@ -86,7 +88,9 @@ pub struct ModelUniform {
 }
 
 #[allow(dead_code)] 
-pub struct Renderer<'a> {
+pub struct GameRenderer<'a> {
+    window_id: winit::window::WindowId,
+    window: &'a winit::window::Window,
     surface: wgpu::Surface<'a>,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
@@ -96,7 +100,6 @@ pub struct Renderer<'a> {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-   //ow: Window,
     num_vertices: usize,
     num_indices: usize,
     texture_atlases_bind_group: Vec<wgpu::BindGroup>,
@@ -108,31 +111,19 @@ pub struct Renderer<'a> {
     frame_times: Vec<f32>,
     frame_timer: std::time::Instant,
     frame_count: u32,
-    pub max_instances: usize,
-//    power_preference: wgpu::PowerPreference,
+    pub max_instances: u32,
 }
 
-impl<'a> Renderer<'a> {
+impl<'a> GameRenderer<'a> {
 
-    pub async fn new(window: Window, graphics_back_name: &str, graphics_power_pref: &str, max_instances: usize) -> Self {
+    pub async fn new(window: &'a Window, game_config: GameConfig) -> Self {
         let size = window.inner_size();
-
-        let graphics_back_end = match graphics_back_name {
-            "dx12" => { wgpu::Backends::DX12 }
-            "webgpu" => { wgpu::Backends::BROWSER_WEBGPU }
-            "vulkan" => { wgpu::Backends::VULKAN }
-            _ => { wgpu::Backends::all() }
-        };
-
-        let power_preference = match graphics_power_pref {
-            "high" => { wgpu::PowerPreference::HighPerformance }
-            "low" => { wgpu::PowerPreference::LowPower }
-            _ => { wgpu::PowerPreference::None }
-        };
+        let window_id = window.id();
+        let max_instances = game_config.max_render_instances;
 
         // Instance + Surface
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: graphics_back_end,
+            backends: game_config.graphics_backend,
             ..Default::default()
         });
 
@@ -141,7 +132,7 @@ impl<'a> Renderer<'a> {
         // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference,
+                power_preference: game_config.graphics_power_pref,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -364,6 +355,8 @@ impl<'a> Renderer<'a> {
                 .build(&device, config.width, config.height, config.format);
  
 	Self {
+            window,
+            window_id,
             surface,
             adapter,
             device,
@@ -397,7 +390,7 @@ impl<'a> Renderer<'a> {
 		}
 	}
 
-	pub fn render(&mut self, game_objects: &Vec<GameObject>, elapsed_game_time: f32) -> Result<(), wgpu::SurfaceError> {
+	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
 		let output = self.surface.get_current_texture()?;
 		let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -489,7 +482,7 @@ impl<'a> Renderer<'a> {
                                                 Elapsed time: {:.0} secs\n\
                                                 Back End: {:?}\n\
                                                 Graphics: {}\n",
-                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), elapsed_game_time, self.adapter.get_info().backend, self.adapter.get_info().name.as_str());
+                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), 0.0, self.adapter.get_info().backend, self.adapter.get_info().name.as_str());
                                                 
             let section = TextSection::default().add_text(Text::new(&frame_time_string));
             self.brush.resize_view(self.config.width as f32, self.config.height as f32, &self.queue);
@@ -514,5 +507,13 @@ impl<'a> Renderer<'a> {
             self.frame_count = 0;
         }
         Ok(())
+    }
+
+    pub fn window_id(&self) -> winit::window::WindowId {
+        self.window_id
+    }
+
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
     }
 }

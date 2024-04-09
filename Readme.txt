@@ -10,19 +10,24 @@ I'm using the following docs and tutorials:
 There is a config file at GameAssets\game_config.txt that lets you control several parameters.  An example config is below:
 
 {
-    "enemy_spawn_timer": 0.5,
-    "enemy_speed": 0.5,
+    "enemy_spawn_delay": 0.5,
+    "enemy_move_speed": 0.5,
     "max_instances": 10000,
 
-    "_comment": "Valid values 'graphics_back_end' are default, vulkan, and dx12",
-    "graphics_back_end": "vulkan",
+    "window_width": 1280,
+    "window_height": 720,
 
-    "_comment": "Valid values for 'graphics_power_pref' are default, low, and high"
+    "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
+    "graphics_back_end": "default",
+
+    "_comment2": "Valid values for 'graphics_power_pref' are default, low, and high",
     "graphics_power_pref": "default"
 }
 
 
 ========== Resources ==========
+https://github.com/bennywilson/kbEngine3
+
 https://doc.rust-lang.org/book/ch01-00-getting-started.html
 
 https://sotrh.github.io/learn-wgpu/#what-is-wgpu

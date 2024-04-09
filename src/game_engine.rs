@@ -1,14 +1,8 @@
-use winit::{
-	window::Window,
-	window::WindowId
-};
-
-use std::fs;
-
 use rand::prelude::*;
 use crate::game_object::*;
-use crate::game_renderer::*;
-use crate::game_input::*;
+use crate::game_input::InputManager;
+use crate::game_config::GameConfig;
+
 use cgmath::Vector3;
 use cgmath::InnerSpace;
 
@@ -53,107 +47,52 @@ impl AssetManager {
 }
 
 #[allow(dead_code)] 
-pub struct GameEngine<'a> {
+pub struct GameEngine {
 	pub input_manager: InputManager,
 	asset_manager: AssetManager,
-	renderer: Renderer<'a>,
-	window_id: WindowId,
-	game_objects: Vec<GameObject>,
+	pub game_objects: Vec<GameObject>,
 	game_start_time:  std::time::Instant,
 	current_frame_time:  std::time::Instant,
 	next_enemy_spawn_time: f32,
 	num_enemies: u32,
 
 	// data
-	enemy_spawn_timer: f32,
+	max_game_objects: usize,
+	enemy_spawn_delay: f32,
 	enemy_speed: f32,
 }
 
-impl<'a> GameEngine<'a> {
-    pub async fn new(window: Window) -> Self {
+impl GameEngine {
+    pub async fn new(game_config: &GameConfig) -> Self {
 		let input_manager = InputManager::new();
         let asset_manager = AssetManager::new();
 
-		// Load config file
-		let config_file_text = fs::read_to_string("GameAssets/game_config.txt").expect("Missing config files!");
-		let json_file = json::parse(&config_file_text).unwrap();
-		
-		let json_val = json_file["enemy_spawn_timer"].as_f32();
-		let mut enemy_spawn_timer = 0.01;
-		match json_val {
-			Some(val) => { enemy_spawn_timer = val; }
-			None => ()
-		}
-
-		let json_val = json_file["enemy_speed"].as_f32();
-		let mut enemy_speed = 0.01;
-		match json_val {
-			Some(val) => { enemy_speed = val;}
-			None => ()
-		}
-
-		let mut max_instances = 10000;
-		let json_val = json_file["max_instances"].as_usize();
-		match json_val {
-			Some(val) => { max_instances = val; }
-			None => ()
-		}
-
-		let mut graphics_back_end = "default";
-		let json_val = json_file["graphics_back_end"].as_str();
-		match json_val {
-			Some(val) => {
-				graphics_back_end = val;
-			}
-			None => ()
-		}
-
-		let mut power_pref = "default";
-		let json_val = json_file["graphics_power_pref"].as_str();
-		match json_val {
-			Some(val) => {
-				power_pref = val;
-			}
-			None => ()
-
-		}
-		let window_id = window.id();
-		let renderer = Renderer::new(window, graphics_back_end, power_pref, max_instances).await;
 		let cur_time = std::time::Instant::now();
 
 		Self {
 			input_manager,
 			asset_manager,
-			renderer,
-			window_id,
 			game_objects: Vec::<GameObject>::new(),
 			game_start_time:  cur_time,
 			current_frame_time : cur_time,
-			next_enemy_spawn_time: cur_time.elapsed().as_secs_f32() + enemy_spawn_timer,
+			next_enemy_spawn_time: cur_time.elapsed().as_secs_f32() + game_config.enemy_spawn_delay,
 			num_enemies: 0,
-			enemy_spawn_timer,
-			enemy_speed,
+
+			max_game_objects: game_config.max_render_instances as usize,
+			enemy_spawn_delay: game_config.enemy_spawn_delay,
+			enemy_speed: game_config.enemy_move_speed
 		}
     }
-	
-	pub fn window_id(&self) -> WindowId {
-		self.window_id
-	}
-	
-	pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-		self.renderer.resize(new_size);
-	}
-
 	pub fn update_enemies(&mut self) {
 
-		if self.game_objects.len() >= self.renderer.max_instances {
+		if self.game_objects.len() >= self.max_game_objects {
 			return
 		}
 
 		let game_time = self.game_start_time.elapsed().as_secs_f32();
 		if game_time > self.next_enemy_spawn_time {
 
-			self.next_enemy_spawn_time  = game_time + self.enemy_spawn_timer;
+			self.next_enemy_spawn_time  = game_time + self.enemy_spawn_delay;
 			self.num_enemies = self.num_enemies + 1;
 			
 			let mut start_x = 1.0;
@@ -285,10 +224,10 @@ impl<'a> GameEngine<'a> {
 			game_object.update(_delta_time_secs);
 		}
 
-		self.render_frame();
+	//	self.render_frame();
 //		self.renderer.window().request_redraw();
 	}
-
+	/*
 	pub fn render_frame(&mut self) -> bool {
 		
 		let render_result = self.renderer.render(&self.game_objects, self.game_start_time.elapsed().as_secs_f32());
@@ -300,7 +239,7 @@ impl<'a> GameEngine<'a> {
 		}
 
 		true
-	}
+	}*/
 
 	pub fn initialize_world(&mut self)
 	{
