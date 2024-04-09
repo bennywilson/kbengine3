@@ -28,8 +28,8 @@ pub struct GameObject {
     pub texture_index: i32,
     pub sprite_index: i32,
     pub anim_frame: i32,
-    pub life_start_time: std::time::Instant,
-    pub state_start_time: std::time::Instant,
+  //  pub life_start_time: std::time::Instant,
+   // pub state_start_time: std::time::Instant,
     pub gravity_scale: f32,
     pub is_enemy: bool
 }
@@ -38,12 +38,12 @@ pub struct GameObject {
 impl GameObject {
 
     fn set_state(&mut self, next_state: GameObjectState) {
-        self.object_state = next_state;
-        self.state_start_time = std::time::Instant::now();
+      //  self.object_state = next_state;
+    //    self.state_start_time = std::time::Instant::now();
     }
 
     fn update_movement(&mut self, frame_time: f32) {
-
+        /*
         self.position = self.position + self.velocity * frame_time;
 
         // Apply Gravity
@@ -98,7 +98,7 @@ impl GameObject {
             }
             }
             _ => ()
-        }
+        }*/
     }
 
     pub fn update(&mut self, frame_time: f32) {
@@ -131,12 +131,12 @@ impl GameObject {
     }
 
     pub fn start_attack(&mut self) -> bool {
-        let cur_time = self.life_start_time.elapsed().as_secs_f32();
+       /* let cur_time = self.life_start_time.elapsed().as_secs_f32();
         if self.next_attack_time > cur_time {
             return false;
         }
 
-        self.next_attack_time = cur_time + 0.1;
+        self.next_attack_time = cur_time + 0.1;*/
         return true;
     }
 }

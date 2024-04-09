@@ -1,4 +1,4 @@
-use rand::prelude::*;
+// use rand::prelude::*;
 use crate::game_object::*;
 use crate::game_input::InputManager;
 use crate::game_config::GameConfig;
@@ -51,8 +51,8 @@ pub struct GameEngine {
 	pub input_manager: InputManager,
 	asset_manager: AssetManager,
 	pub game_objects: Vec<GameObject>,
-	game_start_time:  std::time::Instant,
-	current_frame_time:  std::time::Instant,
+	//game_start_time:  std::time::Instant,
+	//current_frame_time:  std::time::Instant,
 	next_enemy_spawn_time: f32,
 	num_enemies: u32,
 
@@ -63,19 +63,19 @@ pub struct GameEngine {
 }
 
 impl GameEngine {
-    pub async fn new(game_config: &GameConfig) -> Self {
+    pub fn new(game_config: &GameConfig) -> Self {
 		let input_manager = InputManager::new();
         let asset_manager = AssetManager::new();
 
-		let cur_time = std::time::Instant::now();
+		//let cur_time = std::time::Instant::now();
 
 		Self {
 			input_manager,
 			asset_manager,
 			game_objects: Vec::<GameObject>::new(),
-			game_start_time:  cur_time,
-			current_frame_time : cur_time,
-			next_enemy_spawn_time: cur_time.elapsed().as_secs_f32() + game_config.enemy_spawn_delay,
+		//	game_start_time:  cur_time,
+			//current_frame_time : cur_time,
+			next_enemy_spawn_time: 0.0,//cur_time.elapsed().as_secs_f32() + game_config.enemy_spawn_delay,
 			num_enemies: 0,
 
 			max_game_objects: game_config.max_render_instances as usize,
@@ -85,7 +85,7 @@ impl GameEngine {
     }
 	pub fn update_enemies(&mut self) {
 
-		if self.game_objects.len() >= self.max_game_objects {
+	/*	if self.game_objects.len() >= self.max_game_objects {
 			return
 		}
 
@@ -98,12 +98,12 @@ impl GameEngine {
 			let mut start_x = 1.0;
 			let mut vel_x = -self.enemy_speed;
 
-			let randnum = rand::thread_rng().gen_range(1..=2);
+			let randnum = 1;//rand::thread_rng().gen_range(1..=2);
 		    if randnum == 2 {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos:f32  = rand::thread_rng().gen_range(0.0..=0.75);
+			let y_pos:f32  = 0.5;//rand::thread_rng().gen_range(0.0..=0.75);
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -122,7 +122,7 @@ impl GameEngine {
 				gravity_scale: 0.0,
 				is_enemy: true
 			});
-		}
+		}*/
 	}
 
 	pub fn update_projectiles(&mut self) {
@@ -169,7 +169,7 @@ impl GameEngine {
 	}
 
 	pub fn tick_frame(&mut self) {
-		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
+	/*	let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
         self.current_frame_time = std::time::Instant::now();
 
 		// Player Movement
@@ -222,7 +222,7 @@ impl GameEngine {
 		let game_object_iter = self.game_objects.iter_mut();
 		for game_object in game_object_iter {
 			game_object.update(_delta_time_secs);
-		}
+		}*/
 
 	//	self.render_frame();
 //		self.renderer.window().request_redraw();
@@ -255,13 +255,13 @@ impl GameEngine {
 			texture_index: 0,
 			sprite_index: 0,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 1.1,
 			is_enemy: false
 		});
 
-
+		
 		// Sky
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, SKY_Z).into(),
@@ -274,8 +274,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 25,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+			//life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -292,8 +292,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 20,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+			//life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -302,10 +302,10 @@ impl GameEngine {
 		let mut i = 0;
 		while i < 10 {
 
-			let rand_x = rand::thread_rng().gen_range(-1.0..=1.0);
-			let rand_y = rand::thread_rng().gen_range(0.8..=1.1);
-			let x_speed = rand::thread_rng().gen_range(0.05..=0.1);
-			let x_speed = if rand::thread_rng().gen_range(0..=1) == 1 { -x_speed } else { x_speed };
+			let rand_x = 0.0;//rand::thread_rng().gen_range(-1.0..=1.0);
+			let rand_y = 1.0;//rand::thread_rng().gen_range(0.8..=1.1);
+			let x_speed = 0.05;//rand::thread_rng().gen_range(0.05..=0.1);
+			//let x_speed = if rand::thread_rng().gen_range(0..=1) == 1 { -x_speed } else { x_speed };
 
 			// Cloud
 			self.game_objects.push(GameObject { 
@@ -317,10 +317,10 @@ impl GameEngine {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: 18 + rand::thread_rng().gen_range(0..=1),
+				sprite_index: 18,// + rand::thread_rng().gen_range(0..=1),
 				anim_frame: 0,
-				life_start_time: std::time::Instant::now(),
-				state_start_time: std::time::Instant::now(),
+				//life_start_time: std::time::Instant::now(),
+				//state_start_time: std::time::Instant::now(),
 				gravity_scale: 0.0,
 				is_enemy: false
 			});
@@ -348,8 +348,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 21,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -366,8 +366,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -383,8 +383,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -400,8 +400,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 17,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+			//life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -418,8 +418,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -435,8 +435,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 17,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -452,8 +452,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 17,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -469,8 +469,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -486,8 +486,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -503,8 +503,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 16,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -521,8 +521,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 23,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+			//life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -538,8 +538,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 23,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -555,8 +555,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 24,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+			//state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -572,8 +572,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 24,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -588,8 +588,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 24,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -604,8 +604,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 23,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -620,8 +620,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 23,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -636,8 +636,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 24,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -652,8 +652,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 22,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+		//	life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});
@@ -668,8 +668,8 @@ impl GameEngine {
 			texture_index: 1,
 			sprite_index: 22,
 			anim_frame: 0,
-			life_start_time: std::time::Instant::now(),
-			state_start_time: std::time::Instant::now(),
+	//		life_start_time: std::time::Instant::now(),
+		//	state_start_time: std::time::Instant::now(),
 			gravity_scale: 0.0,
 			is_enemy: false
 		});

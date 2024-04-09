@@ -9,17 +9,28 @@ edition = "2021"
 winit = "0.29"
 env_logger = "0.10"
 log = "0.4"
-wgpu = "0.19.3"
 wgpu_text = "0.8.7"
 pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 anyhow = "1.0"
 cgmath = "0.18"
-rand = "0.8.5"
+#rand = "0.8.5"
 json = "0.12.4"
 ab_glyph = "0.2.24"
+wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.42"
 
 [dependencies.image]
 version = "0.24"
 default-features = false
 features = ["png", "jpeg"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = "0.19.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_log = { version = "0.2.0", features = [] }
+wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.42"
+wgpu = { version = "0.19.3" }
+web-sys =  { version = "0.3.69", features = [] }
