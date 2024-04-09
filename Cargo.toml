@@ -14,11 +14,13 @@ pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 anyhow = "1.0"
 cgmath = "0.18"
+getrandom = { version = "0.2", features = ["js"] }
 #rand = "0.8.5"
 json = "0.12.4"
 ab_glyph = "0.2.24"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
+instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
 
 [dependencies.image]
 version = "0.24"

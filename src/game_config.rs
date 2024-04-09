@@ -1,5 +1,3 @@
-use std::fs;
-
 #[derive(Clone)]
 pub struct GameConfig {
     pub enemy_spawn_delay: f32,
@@ -13,8 +11,7 @@ pub struct GameConfig {
 
 impl GameConfig {
     pub fn new() -> Self {
-        //let config_file_text = fs::read_to_string("GameAssets/game_config.txt").expect("Missing config files!");
-		let config_file_text = include_str!("../GameAssets/game_config.txt");
+		let config_file_text = include_str!("../game_assets/game_config.txt");
 
         let json_file = json::parse(&config_file_text).unwrap();
 		

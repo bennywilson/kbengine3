@@ -1,6 +1,6 @@
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
+    event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
@@ -11,6 +11,8 @@ mod game_engine;
 mod game_input;
 mod game_config;
 mod game_log;
+mod game_utils;
+
 use crate::game_engine::GameEngine;
 use crate::game_renderer::GameRenderer;
 use crate::game_config::GameConfig;
@@ -112,7 +114,7 @@ pub async fn run_game() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         game_renderer.init_renderer(window.clone()).await;
-	    let _ = event_loop.run( |event, control_flow| {;
+	    let _ = event_loop.run( |event, control_flow| {
                    // game_renderer.init_renderer(window.clone()).await;
             match event {
 
