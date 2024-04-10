@@ -62,6 +62,8 @@ pub struct GameEngine {
 
 impl GameEngine {
     pub fn new(game_config: &GameConfig) -> Self {
+		log!("GameEngine::new() caled...");
+
 		let input_manager = InputManager::new();
         let asset_manager = AssetManager::new();
 
@@ -96,12 +98,12 @@ impl GameEngine {
 			let mut start_x = 1.0;
 			let mut vel_x = -self.enemy_speed;
 
-			let randnum = 0;//getrandom::thread_rng().gen_range(1..=2);
+			let randnum = game_random!(u32, 1, 2);
 		    if randnum == 2 {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos:f32  = game_random!(0.0, 0.75, f32);//0.5;//rand::thread_rng().gen_range(0.0..=0.75);
+			let y_pos:f32  = game_random!(f32, 0.0, 0.75);
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -226,6 +228,8 @@ impl GameEngine {
 
 	pub fn initialize_world(&mut self)
 	{
+		log!("GameEngine::initialize_world() caled...");
+
 		// Create Player
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, CHARACTER_Z).into(),

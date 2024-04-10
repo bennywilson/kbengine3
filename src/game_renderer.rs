@@ -84,6 +84,7 @@ pub struct ModelUniform {
     pub uv_offset: [f32; 4],
 }
 
+#[allow(dead_code)]
 pub struct DeviceResources<'a> {
     surface: wgpu::Surface<'a>,
     surface_config: wgpu::SurfaceConfiguration,
@@ -375,6 +376,8 @@ impl<'a> DeviceResources<'a> {
 impl<'a> GameRenderer<'a> {
 
     pub fn new(window: std::sync::Arc<winit::window::Window>, game_config: GameConfig) -> Self {
+        log!("GameRenderer::new() called...");
+
         GameRenderer {
             device_resources: None,
             size: window.inner_size(),
@@ -387,13 +390,11 @@ impl<'a> GameRenderer<'a> {
     }
 
     pub async fn init_renderer(&mut self, window: std::sync::Arc::<winit::window::Window>) {
-        log!("Initializing renderer!");
+        log!("init_renderer() called...");
 
         if self.device_resources.is_some()  {
             return;
         }
-
-        log!("Doing the resources");
 
         self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
     }
@@ -495,7 +496,7 @@ impl<'a> GameRenderer<'a> {
                                                 
             let section = TextSection::default().add_text(Text::new(&frame_time_string));
             device_resources.brush.resize_view(self.game_config.window_width as f32, self.game_config.window_height as f32, &device_resources.queue);
-            &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+            let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
             device_resources.brush.draw(&mut render_pass);
         }
 
@@ -516,6 +517,11 @@ impl<'a> GameRenderer<'a> {
             self.frame_count = 0;
         }
         Ok(())
+    }
+
+    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        device_resources.resize(size);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

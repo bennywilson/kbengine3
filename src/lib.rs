@@ -17,30 +17,17 @@ use crate::game_engine::GameEngine;
 use crate::game_renderer::GameRenderer;
 use crate::game_config::GameConfig;
 
-
+#[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
-
-pub async fn init_renderer<'a>(renderer: &mut GameRenderer<'a>, window: std::sync::Arc::<winit::window::Window>) {
-    async {
-        renderer.init_renderer(window.clone())
-    }.await;
-}
 
 pub async fn run_game() {
     env_logger::init();
- 
-    log!("run_game() called");
 
     let game_config = GameConfig::new();
 
-        log!("config done");
-
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
-            log!("Event Loop done");
 
     event_loop.set_control_flow(ControlFlow::Poll);
-
-
 
     #[cfg(target_arch = "wasm32")]
     let window = std::sync::Arc::new({
@@ -95,7 +82,7 @@ pub async fn run_game() {
         
                         WindowEvent::CloseRequested => { control_flow.exit() }
 
-                    //    WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
+                        WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
@@ -115,7 +102,7 @@ pub async fn run_game() {
     {
         game_renderer.init_renderer(window.clone()).await;
 	    let _ = event_loop.run( |event, control_flow| {
-                   // game_renderer.init_renderer(window.clone()).await;
+
             match event {
 
                 Event::WindowEvent {
@@ -129,7 +116,7 @@ pub async fn run_game() {
                             let render_result = game_renderer.render_frame(&game_engine.game_objects);
                             match render_result {
                                 Ok(_) => {}
-                               // Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
+                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -137,7 +124,7 @@ pub async fn run_game() {
         
                         WindowEvent::CloseRequested => { control_flow.exit() }
 
-                       // WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
+                        WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
