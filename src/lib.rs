@@ -13,6 +13,7 @@ mod game_config;
 mod game_log;
 mod game_utils;
 
+use std::sync::Arc;
 use crate::game_engine::GameEngine;
 use crate::game_renderer::GameRenderer;
 use crate::game_config::GameConfig;
@@ -26,11 +27,10 @@ pub async fn run_game() {
     let game_config = GameConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
-
     event_loop.set_control_flow(ControlFlow::Poll);
 
     #[cfg(target_arch = "wasm32")]
-    let window = std::sync::Arc::new({
+    let window = Arc::new({
         use wasm_bindgen::JsCast;
         use winit::platform::web::WindowBuilderExtWebSys;
         let dom_window = web_sys::window().unwrap();
@@ -42,7 +42,7 @@ pub async fn run_game() {
             .build(&event_loop).unwrap()
     });
     #[cfg(not(target_arch = "wasm32"))]
-    let window = std::sync::Arc::new({
+    let window = Arc::new({
         let window_size: winit::dpi::Size = winit::dpi::Size::new(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
         WindowBuilder::new().with_inner_size(window_size).build(&event_loop).unwrap()
     });

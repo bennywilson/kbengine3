@@ -3,6 +3,8 @@ use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 
+use std::sync::Arc;
+
 use crate::{game_texture, game_object::*, GameConfig, log};
 
 use cgmath::Vector3;
@@ -125,13 +127,17 @@ impl<'a> DeviceResources<'a> {
 		}
     }
 
-     pub async fn new(window: std::sync::Arc::<winit::window::Window>, game_config: &GameConfig) -> Self {
-            
+     pub async fn new(window: Arc::<winit::window::Window>, game_config: &GameConfig) -> Self {
+        
+        log!("Creating instance");
+        
         // Instance + Surface
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: game_config.graphics_backend,
             ..Default::default()
         });
+
+        log!("Creating Surface.");
 
         let surface = instance.create_surface(window.clone()).unwrap();
      
@@ -143,6 +149,8 @@ impl<'a> DeviceResources<'a> {
                 force_fallback_adapter: false,
             },
         ).await.unwrap();
+
+        log!("Requesting Device");
 
 		let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
@@ -179,7 +187,8 @@ impl<'a> DeviceResources<'a> {
 
         surface.configure(&device, &surface_config);
 
-        // Load Texture
+        log!("Loading Texture");
+
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -225,7 +234,8 @@ impl<'a> DeviceResources<'a> {
         );
 
         texture_atlases_bind_group.push(tex_bind_group);
-        
+                
+        log!("Creating Shader");
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -261,6 +271,8 @@ impl<'a> DeviceResources<'a> {
             ],
             label: Some("model_bind_group_layout"),
         });
+
+        log!("Creating Pipeline");
 
         // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -303,6 +315,8 @@ impl<'a> DeviceResources<'a> {
             },
             multiview: None,
         });
+
+        log!("Vertex/Index Buffers");
 
         // Vertex/Index buffer
         let vertex_buffer = device.create_buffer_init(
@@ -347,8 +361,9 @@ impl<'a> DeviceResources<'a> {
             label: Some("model_bind_group"),
         });
 
-        // Font
-         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
+        log!("Creating Font");
+
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
  
 	    DeviceResources {
@@ -375,7 +390,7 @@ impl<'a> DeviceResources<'a> {
 
 impl<'a> GameRenderer<'a> {
 
-    pub fn new(window: std::sync::Arc<winit::window::Window>, game_config: GameConfig) -> Self {
+    pub fn new(window: Arc<winit::window::Window>, game_config: GameConfig) -> Self {
         log!("GameRenderer::new() called...");
 
         GameRenderer {
@@ -389,14 +404,18 @@ impl<'a> GameRenderer<'a> {
         }
     }
 
-    pub async fn init_renderer(&mut self, window: std::sync::Arc::<winit::window::Window>) {
+    pub async fn init_renderer(&mut self, window: Arc::<winit::window::Window>) {
         log!("init_renderer() called...");
 
-        if self.device_resources.is_some()  {
-            return;
+        match &self.device_resources {
+            Some(_) => {}
+            None => {
+                self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
+
+            }
         }
 
-        self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
+        log!("init_renderer() complete");
     }
  
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
@@ -406,7 +425,7 @@ impl<'a> GameRenderer<'a> {
 		let mut encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("Render Encoder"),
 		});
-
+       
         let mut frame_instances = Vec::<InstanceBuffer>::new();
         let extra_scale = 1.0;
         let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
@@ -499,7 +518,7 @@ impl<'a> GameRenderer<'a> {
             let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
             device_resources.brush.draw(&mut render_pass);
         }
-
+         log!("Render framerere!");
         device_resources.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
