@@ -1,15 +1,14 @@
-use winit::window::Window;
-use std::fs::File;
-use std::io::Read;
+use instant::Instant;
 use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 
-use crate::game_texture;
-use crate::game_object::*;
-use crate::GameConfig;
+use std::sync::Arc;
+
+use crate::{game_texture, game_object::*, GameConfig, log};
 
 use cgmath::Vector3;
+
 
 #[repr(C)]  // Do what C does.  The order, size, and alignment are what you expect from C, C++S
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -87,16 +86,13 @@ pub struct ModelUniform {
     pub uv_offset: [f32; 4],
 }
 
-#[allow(dead_code)] 
-pub struct GameRenderer<'a> {
-    window_id: winit::window::WindowId,
-    window: &'a winit::window::Window,
+#[allow(dead_code)]
+pub struct DeviceResources<'a> {
     surface: wgpu::Surface<'a>,
+    surface_config: wgpu::SurfaceConfiguration,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    pub size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -108,26 +104,42 @@ pub struct GameRenderer<'a> {
     model_bind_group: wgpu::BindGroup,
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
-    frame_times: Vec<f32>,
-    frame_timer: std::time::Instant,
-    frame_count: u32,
     pub max_instances: u32,
 }
 
-impl<'a> GameRenderer<'a> {
+#[allow(dead_code)] 
+pub struct GameRenderer<'a> {
+    device_resources: Option<DeviceResources<'a>>,
+    pub size: winit::dpi::PhysicalSize<u32>,
+    frame_times: Vec<f32>,
+    frame_timer: Instant,
+    frame_count: u32,
+    game_config: GameConfig,
+    window_id: winit::window::WindowId,
+}
 
-    pub async fn new(window: &'a Window, game_config: GameConfig) -> Self {
-        let size = window.inner_size();
-        let window_id = window.id();
-        let max_instances = game_config.max_render_instances;
+impl<'a> DeviceResources<'a> {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+		if new_size.width > 0 && new_size.height > 0 {
+			self.surface_config.width = new_size.width;
+			self.surface_config.height = new_size.height;
+			self.surface.configure(&self.device, &self.surface_config);
+		}
+    }
 
+     pub async fn new(window: Arc::<winit::window::Window>, game_config: &GameConfig) -> Self {
+        
+        log!("Creating instance");
+        
         // Instance + Surface
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: game_config.graphics_backend,
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        log!("Creating Surface.");
+
+        let surface = instance.create_surface(window.clone()).unwrap();
      
         // Adapter
         let adapter = instance.request_adapter(
@@ -137,6 +149,8 @@ impl<'a> GameRenderer<'a> {
                 force_fallback_adapter: false,
             },
         ).await.unwrap();
+
+        log!("Requesting Device");
 
 		let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
@@ -159,20 +173,22 @@ impl<'a> GameRenderer<'a> {
             .next()
             .unwrap_or(surface_caps.formats[0]);
 
-        let config = wgpu::SurfaceConfiguration {
+        let size = window.inner_size();
+        let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Immediate,//.present_modes[0],
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2
         };
 
-        surface.configure(&device, &config);
+        surface.configure(&device, &surface_config);
 
-        // Load Texture
+        log!("Loading Texture");
+
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -197,44 +213,34 @@ impl<'a> GameRenderer<'a> {
             label: Some("texture_bind_group_layout"),
         });
        
-
-        let texture_names: &[&str] = &["GameAssets/SpriteSheet.png"];
         let mut texture_atlases_bind_group = Vec::<wgpu::BindGroup>::new();
-
-        for texture_name in texture_names {
-
-            let mut f = File::open(texture_name).expect("no file found");
-            let mut texture_bytes = Vec::<u8>::new();
-            match f.read_to_end(&mut texture_bytes) {
-                Err(e) => { panic!("Failed to reach texture {texture_name} due to {e}"); }
-                _ => (),
+        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
+        let texture = game_texture::Texture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    }
+                ],
+                label: Some("character_tex_bind_group"),
             }
+        );
 
-            let texture = game_texture::Texture::from_bytes(&device, &queue, bytemuck::cast_slice(texture_bytes.as_slice()), texture_name).unwrap();
-            let tex_bind_group = device.create_bind_group(
-                &wgpu::BindGroupDescriptor {
-                    layout: &texture_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&texture.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                        }
-                    ],
-                    label: Some("character_tex_bind_group"),
-                }
-            );
-
-            texture_atlases_bind_group.push(tex_bind_group);
-        }
+        texture_atlases_bind_group.push(tex_bind_group);
+                
+        log!("Creating Shader");
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("BasicSprite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
         });
         
         // Model Buffer
@@ -266,6 +272,8 @@ impl<'a> GameRenderer<'a> {
             label: Some("model_bind_group_layout"),
         });
 
+        log!("Creating Pipeline");
+
         // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
@@ -285,7 +293,7 @@ impl<'a> GameRenderer<'a> {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
-                    format: config.format,
+                    format: surface_config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -307,6 +315,8 @@ impl<'a> GameRenderer<'a> {
             },
             multiview: None,
         });
+
+        log!("Vertex/Index Buffers");
 
         // Vertex/Index buffer
         let vertex_buffer = device.create_buffer_init(
@@ -330,6 +340,7 @@ impl<'a> GameRenderer<'a> {
             uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
         };
 
+        let max_instances = game_config.max_render_instances;
         let empty_instance_data = vec![empty_instance; max_instances as usize];
         let instance_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -350,19 +361,17 @@ impl<'a> GameRenderer<'a> {
             label: Some("model_bind_group"),
         });
 
-        // Font
-         let brush = BrushBuilder::using_font_bytes(include_bytes!("Bold.ttf")).unwrap()
-                .build(&device, config.width, config.height, config.format);
+        log!("Creating Font");
+
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
+                .build(&device, surface_config.width, surface_config.height, surface_config.format);
  
-	Self {
-            window,
-            window_id,
+	    DeviceResources {
+            surface_config,
             surface,
             adapter,
             device,
             queue,
-            config,
-            size,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -374,29 +383,49 @@ impl<'a> GameRenderer<'a> {
             model_bind_group,
             instance_buffer,
             brush,
-            frame_times: Vec::<f32>::new(),
-            frame_timer: std::time::Instant::now(),
-            frame_count: 0,
             max_instances
+        }    
+    }
+}
+
+impl<'a> GameRenderer<'a> {
+
+    pub fn new(window: Arc<winit::window::Window>, game_config: GameConfig) -> Self {
+        log!("GameRenderer::new() called...");
+
+        GameRenderer {
+            device_resources: None,
+            size: window.inner_size(),
+            frame_times: Vec::<f32>::new(),
+            frame_timer: Instant::now(),
+            frame_count: 0,
+            game_config,
+            window_id: window.id()
         }
     }
 
-	pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-		if new_size.width > 0 && new_size.height > 0 {
-			self.size = new_size;
-			self.config.width = new_size.width;
-			self.config.height = new_size.height;
-			self.surface.configure(&self.device, &self.config);
-		}
-	}
+    pub async fn init_renderer(&mut self, window: Arc::<winit::window::Window>) {
+        log!("init_renderer() called...");
 
+        match &self.device_resources {
+            Some(_) => {}
+            None => {
+                self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
+
+            }
+        }
+
+        log!("init_renderer() complete");
+    }
+ 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
-		let output = self.surface.get_current_texture()?;
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+		let output = device_resources.surface.get_current_texture()?;
 		let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+		let mut encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("Render Encoder"),
 		});
-
+       
         let mut frame_instances = Vec::<InstanceBuffer>::new();
         let extra_scale = 1.0;
         let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
@@ -433,7 +462,7 @@ impl<'a> GameRenderer<'a> {
                 frame_instances.push(new_instance);
             }
 
-             self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
+             device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
         }
 
         // Sprite Pass
@@ -458,13 +487,13 @@ impl<'a> GameRenderer<'a> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.texture_atlases_bind_group[0], &[]);
-            render_pass.set_bind_group(1, &self.model_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            self.queue.write_buffer(&self.model_constant_buffer, 0, bytemuck::cast_slice(&[self.model_uniform]));
+            render_pass.set_pipeline(&device_resources.render_pipeline);
+            render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[0], &[]);
+            render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
+            render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
 
             render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
 
@@ -482,15 +511,15 @@ impl<'a> GameRenderer<'a> {
                                                 Elapsed time: {:.0} secs\n\
                                                 Back End: {:?}\n\
                                                 Graphics: {}\n",
-                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), 0.0, self.adapter.get_info().backend, self.adapter.get_info().name.as_str());
+                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
                                                 
             let section = TextSection::default().add_text(Text::new(&frame_time_string));
-            self.brush.resize_view(self.config.width as f32, self.config.height as f32, &self.queue);
-            self.brush.queue(&self.device, &self.queue, vec![&section]).unwrap();
-            self.brush.draw(&mut render_pass);
+            device_resources.brush.resize_view(self.game_config.window_width as f32, self.game_config.window_height as f32, &device_resources.queue);
+            let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+            device_resources.brush.draw(&mut render_pass);
         }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
+         log!("Render framerere!");
+        device_resources.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         // Frame rate update
@@ -503,17 +532,18 @@ impl<'a> GameRenderer<'a> {
             }
             self.frame_times.push(avg_frame_time);
 
-            self.frame_timer = std::time::Instant::now();
+            self.frame_timer = Instant::now();
             self.frame_count = 0;
         }
         Ok(())
     }
 
-    pub fn window_id(&self) -> winit::window::WindowId {
-        self.window_id
+    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        device_resources.resize(size);
     }
 
-    pub fn request_redraw(&self) {
-        self.window.request_redraw();
+    pub fn window_id(&self) -> winit::window::WindowId {
+        self.window_id
     }
 }

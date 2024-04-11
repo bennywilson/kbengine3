@@ -1,3 +1,4 @@
+use instant::{Instant};
 
 use cgmath::Vector3;
 
@@ -28,8 +29,8 @@ pub struct GameObject {
     pub texture_index: i32,
     pub sprite_index: i32,
     pub anim_frame: i32,
-    pub life_start_time: std::time::Instant,
-    pub state_start_time: std::time::Instant,
+    pub life_start_time: Instant,
+    pub state_start_time: Instant,
     pub gravity_scale: f32,
     pub is_enemy: bool
 }
@@ -39,11 +40,11 @@ impl GameObject {
 
     fn set_state(&mut self, next_state: GameObjectState) {
         self.object_state = next_state;
-        self.state_start_time = std::time::Instant::now();
+        self.state_start_time = Instant::now();
     }
 
     fn update_movement(&mut self, frame_time: f32) {
-
+        
         self.position = self.position + self.velocity * frame_time;
 
         // Apply Gravity
