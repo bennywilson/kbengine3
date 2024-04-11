@@ -518,7 +518,7 @@ impl<'a> GameRenderer<'a> {
             let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
             device_resources.brush.draw(&mut render_pass);
         }
-         log!("Render framerere!");
+
         device_resources.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
