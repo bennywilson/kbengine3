@@ -1,5 +1,5 @@
 use instant::{Instant};
-use crate::{game_object::*, game_input::InputManager, game_config::GameConfig, log, game_random};
+use crate::{game_object::*, game_input::InputManager, game_config::GameConfig, log, game_random_f32, game_random_u32};
 
 use cgmath::Vector3;
 use cgmath::InnerSpace;
@@ -98,12 +98,12 @@ impl GameEngine {
 			let mut start_x = 1.0;
 			let mut vel_x = -self.enemy_speed;
 
-			let randnum = game_random!(u32, 1, 2);
+			let randnum = game_random_u32!(1, 2);
 		    if randnum == 2 {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos:f32  = game_random!(f32, 0.0, 0.75);
+			let y_pos:f32  = game_random_f32!(0.0, 0.75);
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -289,10 +289,9 @@ impl GameEngine {
 		let mut i = 0;
 		while i < 10 {
 
-			let rand_x = 0.0;//rand::thread_rng().gen_range(-1.0..=1.0);
-			let rand_y = 1.0;//rand::thread_rng().gen_range(0.8..=1.1);
-			let x_speed = 0.05;//rand::thread_rng().gen_range(0.05..=0.1);
-			//let x_speed = if rand::thread_rng().gen_range(0..=1) == 1 { -x_speed } else { x_speed };
+			let rand_x = game_random_f32!(-1.0, 1.0);
+			let rand_y = game_random_f32!(0.8, 1.1);
+			let x_speed = game_random_f32!(0.05, 0.1);
 
 			// Cloud
 			self.game_objects.push(GameObject { 
@@ -304,7 +303,7 @@ impl GameEngine {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: 18,// + rand::thread_rng().gen_range(0..=1),
+				sprite_index: 18 + game_random_u32!(0, 1) as i32,// + rand::thread_rng().gen_range(0..=1),
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),

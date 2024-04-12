@@ -2,6 +2,7 @@ use instant::{Instant};
 
 use cgmath::Vector3;
 
+#[derive(Clone)]
 pub enum GameObjectType {
     Character,
     Robot,
@@ -10,7 +11,8 @@ pub enum GameObjectType {
     Background
 }
 
-#[allow(dead_code)] 
+#[allow(dead_code)]
+#[derive(Clone)]
 pub enum GameObjectState {
     Idle,
     Jumping,
@@ -18,6 +20,7 @@ pub enum GameObjectState {
 }
 
 #[allow(dead_code)] 
+#[derive(Clone)]
 pub struct GameObject {
     pub position: Vector3<f32>,
     pub direction: Vector3<f32>,
@@ -34,6 +37,7 @@ pub struct GameObject {
     pub gravity_scale: f32,
     pub is_enemy: bool
 }
+
 
 #[allow(dead_code)] 
 impl GameObject {

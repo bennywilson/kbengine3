@@ -55,5 +55,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (outColor.a < 0.5) {
         discard;
     }
+/*
+    outColor.r = pow(outColor.r, 1.0 / 2.2);
+    outColor.g = pow(outColor.g, 1.0 / 2.2);
+    outColor.b = pow(outColor.b, 1.0 / 2.2);
+*/
     return outColor;
 }
