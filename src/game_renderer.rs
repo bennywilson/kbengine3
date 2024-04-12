@@ -179,7 +179,7 @@ impl<'a> DeviceResources<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: if game_config.vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync },
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2
@@ -418,14 +418,8 @@ impl<'a> GameRenderer<'a> {
         log!("init_renderer() complete");
     }
  
-	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
-        let device_resources = &mut self.device_resources.as_mut().unwrap();
-		let output = device_resources.surface.get_current_texture()?;
-		let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-		let mut encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("Render Encoder"),
-		});
-       
+    pub fn render_pass(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, should_clear: bool, game_objects: &Vec<GameObject>) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
         let mut frame_instances = Vec::<InstanceBuffer>::new();
         let extra_scale = 1.0;
         let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
@@ -435,16 +429,8 @@ impl<'a> GameRenderer<'a> {
             let u_scale = 1.0 / 8.0;
             let v_scale = 1.0 / 8.0;
 
-            // Create a copy of the GameObject list that we can sort
-            let game_object_iter = game_objects.iter();
-            let mut render_object_list: Vec<&GameObject> = Vec::<&GameObject>::new();
-            for game_object in game_object_iter {
-                render_object_list.push(&game_object);
-            }
-            render_object_list.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
-
             // Build Instance buffer from sorted Game Object list
-            let game_object_iter = render_object_list.iter();
+            let game_object_iter = game_objects.iter();
             for game_object in game_object_iter {
 
                 let game_object_position = game_object.position + extra_offset;
@@ -465,23 +451,38 @@ impl<'a> GameRenderer<'a> {
              device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
         }
 
-        // Sprite Pass
-		{
+        {
+            let color_attachment = {
+
+                if should_clear {
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.12,
+                                g: 0.01,
+                                b: 0.35,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })
+                } else {
+                 Some(wgpu::RenderPassColorAttachment {
+                        view: view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })
+                }
+            };
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.12,
-                            g: 0.01,
-                            b: 0.35,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[color_attachment],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
@@ -493,34 +494,103 @@ impl<'a> GameRenderer<'a> {
             render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
             render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
 
-            render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
-
-            let mut total_frame_times = 0.0;
-            let frame_time_iter = self.frame_times.iter();
-            for frame_time in frame_time_iter {
-                total_frame_times = total_frame_times + frame_time;
+            if should_clear {
+                device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
             }
+            render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
+        }
+    }
 
-            let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
-            let frame_rate = 1.0 / avg_frame_time;
-            let frame_time_string = format!(   "FPS: {:.0} \n\
-                                                Frame time: {:.2} ms\n\
-                                                Num Game Objects: {}\n\
-                                                Elapsed time: {:.0} secs\n\
-                                                Back End: {:?}\n\
-                                                Graphics: {}\n",
-                                                frame_rate, avg_frame_time * 1000.0, game_objects.len(), 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
-                                                
-            let section = TextSection::default().add_text(Text::new(&frame_time_string));
-            device_resources.brush.resize_view(self.game_config.window_width as f32, self.game_config.window_height as f32, &device_resources.queue);
-            let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
-            device_resources.brush.draw(&mut render_pass);
+    pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> Vec<GameObject> {
+        // Create a copy of the GameObject list that we can sort
+        let mut render_object_list: Vec<GameObject> = game_objects.clone();
+        render_object_list.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
+        render_object_list
+    }
+
+    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+		let output_texture = device_resources.surface.get_current_texture().unwrap();
+        let view = output_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (output_texture, view)
+    }
+
+    pub fn end_frame(&mut self, output_texture: wgpu::SurfaceTexture) {
+        output_texture.present();
+    }
+
+    pub fn get_encoder(&mut self, label: &str) -> wgpu::CommandEncoder {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+		let encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some(label),
+		});
+
+        encoder
+    }
+
+    pub fn submit_encoder(&mut self, command_encoder: wgpu::CommandEncoder) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
+    }
+
+    pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32) { 
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+
+        let color_attachment = {
+
+                        /*    Some(wgpu::RenderPassColorAttachment {
+                        view: view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.12,
+                                g: 0.01,
+                                b: 0.35,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })*/
+            Some(wgpu::RenderPassColorAttachment {
+                    view: view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+        };
+
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Text Pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        let mut total_frame_times = 0.0;
+        let frame_time_iter = self.frame_times.iter();
+        for frame_time in frame_time_iter {
+            total_frame_times = total_frame_times + frame_time;
         }
 
-        device_resources.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+    //    render_pass.set_pipeline(&device_resources.render_pipeline);
+        let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
+        let frame_rate = 1.0 / avg_frame_time;
+        let frame_time_string = format!(   "FPS: {:.0} \n\
+                                            Frame time: {:.2} ms\n\
+                                            Num Game Objects: {}\n\
+                                            Elapsed time: {:.0} secs\n\
+                                            Back End: {:?}\n\
+                                            Graphics: {}\n",
+                                            frame_rate, avg_frame_time * 1000.0, num_game_objects, 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
+
+        let section = TextSection::default().add_text(Text::new(&frame_time_string));
+        device_resources.brush.resize_view(self.game_config.window_width as f32, self.game_config.window_height as f32, &device_resources.queue);
+        let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+        device_resources.brush.draw(&mut render_pass);
 
         // Frame rate update
         self.frame_count = self.frame_count + 1;
@@ -535,6 +605,34 @@ impl<'a> GameRenderer<'a> {
             self.frame_timer = Instant::now();
             self.frame_count = 0;
         }
+    }
+
+	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
+
+        let (output_texture, texture_view) = self.begin_frame();
+
+        let mut sorted_render_objs = self.get_sorted_render_objects(game_objects);
+        let half = sorted_render_objs.split_off(game_objects.len()/3);
+
+        {
+            let mut command_encoder = self.get_encoder("Pass1");
+            self.render_pass(&mut command_encoder, &texture_view, true, &sorted_render_objs);
+            self.submit_encoder(command_encoder);
+        }
+
+        {
+            let mut command_encoder = self.get_encoder("Pass2");
+            self.render_pass(&mut command_encoder, &texture_view, false, &half);
+            self.submit_encoder(command_encoder);
+        }
+
+        {
+            let mut command_encoder = self.get_encoder("Debug Text Pass");
+            self.render_debug_text(&mut command_encoder, &texture_view, game_objects.len() as u32);
+            self.submit_encoder(command_encoder);
+        }
+        self.end_frame(output_texture);
+  
         Ok(())
     }
 

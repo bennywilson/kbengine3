@@ -41,18 +41,19 @@ pub async fn run_game() {
             .with_canvas(canvas)
             .build(&event_loop).unwrap()
     });
+
     #[cfg(not(target_arch = "wasm32"))]
     let window = Arc::new({
         let window_size: winit::dpi::Size = winit::dpi::Size::new(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
         WindowBuilder::new().with_inner_size(window_size).build(&event_loop).unwrap()
     });
 
-    let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
+    let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1056, 594));
 
     let mut game_engine = GameEngine::new(&game_config);
     game_engine.initialize_world();
     
-    let mut game_renderer = GameRenderer::new(window.clone(), game_config.clone()); //;: Option::<GameRenderer>;//= Box::<GameRenderer>::new(GameRenderer::new(&window, game_config).await);
+    let mut game_renderer = GameRenderer::new(window.clone(), game_config.clone());
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -74,7 +75,7 @@ pub async fn run_game() {
                             let render_result = game_renderer.render_frame(&game_engine.game_objects);
                             match render_result {
                                 Ok(_) => {}
-                              //  Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
+                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -100,6 +101,8 @@ pub async fn run_game() {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
+
         game_renderer.init_renderer(window.clone()).await;
 	    let _ = event_loop.run( |event, control_flow| {
 
