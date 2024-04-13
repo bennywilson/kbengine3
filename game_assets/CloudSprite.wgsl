@@ -52,15 +52,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec4<f32>;
     var uv : vec2<f32>; 
     uv = in.tex_coords;
+6
+    var noiseColor_1: vec4<f32> = textureSample(t_noise, s_diffuse, uv * 5.0).bbbb;
 
     outColor = textureSample(t_diffuse, s_diffuse, uv);
+    outColor.r *= noiseColor_1.r;
+    outColor.g *= noiseColor_1.r;
+    outColor.b *= noiseColor_1.r;
+
     if (outColor.a < 0.5) {
         discard;
     }
-/*
-    outColor.r = pow(outColor.r, 1.0 / 2.2);
-    outColor.g = pow(outColor.g, 1.0 / 2.2);
-    outColor.b = pow(outColor.b, 1.0 / 2.2);
-*/
+
     return outColor;
 }

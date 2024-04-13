@@ -7,8 +7,9 @@ pub enum GameObjectType {
     Character,
     Robot,
     Projectile,
+    Background,
+    Skybox,
     Cloud,
-    Background
 }
 
 #[allow(dead_code)]
