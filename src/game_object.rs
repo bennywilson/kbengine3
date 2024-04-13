@@ -100,7 +100,15 @@ impl GameObject {
                     if self.position.x < -1.0 {
                         self.velocity.x *= -1.0;
                     }
+                }
             }
+
+            GameObjectType::Character => {
+                if self.position.x > 1.0 {
+                    self.position.x = 1.0;
+                } else if self.position.x < -1.0 {
+                    self.position.x = -1.0;
+                }
             }
             _ => ()
         }
@@ -130,7 +138,7 @@ impl GameObject {
         }
 
         if move_vec.y > 0.0 && matches!(self.object_state, GameObjectState::Jumping) == false {
-            self.velocity.y = 1.45;
+            self.velocity.y = 2.1;
             self.set_state(GameObjectState::Jumping);
         }
     }

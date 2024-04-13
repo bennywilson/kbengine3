@@ -1,10 +1,10 @@
 {
-    "enemy_spawn_delay": 55.0000001,
+    "enemy_spawn_delay": 0.3,
     "enemy_move_speed": 1.0,
     "max_instances": 2000,
 
-    "window_width": 1280,
-    "window_height": 720,
+    "window_width": 1920,
+    "window_height": 1080,
 
     "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
     "graphics_back_end": "default",
