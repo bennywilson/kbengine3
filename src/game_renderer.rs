@@ -605,6 +605,116 @@ impl<'a> GameRenderer<'a> {
         log!("init_renderer() complete");
     }
  
+    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+
+		let final_texture = device_resources.surface.get_current_texture().unwrap();
+        let final_view = final_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        (final_texture, final_view)
+    }
+
+    pub fn end_frame(&self, final_tex: wgpu::SurfaceTexture) {
+        final_tex.present();
+    }
+
+    pub fn get_encoder(&mut self, label: &str) -> wgpu::CommandEncoder {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+		let encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some(label),
+		});
+
+        encoder
+    }
+
+    pub fn submit_encoder(&mut self, command_encoder: wgpu::CommandEncoder) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
+    }
+
+    pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> Vec<GameObject> {
+        let mut render_object_list: Vec<GameObject> = game_objects.clone();
+        render_object_list.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
+        render_object_list
+    }
+
+    pub fn render_pass(&mut self, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
+        let device_resources = &self.device_resources.as_mut().unwrap();
+        let mut frame_instances = Vec::<InstanceBuffer>::new();
+
+        // Create instances
+        let u_scale = 1.0 / 8.0;
+        let v_scale = 1.0 / 8.0;
+        let extra_scale = 1.0;
+        let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
+
+        let game_object_iter = game_objects.iter();
+        for game_object in game_object_iter {
+
+            let game_object_position = game_object.position + extra_offset;
+            let sprite_index = game_object.sprite_index + game_object.anim_frame;
+            let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
+            let v_offset = ((sprite_index / 8) as f32) * v_scale;
+            let mul = if game_object.direction.x > 0.0 { 1.0 } else { -1.0 };
+            if mul < 0.0 {
+                u_offset = u_offset + u_scale;
+            }
+             let new_instance = InstanceBuffer {
+                pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
+                uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
+            };
+            frame_instances.push(new_instance);
+        }
+        
+        device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
+  
+        let color_attachment = {
+
+            if should_clear {
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &device_resources.render_textures[0].view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.12,
+                            g: 0.01,
+                            b: 0.35,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            } else {
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &device_resources.render_textures[0].view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            }
+        };
+
+        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
+  
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(&device_resources.render_pipeline);
+        render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[0], &[]);
+        render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
+        render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
+    }
+    
     pub fn set_postprocess_mode(&mut self, postprocess_mode: PostProcessMode) {
         self.postprocess_mode = postprocess_mode;
     }
@@ -612,13 +722,14 @@ impl<'a> GameRenderer<'a> {
     pub fn render_postprocess(&mut self, encoder: &mut wgpu::CommandEncoder, final_view: &wgpu::TextureView) {
         let device_resources = &mut self.device_resources.as_mut().unwrap();
 
-        let color_attachment = Some(wgpu::RenderPassColorAttachment {
-                                    view: &final_view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Load,
-                                        store: wgpu::StoreOp::Store,
-                                    }});
+        let color_attachment = Some(
+            wgpu::RenderPassColorAttachment {
+                view: &final_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+            }});
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -650,152 +761,18 @@ impl<'a> GameRenderer<'a> {
         render_pass.draw_indexed(0..6, 0, 0..1); 
     }
 
-    pub fn render_pass(&mut self, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-        let mut frame_instances = Vec::<InstanceBuffer>::new();
-        let extra_scale = 1.0;
-        let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
-
-        // Create instances
-        {
-            let u_scale = 1.0 / 8.0;
-            let v_scale = 1.0 / 8.0;
-
-            // Build Instance buffer from sorted Game Object list
-            let game_object_iter = game_objects.iter();
-            for game_object in game_object_iter {
-
-                let game_object_position = game_object.position + extra_offset;
-                let sprite_index = game_object.sprite_index + game_object.anim_frame;
-                let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
-                let v_offset = ((sprite_index / 8) as f32) * v_scale;
-                let mul = if game_object.direction.x > 0.0 { 1.0 } else { -1.0 };
-                if mul < 0.0 {
-                    u_offset = u_offset + u_scale;
-                }
-                 let new_instance = InstanceBuffer {
-                    pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
-                    uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
-                };
-                frame_instances.push(new_instance);
-            }
-
-             device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
-        }
-
-        {
-            let color_attachment = {
-
-                if should_clear {
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &device_resources.render_textures[0].view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.12,
-                                g: 0.01,
-                                b: 0.35,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })
-                } else {
-                 Some(wgpu::RenderPassColorAttachment {
-                        view: &device_resources.render_textures[0].view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })
-                }
-            };
-
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[color_attachment],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&device_resources.render_pipeline);
-            render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[0], &[]);
-            render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-            render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-            if should_clear {
-                device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
-            }
-            render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
-        }
-    }
-
-    pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> Vec<GameObject> {
-        // Create a copy of the GameObject list that we can sort
-        let mut render_object_list: Vec<GameObject> = game_objects.clone();
-        render_object_list.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
-        render_object_list
-    }
-
-    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-
-		let final_texture = device_resources.surface.get_current_texture().unwrap();
-        let final_view = final_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-
-        (final_texture, final_view)
-    }
-
-    pub fn end_frame(&self, final_tex: wgpu::SurfaceTexture) {
-     
-        final_tex.present();
-    }
-
-    pub fn get_encoder(&mut self, label: &str) -> wgpu::CommandEncoder {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-		let encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some(label),
-		});
-
-        encoder
-    }
-
-    pub fn submit_encoder(&mut self, command_encoder: wgpu::CommandEncoder) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
-    }
-
     pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32) { 
         let device_resources = &mut self.device_resources.as_mut().unwrap();
 
         let color_attachment = {
-
-                        /*    Some(wgpu::RenderPassColorAttachment {
-                        view: view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.12,
-                                g: 0.01,
-                                b: 0.35,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })*/
             Some(wgpu::RenderPassColorAttachment {
-                    view: view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
+                view: view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })
         };
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -812,7 +789,6 @@ impl<'a> GameRenderer<'a> {
             total_frame_times = total_frame_times + frame_time;
         }
 
-    //    render_pass.set_pipeline(&device_resources.render_pipeline);
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
         let frame_time_string = format!(   "Press [0] to disable postprocess.   [1] Desaturation    [2] Scan lines   [3]  Warp.\n\n\
@@ -838,7 +814,7 @@ impl<'a> GameRenderer<'a> {
                 self.frame_times.remove(0);
             }
             self.frame_times.push(avg_frame_time);
-
+            
             self.frame_timer = Instant::now();
             self.frame_count = 0;
         }
