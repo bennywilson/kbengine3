@@ -48,7 +48,7 @@ pub async fn run_game() {
         WindowBuilder::new().with_inner_size(window_size).build(&event_loop).unwrap()
     });
 
-    let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1056, 594));
+    let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
 
     let mut game_engine = GameEngine::new(&game_config);
     game_engine.initialize_world();
@@ -87,6 +87,10 @@ pub async fn run_game() {
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Warp); }
                         }
                         _ => { }
                     }
@@ -131,6 +135,11 @@ pub async fn run_game() {
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
+
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Warp); }
                         }
                         _ => { }
                     }

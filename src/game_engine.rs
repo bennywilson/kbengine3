@@ -244,7 +244,7 @@ impl GameEngine {
 			anim_frame: 0,
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
-			gravity_scale: 1.1,
+			gravity_scale: 3.1,
 			is_enemy: false
 		});
 
