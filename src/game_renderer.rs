@@ -52,16 +52,17 @@ const INDICES: &[u16] = &[
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceBuffer {
+struct DrawInstance {
     pos_scale: [f32; 4],
     uv_scale_bias: [f32; 4],
+    per_instance_data: [f32; 4],
 }
 
-impl InstanceBuffer {
+impl DrawInstance {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceBuffer>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<DrawInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -74,6 +75,11 @@ impl InstanceBuffer {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         }
     }
@@ -82,8 +88,7 @@ impl InstanceBuffer {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ModelUniform {
-    pub location: [f32; 4],
-    pub uv_offset: [f32; 4],
+    pub time: [f32; 4],
 }
 
 #[repr(C)]
@@ -375,7 +380,7 @@ impl<'a> DeviceResources<'a> {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -413,7 +418,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceBuffer::desc()],
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -454,14 +459,14 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &transparent_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceBuffer::desc()],
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &transparent_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -541,7 +546,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &postprocess_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceBuffer::desc()],
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &postprocess_shader,
@@ -589,9 +594,10 @@ impl<'a> DeviceResources<'a> {
             }
         );
 
-        let empty_instance = InstanceBuffer {
+        let empty_instance = DrawInstance {
             pos_scale: [0.0, 0.0, 0.0, 0.0],
             uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
+            per_instance_data: [0.0, 0.0, 0.0, 0.0],
         };
 
         let max_instances = game_config.max_render_instances;
@@ -721,8 +727,8 @@ impl<'a> GameRenderer<'a> {
     }
 
     pub fn render_pass(&mut self, pass_type: RenderPassType, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-        let mut frame_instances = Vec::<InstanceBuffer>::new();
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        let mut frame_instances = Vec::<DrawInstance>::new();
 
         // Create instances
         let u_scale = 1.0 / 8.0;
@@ -741,9 +747,10 @@ impl<'a> GameRenderer<'a> {
             if mul < 0.0 {
                 u_offset = u_offset + u_scale;
             }
-             let new_instance = InstanceBuffer {
+             let new_instance = DrawInstance {
                 pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
                 uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
+                per_instance_data: [0.0, 0.0, 0.0, 0.0],
             };
             frame_instances.push(new_instance);
         }
@@ -793,6 +800,8 @@ impl<'a> GameRenderer<'a> {
         } else {
             render_pass.set_pipeline(&device_resources.transparent_render_pipeline);
         }
+
+        device_resources.model_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
         render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);

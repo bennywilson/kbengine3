@@ -1,7 +1,6 @@
 // Vertex shader
 struct ModelUniform {
-    worldPosition: vec4<f32>,
-    uvOffset: vec4<f32>
+    time: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> modelBuffer: ModelUniform;
@@ -14,6 +13,7 @@ struct VertexInput {
 struct InstanceInput {
     @location(2) pos_scale: vec4<f32>,
     @location(3) uv_scale_bias: vec4<f32>,
+    @location(4) instance_data: vec4<f32>
 }
 
 struct VertexOutput {
