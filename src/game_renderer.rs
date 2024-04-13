@@ -851,11 +851,11 @@ impl<'a> GameRenderer<'a> {
             self.submit_encoder(command_encoder);
         }
 
-      /*  {
+        {
             let mut command_encoder = self.get_encoder("Debug Text Pass");
-            self.render_debug_text(&mut command_encoder, &texture_view, game_objects.len() as u32);
+            self.render_debug_text(&mut command_encoder, &final_view, game_objects.len() as u32);
             self.submit_encoder(command_encoder);
-        }*/
+        }
         self.end_frame(final_tex);
   
         Ok(())

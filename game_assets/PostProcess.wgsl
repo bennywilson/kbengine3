@@ -54,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv = in.tex_coords;
 
     // Luminance
-    outColor = textureSample(t_scene_color, s_diffuse, uv);
+  /*  outColor = textureSample(t_scene_color, s_diffuse, uv);
     outColor.x = dot(outColor.xyz, vec3<f32>(0.3,0.59,0.11));
     outColor.y = outColor.x;
     outColor.z = outColor.x;
@@ -62,12 +62,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Scan line
     var uv_offset: vec2<f32> = vec2<f32>(0.0, postprocess_buffer.time.x * -0.02f);
     var uv_scale: vec2<f32> = vec2<f32>(0.5, 0.5);
-    var scanLine: vec4<f32> = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset);
+    var scanLine: vec4<f32> = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).xxxx;
     outColor = textureSample(t_scene_color, s_diffuse, uv);
-    outColor = outColor * ((scanLine * 0.5) + 0.5); 
+    outColor = outColor * ((scanLine * 0.5) + 0.5);*/
 
-   // var to_center: vec2<f32> = uv - vec2<f32>(0.5, 0.5);
-   //0 var perp: vec2<f32> = normalize(vec2<f32>(to_center.x, to_center.y));
+    // Warp
+    var uv_offset = vec2<f32>(1.0, 1.0) * postprocess_buffer.time.x * 0.03;
+    var uv_scale = vec2<f32>(1.0, 1.0);
+    uv_offset = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).yz * 0.2;
+    outColor = textureSample(t_scene_color, s_diffuse, uv + uv_offset);
+
     return outColor;
 
 }
