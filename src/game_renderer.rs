@@ -89,7 +89,7 @@ pub struct ModelUniform {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct PostProcessUniform {
-    time: [f32;4],
+    time_mode_unused_unused: [f32;4],
 }
 
 #[allow(dead_code)]
@@ -100,7 +100,7 @@ pub struct DeviceResources<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     render_pipeline: wgpu::RenderPipeline,
-    post_process_pipeline: wgpu::RenderPipeline,
+    postprocess_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_vertices: usize,
@@ -119,10 +119,18 @@ pub struct DeviceResources<'a> {
     pub max_instances: u32,
 }
 
+pub enum PostProcessMode {
+    Passthrough,
+    Desaturation,
+    ScanLines,
+    Warp,
+}
+
 #[allow(dead_code)] 
 pub struct GameRenderer<'a> {
     device_resources: Option<DeviceResources<'a>>,
     pub size: winit::dpi::PhysicalSize<u32>,
+    postprocess_mode: PostProcessMode,
     start_time: Instant,
     frame_times: Vec<f32>,
     frame_timer: Instant,
@@ -278,7 +286,7 @@ impl<'a> DeviceResources<'a> {
                     count: None,
                 },
             ],
-            label: Some("post_process_bind_group_layout"),
+            label: Some("postprocess_bind_group_layout"),
         });
 
         let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
@@ -295,7 +303,7 @@ impl<'a> DeviceResources<'a> {
         let render_texture = GameTexture::new_render_texture(&device, surface_format, size).unwrap();
         render_textures.push(render_texture);
 
-        let post_process_bind_group = device.create_bind_group(
+        let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &postprocess_bind_group_layout,
                 entries: &[
@@ -312,10 +320,10 @@ impl<'a> DeviceResources<'a> {
                         resource: wgpu::BindingResource::TextureView(&render_textures[0].view),
                     },
                 ],
-                label: Some("post_process_bind_group"),
+                label: Some("postprocess_bind_group"),
             }
         );
-        texture_atlases_bind_group.push(post_process_bind_group);
+        texture_atlases_bind_group.push(postprocess_bind_group);
 
         let mut textures = Vec::<GameTexture>::new();
         textures.push(texture);
@@ -413,9 +421,9 @@ impl<'a> DeviceResources<'a> {
         });
 
         // Post Process Pipeline
-        let post_process_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Post ProcessShader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/PostProcess.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
         });
         
         let postprocess_uniform = PostProcessUniform {
@@ -457,22 +465,22 @@ impl<'a> DeviceResources<'a> {
             label: Some("postprocess_bind_group"),
         });
 
-        let post_process_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("post_process_pipeline_layout"),
+        let postprocess_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("postprocess_pipeline_layout"),
             bind_group_layouts: &[&postprocess_bind_group_layout, &postprocess_uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let post_process_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("post_process_pipeline"),
-            layout: Some(&post_process_pipeline_layout),
+        let postprocess_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("postprocess_pipeline"),
+            layout: Some(&postprocess_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &post_process_shader,
+                module: &postprocess_shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc(), InstanceBuffer::desc()],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &post_process_shader,
+                module: &postprocess_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
@@ -544,7 +552,7 @@ impl<'a> DeviceResources<'a> {
             device,
             queue,
             render_pipeline,
-            post_process_pipeline,
+            postprocess_pipeline,
             vertex_buffer,
             index_buffer,
             num_vertices: 3,
@@ -574,6 +582,7 @@ impl<'a> GameRenderer<'a> {
             device_resources: None,
             size: window.inner_size(),
             start_time: Instant::now(),
+            postprocess_mode: PostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
             frame_count: 0,
@@ -596,7 +605,11 @@ impl<'a> GameRenderer<'a> {
         log!("init_renderer() complete");
     }
  
-    pub fn render_post_process(&mut self, encoder: &mut wgpu::CommandEncoder, final_view: &wgpu::TextureView, game_objects: &Vec<GameObject>) {
+    pub fn set_postprocess_mode(&mut self, postprocess_mode: PostProcessMode) {
+        self.postprocess_mode = postprocess_mode;
+    }
+
+    pub fn render_postprocess(&mut self, encoder: &mut wgpu::CommandEncoder, final_view: &wgpu::TextureView) {
         let device_resources = &mut self.device_resources.as_mut().unwrap();
 
         let color_attachment = Some(wgpu::RenderPassColorAttachment {
@@ -615,14 +628,23 @@ impl<'a> GameRenderer<'a> {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&device_resources.post_process_pipeline);
+        render_pass.set_pipeline(&device_resources.postprocess_pipeline);
         render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[1], &[]);
         render_pass.set_bind_group(1, &device_resources.postprocess_uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
         render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        device_resources.postprocess_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        device_resources.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
+        device_resources.postprocess_uniform.time_mode_unused_unused[1] = {
+            match self.postprocess_mode {
+                PostProcessMode::Desaturation => { 1.0 }
+                PostProcessMode::ScanLines => { 2.0 }
+                PostProcessMode::Warp => { 3.0 }
+                _ => { 0.0 }
+            }
+        };
+
         device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.postprocess_uniform]));
 
         render_pass.draw_indexed(0..6, 0, 0..1); 
@@ -722,9 +744,6 @@ impl<'a> GameRenderer<'a> {
     pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
         let device_resources = &self.device_resources.as_mut().unwrap();
 
-      //  let intemediate_texture = device_resources.intermediate_surface;
-       // let intemediate_view = device_resources.render_textures[0].view;//.render_textures[0].create_view(&wgpu::TextureViewDescriptor::default());//device_resources.intermediate_surface.create_view(&wgpu::TextureViewDescriptor::default());
-
 		let final_texture = device_resources.surface.get_current_texture().unwrap();
         let final_view = final_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -796,7 +815,8 @@ impl<'a> GameRenderer<'a> {
     //    render_pass.set_pipeline(&device_resources.render_pipeline);
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "FPS: {:.0} \n\
+        let frame_time_string = format!(   "Press [0] to disable postprocess.   [1] Desaturation    [2] Scan lines   [3]  Warp.\n\n\
+                                            FPS: {:.0} \n\
                                             Frame time: {:.2} ms\n\
                                             Num Game Objects: {}\n\
                                             Elapsed time: {:.0} secs\n\
@@ -846,8 +866,7 @@ impl<'a> GameRenderer<'a> {
 
         {
             let mut command_encoder = self.get_encoder("Pass3");
-            
-            self.render_post_process(&mut command_encoder, &final_view, &half);
+            self.render_postprocess(&mut command_encoder, &final_view);
             self.submit_encoder(command_encoder);
         }
 
