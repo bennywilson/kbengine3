@@ -5,7 +5,7 @@ use ab_glyph::FontRef;
 
 use std::sync::Arc;
 
-use crate::{game_texture::GameTexture, game_object::*, GameConfig, log};
+use crate::{game_resource::GameTexture, game_object::*, GameConfig, log};
 
 use cgmath::Vector3;
 
@@ -52,16 +52,17 @@ const INDICES: &[u16] = &[
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceBuffer {
+struct DrawInstance {
     pos_scale: [f32; 4],
     uv_scale_bias: [f32; 4],
+    per_instance_data: [f32; 4],
 }
 
-impl InstanceBuffer {
+impl DrawInstance {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceBuffer>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<DrawInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -74,6 +75,11 @@ impl InstanceBuffer {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         }
     }
@@ -82,8 +88,7 @@ impl InstanceBuffer {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ModelUniform {
-    pub location: [f32; 4],
-    pub uv_offset: [f32; 4],
+    pub time: [f32; 4],
 }
 
 #[repr(C)]
@@ -99,13 +104,14 @@ pub struct DeviceResources<'a> {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    render_pipeline: wgpu::RenderPipeline,
+    opaque_render_pipeline: wgpu::RenderPipeline,
+    transparent_render_pipeline: wgpu::RenderPipeline,
     postprocess_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_vertices: usize,
     num_indices: usize,
-    texture_atlases_bind_group: Vec<wgpu::BindGroup>,
+    bind_groups: Vec<wgpu::BindGroup>,
     textures: Vec<GameTexture>,
     render_textures: Vec<GameTexture>,
     pub model_uniform: ModelUniform,
@@ -117,6 +123,13 @@ pub struct DeviceResources<'a> {
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
     pub max_instances: u32,
+}
+
+#[allow(dead_code)]
+pub enum RenderPassType {
+    Opaque,
+    Transparent,
+    PostProcess,
 }
 
 pub enum PostProcessMode {
@@ -230,30 +243,48 @@ impl<'a> DeviceResources<'a> {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
             ],
             label: Some("sprite_sheet_bind_group_layout"),
         });
        
-        let mut texture_atlases_bind_group = Vec::<wgpu::BindGroup>::new();
+        let mut bind_groups = Vec::<wgpu::BindGroup>::new();
         let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+        let sprite_sheet_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+
+        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
+        let postprocess_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
+
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                    }
+                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
+                    },
                 ],
                 label: Some("sprite_sheet_bind_group"),
             }
         );
-        texture_atlases_bind_group.push(tex_bind_group);
+        bind_groups.push(tex_bind_group);
 
         let postprocess_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -289,9 +320,6 @@ impl<'a> DeviceResources<'a> {
             label: Some("postprocess_bind_group_layout"),
         });
 
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
-        let texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
-
         // Post process bind group
         let size = wgpu::Extent3d {
             width: window.inner_size().width,
@@ -309,11 +337,11 @@ impl<'a> DeviceResources<'a> {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -323,16 +351,16 @@ impl<'a> DeviceResources<'a> {
                 label: Some("postprocess_bind_group"),
             }
         );
-        texture_atlases_bind_group.push(postprocess_bind_group);
+        bind_groups.push(postprocess_bind_group);
 
         let mut textures = Vec::<GameTexture>::new();
-        textures.push(texture);
+        textures.push(postprocess_texture);
 
         log!("Creating Shader");
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: Some("BasicSprite.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
         });
         
@@ -353,7 +381,7 @@ impl<'a> DeviceResources<'a> {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -385,13 +413,13 @@ impl<'a> DeviceResources<'a> {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let opaque_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceBuffer::desc()],
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -418,11 +446,53 @@ impl<'a> DeviceResources<'a> {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+        
+        });
+
+        let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("CloudSprite.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/CloudSprite.wgsl").into()),
+        });
+
+        let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &transparent_shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &transparent_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { 
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+           primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        
         });
 
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Post ProcessShader"),
+            label: Some("postprocess_uber.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
         });
         
@@ -477,7 +547,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &postprocess_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceBuffer::desc()],
+                buffers: &[Vertex::desc(), DrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &postprocess_shader,
@@ -525,9 +595,10 @@ impl<'a> DeviceResources<'a> {
             }
         );
 
-        let empty_instance = InstanceBuffer {
+        let empty_instance = DrawInstance {
             pos_scale: [0.0, 0.0, 0.0, 0.0],
             uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
+            per_instance_data: [0.0, 0.0, 0.0, 0.0],
         };
 
         let max_instances = game_config.max_render_instances;
@@ -551,13 +622,14 @@ impl<'a> DeviceResources<'a> {
             adapter,
             device,
             queue,
-            render_pipeline,
+            opaque_render_pipeline,
+            transparent_render_pipeline,
             postprocess_pipeline,
             vertex_buffer,
             index_buffer,
             num_vertices: 3,
             num_indices: 6,
-            texture_atlases_bind_group,
+            bind_groups,
             textures,
             render_textures,
             model_uniform,
@@ -632,15 +704,32 @@ impl<'a> GameRenderer<'a> {
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
 
-    pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> Vec<GameObject> {
-        let mut render_object_list: Vec<GameObject> = game_objects.clone();
-        render_object_list.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
-        render_object_list
+    pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> (Vec<GameObject>, Vec<GameObject>, Vec<GameObject>) {
+        let mut skybox_render_objs = Vec::<GameObject>::new();
+        let mut cloud_render_objs = Vec::<GameObject>::new();
+        let mut game_render_objs = Vec::<GameObject>::new();
+
+        for game_obj in game_objects {
+            let new_game_obj = game_obj.clone();
+            if matches!(game_obj.object_type, GameObjectType::Skybox) {
+                skybox_render_objs.push(new_game_obj);
+            } else if matches!(game_obj.object_type, GameObjectType::Cloud) {
+                cloud_render_objs.push(new_game_obj.clone());
+            } else {
+                game_render_objs.push(new_game_obj.clone());
+            }
+        }
+ 
+        skybox_render_objs.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
+        cloud_render_objs.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
+        game_render_objs.sort_by(|a,b| a.position.z.partial_cmp(&b.position.z).unwrap());
+
+        (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
 
-    pub fn render_pass(&mut self, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-        let mut frame_instances = Vec::<InstanceBuffer>::new();
+    pub fn render_pass(&mut self, pass_type: RenderPassType, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
+        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        let mut frame_instances = Vec::<DrawInstance>::new();
 
         // Create instances
         let u_scale = 1.0 / 8.0;
@@ -659,9 +748,11 @@ impl<'a> GameRenderer<'a> {
             if mul < 0.0 {
                 u_offset = u_offset + u_scale;
             }
-             let new_instance = InstanceBuffer {
+
+            let new_instance = DrawInstance {
                 pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
                 uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
+                per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
             };
             frame_instances.push(new_instance);
         }
@@ -706,8 +797,25 @@ impl<'a> GameRenderer<'a> {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&device_resources.render_pipeline);
-        render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[0], &[]);
+        if matches!(pass_type, RenderPassType::Opaque) {
+            render_pass.set_pipeline(&device_resources.opaque_render_pipeline);
+        } else {
+            render_pass.set_pipeline(&device_resources.transparent_render_pipeline);
+        }
+
+        device_resources.model_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            device_resources.model_uniform.time[1] = 1.0 / 2.2;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            device_resources.model_uniform.time[1] = 1.0;
+        }
+
+        render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
         render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);
         render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
@@ -740,7 +848,7 @@ impl<'a> GameRenderer<'a> {
         });
 
         render_pass.set_pipeline(&device_resources.postprocess_pipeline);
-        render_pass.set_bind_group(0, &device_resources.texture_atlases_bind_group[1], &[]);
+        render_pass.set_bind_group(0, &device_resources.bind_groups[1], &[]);
         render_pass.set_bind_group(1, &device_resources.postprocess_uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
@@ -825,23 +933,28 @@ impl<'a> GameRenderer<'a> {
         let (final_tex, final_view) = self.begin_frame();
 
        
-        let mut sorted_render_objs = self.get_sorted_render_objects(game_objects);
-        let half = sorted_render_objs.split_off(game_objects.len()/3);
+        let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
         {
             let mut command_encoder = self.get_encoder("Pass1");
-            self.render_pass(&mut command_encoder, true, &sorted_render_objs);
+            self.render_pass(RenderPassType::Opaque, &mut command_encoder, true, &skybox_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             let mut command_encoder = self.get_encoder("Pass2");
-            self.render_pass(&mut command_encoder, false, &half);
+            self.render_pass(RenderPassType::Transparent, &mut command_encoder, false, &cloud_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             let mut command_encoder = self.get_encoder("Pass3");
+            self.render_pass(RenderPassType::Opaque, &mut command_encoder, false, &game_render_objs);
+            self.submit_encoder(command_encoder);
+        }
+
+        {
+            let mut command_encoder = self.get_encoder("Pass4");
             self.render_postprocess(&mut command_encoder, &final_view);
             self.submit_encoder(command_encoder);
         }

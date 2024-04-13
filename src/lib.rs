@@ -4,7 +4,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-mod game_texture;
+mod game_resource;
 mod game_object;
 mod game_renderer;
 mod game_engine;

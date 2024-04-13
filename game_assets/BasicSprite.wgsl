@@ -1,7 +1,6 @@
 // Vertex shader
 struct ModelUniform {
-    worldPosition: vec4<f32>,
-    uvOffset: vec4<f32>
+    time_colorpow_: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> modelBuffer: ModelUniform;
@@ -14,6 +13,7 @@ struct VertexInput {
 struct InstanceInput {
     @location(2) pos_scale: vec4<f32>,
     @location(3) uv_scale_bias: vec4<f32>,
+    @location(4) instance_data: vec4<f32>
 }
 
 struct VertexOutput {
@@ -44,6 +44,8 @@ fn vs_main(
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
+@group(0) @binding(2)
+var t_noise: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -55,10 +57,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (outColor.a < 0.5) {
         discard;
     }
-/*
-    outColor.r = pow(outColor.r, 1.0 / 2.2);
-    outColor.g = pow(outColor.g, 1.0 / 2.2);
-    outColor.b = pow(outColor.b, 1.0 / 2.2);
-*/
+
+    outColor.r = pow(outColor.r, modelBuffer.time_colorpow_.y);
+    outColor.g = pow(outColor.g, modelBuffer.time_colorpow_.y);
+    outColor.b = pow(outColor.b, modelBuffer.time_colorpow_.y);
+
     return outColor;
 }

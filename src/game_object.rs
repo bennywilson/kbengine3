@@ -7,8 +7,9 @@ pub enum GameObjectType {
     Character,
     Robot,
     Projectile,
+    Background,
+    Skybox,
     Cloud,
-    Background
 }
 
 #[allow(dead_code)]
@@ -35,7 +36,8 @@ pub struct GameObject {
     pub life_start_time: Instant,
     pub state_start_time: Instant,
     pub gravity_scale: f32,
-    pub is_enemy: bool
+    pub is_enemy: bool,
+    pub random_val: f32,
 }
 
 
@@ -77,6 +79,11 @@ impl GameObject {
             GameObjectType::Projectile => {
                 let duration = self.state_start_time.elapsed().as_secs_f32() * 15.0;
                 self.anim_frame = (duration as i32) % 3;
+            }
+
+            GameObjectType::Skybox => {
+                let duration = self.state_start_time.elapsed().as_secs_f32() * 1.2;
+                self.anim_frame = (duration as i32) % 2;
             }
 
             GameObjectType::Cloud => {
