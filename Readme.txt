@@ -10,18 +10,21 @@ I'm using the following docs and tutorials:
 There is a config file at GameAssets\game_config.txt that lets you control several parameters.  An example config is below:
 
 {
-    "enemy_spawn_delay": 0.5,
-    "enemy_move_speed": 0.5,
-    "max_instances": 10000,
+    "enemy_spawn_delay": 0.3,
+    "enemy_move_speed": 1.0,
+    "max_instances": 2000,
 
-    "window_width": 1280,
-    "window_height": 720,
+    "window_width": 1920,
+    "window_height": 1080,
 
     "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
     "graphics_back_end": "default",
 
     "_comment2": "Valid values for 'graphics_power_pref' are default, low, and high",
-    "graphics_power_pref": "default"
+    "graphics_power_pref": "default",
+
+    "_comment3": "Valid values for 'vsync' are true and false",
+    "vsync": true
 }
 
 

@@ -125,6 +125,7 @@ pub struct DeviceResources<'a> {
     pub max_instances: u32,
 }
 
+#[allow(dead_code)]
 pub enum RenderPassType {
     Opaque,
     Transparent,
@@ -359,7 +360,7 @@ impl<'a> DeviceResources<'a> {
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: Some("BasicSprite.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
         });
         
@@ -449,7 +450,7 @@ impl<'a> DeviceResources<'a> {
         });
 
         let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: Some("CloudSprite.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/CloudSprite.wgsl").into()),
         });
 
@@ -491,7 +492,7 @@ impl<'a> DeviceResources<'a> {
 
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Post ProcessShader"),
+            label: Some("postprocess_uber.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
         });
         
@@ -803,6 +804,16 @@ impl<'a> GameRenderer<'a> {
         }
 
         device_resources.model_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            device_resources.model_uniform.time[1] = 1.0 / 2.2;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            device_resources.model_uniform.time[1] = 1.0;
+        }
 
         render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
         render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);

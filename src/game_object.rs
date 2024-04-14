@@ -81,6 +81,11 @@ impl GameObject {
                 self.anim_frame = (duration as i32) % 3;
             }
 
+            GameObjectType::Skybox => {
+                let duration = self.state_start_time.elapsed().as_secs_f32() * 1.2;
+                self.anim_frame = (duration as i32) % 2;
+            }
+
             GameObjectType::Cloud => {
                 if self.velocity.x > 0.0 {
                     if self.position.x > 1.1 {

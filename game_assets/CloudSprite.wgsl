@@ -1,6 +1,6 @@
 // Vertex shader
 struct ModelUniform {
-    time: vec4<f32>
+    time_colorpow_: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> modelBuffer: ModelUniform;
@@ -54,31 +54,45 @@ var t_noise: texture_2d<f32>;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec4<f32>;
     var uvs: vec2<f32> = in.uvs;
+    var noise1_speed: f32 = 0.03;
+    var noise2_speed: f32 = 0.04;
+    var noise3_speed: f32 = 0.033;
+    var noise4_speed: f32 = 0.0288;
+
     var fractional_part = in.instance_data - floor(in.instance_data);
     if (fractional_part < 0.1) {
         uvs.y = 1.0 - uvs.y;
+        noise1_speed = 0.02;
+        noise2_speed = 0.05;
+        noise3_speed = 0.01;
+        noise4_speed = 0.05;
     } else if (fractional_part < 0.3) {
         uvs.x = 1.0 - uvs.x;
+
+        noise1_speed = 0.04;
+        noise2_speed = 0.01;
+        noise3_speed = 0.01;
+        noise4_speed = 0.02;
     } else if (fractional_part < 0.6 ) {
         uvs.x = 1.0 - uvs.x;
         uvs.y = 1.0 - uvs.y;
     }
 
-    var atlas_uvs: vec2<f32> = in.atlas_uvs;
-    var time_scale = in.instance_data + modelBuffer.time.x;
-    var noise1_uvs: vec2<f32> = (uvs * 0.3) + (vec2<f32>(1.0, 0.4) * time_scale * 0.03);
+    var atlas_uvs: vec2<f32> = in.atlas_uvs;    
+    var time_scale = in.instance_data + modelBuffer.time_colorpow_.x;
+    var noise1_uvs: vec2<f32> = (uvs * 0.3) + (vec2<f32>(1.0, 0.4) * time_scale * noise1_speed);
     var noise1_color: f32 = smoothstep(0.0, 0.7, textureSample(t_noise, s_diffuse, noise1_uvs).g);
 
-    var noise2_uvs: vec2<f32> = (uvs * 0.5) + (vec2<f32>(-0.3, 0.7) * time_scale * 0.04);
+    var noise2_uvs: vec2<f32> = (uvs * 0.35) + (vec2<f32>(-0.3, 0.7) * time_scale * noise2_speed);
     var noise2_color: f32 = smoothstep(0.0, 0.7, textureSample(t_noise, s_diffuse, noise2_uvs).g);
 
-    var noise3_uvs: vec2<f32> = (uvs * 0.7) + (vec2<f32>(0.1, 0.4) * time_scale * 0.02);
+    var noise3_uvs: vec2<f32> = (uvs * 0.35) + (vec2<f32>(0.1, 0.4) * time_scale * noise3_speed);
     var noise3_color: f32 = smoothstep(0.0, 0.7, textureSample(t_noise, s_diffuse, noise3_uvs).g);
 
-    var noise4_uvs: vec2<f32> = (uvs * 0.2) + (vec2<f32>(1.0, -0.1) * time_scale * 0.01);
+    var noise4_uvs: vec2<f32> = (uvs * 0.2) + (vec2<f32>(1.0, -0.1) * time_scale * noise4_speed);
     var noise4_color: f32 = smoothstep(0.0, 0.7, textureSample(t_noise, s_diffuse, noise4_uvs).g);
 
-    var noise_color =  (noise1_color + noise2_color + noise3_color + noise4_color) * 0.5;
+    var noise_color =  (noise1_color + noise2_color + noise3_color + noise4_color) * 0.35;
   //  noise_color = smoothstep(0.1, 0.8, noise_color);
     outColor = textureSample(t_diffuse, s_diffuse, atlas_uvs);
     var cloud_color: f32 = noise_color;
@@ -94,8 +108,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var cloud_alpha: f32 = textureSample(t_noise, s_diffuse, uvs).b * 1.61 * smoothstep(0.0, 0.6, noise_color);
     outColor.a = cloud_alpha - (outColor.r * 0.6);//smoothstep(0.0, 1.0, cloud_alpha);
 
-/*    outColor.r = pow(outColor.r, 1.0 / 2.2);
-    outColor.g = pow(outColor.g, 1.0 / 2.2);
-    outColor.b = pow(outColor.b, 1.0 / 2.2);*/2
+    outColor.r = pow(outColor.r, modelBuffer.time_colorpow_.y);
+    outColor.g = pow(outColor.g, modelBuffer.time_colorpow_.y);
+    outColor.b = pow(outColor.b, modelBuffer.time_colorpow_.y);
     return outColor;
 }

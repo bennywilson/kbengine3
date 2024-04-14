@@ -273,7 +273,7 @@ impl GameEngine {
 
 		// Sun
 		self.game_objects.push(GameObject { 
-			position: (0.0, 1.0, SUN_Z).into(),
+			position: (-0.3, 1.0, SUN_Z).into(),
 			scale: (0.1, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -281,7 +281,7 @@ impl GameEngine {
 			object_state: GameObjectState::Idle,
 			next_attack_time: 0.0,
 			texture_index: 1,
-			sprite_index: 20,
+			sprite_index: 27,
 			anim_frame: 0,
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
@@ -297,20 +297,20 @@ impl GameEngine {
 			let rand_x = game_random_f32!(-1.0, 1.0);
 			let rand_y = game_random_f32!(0.8, 1.1);
 			let scale_x = game_random_f32!(0.11, 0.14);
-			let scale_y = game_random_f32!(0.14, 0.16);
-			let x_speed = game_random_f32!(0.05, 0.1);
+			let scale_y = game_random_f32!(0.13, 0.17);
+			let x_speed = game_random_f32!(0.03, 0.05);
 
 			// Cloud
 			self.game_objects.push(GameObject { 
 				position: (rand_x,rand_y, CLOUD_Z).into(),
-				scale: (scale_x, 0.15, 0.15).into(),
+				scale: (scale_x, scale_y, 0.15).into(),
 				direction: (1.0, 0.0, 0.0).into(),
 				velocity: (0.0, 0.0, 0.0).into(),
 				object_type: GameObjectType::Cloud,
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: 18 + game_random_u32!(0, 1) as i32,// + rand::thread_rng().gen_range(0..=1),
+				sprite_index: 18 + game_random_u32!(0, 1) as i32,
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),

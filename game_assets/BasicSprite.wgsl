@@ -1,6 +1,6 @@
 // Vertex shader
 struct ModelUniform {
-    time: vec4<f32>
+    time_colorpow_: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> modelBuffer: ModelUniform;
@@ -57,10 +57,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (outColor.a < 0.5) {
         discard;
     }
-/*
-    outColor.r = pow(outColor.r, 1.0 / 2.2);
-    outColor.g = pow(outColor.g, 1.0 / 2.2);
-    outColor.b = pow(outColor.b, 1.0 / 2.2);
-*/
+
+    outColor.r = pow(outColor.r, modelBuffer.time_colorpow_.y);
+    outColor.g = pow(outColor.g, modelBuffer.time_colorpow_.y);
+    outColor.b = pow(outColor.b, modelBuffer.time_colorpow_.y);
+
     return outColor;
 }
