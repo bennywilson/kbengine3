@@ -258,7 +258,7 @@ impl<'a> DeviceResources<'a> {
        
         let mut bind_groups = Vec::<wgpu::BindGroup>::new();
         let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+        let sprite_sheet_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
         let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
         let postprocess_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
@@ -269,11 +269,11 @@ impl<'a> DeviceResources<'a> {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -336,11 +336,11 @@ impl<'a> DeviceResources<'a> {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -353,7 +353,7 @@ impl<'a> DeviceResources<'a> {
         bind_groups.push(postprocess_bind_group);
 
         let mut textures = Vec::<GameTexture>::new();
-        textures.push(texture);
+        textures.push(postprocess_texture);
 
         log!("Creating Shader");
 

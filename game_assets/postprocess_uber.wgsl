@@ -71,32 +71,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         var scanLine: vec4<f32> = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).xxxx;
         outColor = outColor * ((scanLine * 0.5) + 0.5);    
     } else if (postprocess_mode == 3) {
-        var uv_offset = vec2<f32>(1.0, 1.0) * postprocess_buffer.time_mode_unused_unused.x * 0.03;
+        var uv_offset_1 = vec2<f32>(1.0, 1.0) * postprocess_buffer.time_mode_unused_unused.x * 0.03;
+        var uv_offset_2 = vec2<f32>(-1.0, -.3) * postprocess_buffer.time_mode_unused_unused.x * 0.03;
         var uv_scale = vec2<f32>(1.0, 1.0);
-        uv_offset = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).yz * 0.2;
-        outColor = textureSample(t_scene_color, s_diffuse, uv + uv_offset);
+        var uv_offset: vec2<f32> = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset_1).gg;
+        uv_offset.y = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset_2).g;
+        uv_offset = uv + uv_offset * 0.1;
+        if (uv_offset.y > 0.9999) {
+            uv_offset.y = 0.9999f;
+        }
+        outColor = textureSample(t_scene_color, s_diffuse, uv_offset);
     }
     return outColor;
-
-    // Luminance
-  /*  outColor = textureSample(t_scene_color, s_diffuse, uv);
-    outColor.x = dot(outColor.xyz, vec3<f32>(0.3,0.59,0.11));
-    outColor.y = outColor.x;
-    outColor.z = outColor.x;
-
-    // Scan line
-    var uv_offset: vec2<f32> = vec2<f32>(0.0, postprocess_buffer.time_mode_unused_unused.x * -0.02f);
-    var uv_scale: vec2<f32> = vec2<f32>(0.5, 0.5);
-    var scanLine: vec4<f32> = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).xxxx;
-    outColor = textureSample(t_scene_color, s_diffuse, uv);
-    outColor = outColor * ((scanLine * 0.5) + 0.5);
-
-    // Warp
-    var uv_offset = vec2<f32>(1.0, 1.0) * postprocess_buffer.time_mode_unused_unused.x * 0.03;
-    var uv_scale = vec2<f32>(1.0, 1.0);
-    uv_offset = textureSample(t_post_process_filter, s_diffuse, uv * uv_scale + uv_offset).yz * 0.2;
-    outColor = textureSample(t_scene_color, s_diffuse, uv + uv_offset);
-
-    return outColor;*/
-
 }

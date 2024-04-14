@@ -120,7 +120,7 @@ impl GameEngine {
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1.0),
+				random_val: game_random_f32!(0.0, 1000.0),
 				is_enemy: true
 			});
 		}
@@ -213,7 +213,7 @@ impl GameEngine {
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1.0),
+				random_val: game_random_f32!(0.0, 1000.0),
 				is_enemy: false
 			};
 
@@ -247,7 +247,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 3.1,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -267,7 +267,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -286,7 +286,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -315,7 +315,7 @@ impl GameEngine {
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1.0),
+				random_val: game_random_f32!(0.0, 1000.0),
 				is_enemy: false
 			});
 
@@ -345,7 +345,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -364,7 +364,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -382,7 +382,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -400,7 +400,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -419,7 +419,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -437,7 +437,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -455,7 +455,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -473,7 +473,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -491,7 +491,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -509,7 +509,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -528,7 +528,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -546,7 +546,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -564,7 +564,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -582,7 +582,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -599,7 +599,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -616,7 +616,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -633,7 +633,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -650,7 +650,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -667,7 +667,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -684,7 +684,7 @@ impl GameEngine {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1.0),
+			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
 	}
