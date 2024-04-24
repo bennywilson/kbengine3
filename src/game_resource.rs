@@ -1,6 +1,93 @@
 use image::GenericImageView;
 use anyhow::*;
 
+#[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    position: [f32; 3],
+    tex_coords: [f32; 2],
+}
+
+impl Vertex {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                }
+            ]
+        }
+    }
+}
+ 
+pub const VERTICES: &[Vertex] = &[
+    Vertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
+    Vertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
+    Vertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
+    Vertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
+];
+
+pub const INDICES: &[u16] = &[
+    0, 1, 3,
+    3, 1, 2,
+];
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DrawInstance {
+    pub pos_scale: [f32; 4],
+    pub uv_scale_bias: [f32; 4],
+    pub per_instance_data: [f32; 4],
+}
+
+impl DrawInstance {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<DrawInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 2,     // Corresponds to @location in the shader
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ModelUniform {
+    pub time: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PostProcessUniform {
+    pub time_mode_unused_unused: [f32;4],
+}
+
 #[allow(dead_code)] 
 pub struct GameTexture {
     pub texture: wgpu::Texture,
@@ -60,7 +147,6 @@ impl GameTexture {
         img: &image::DynamicImage,
         label: Option<&str>
     ) -> Result<Self> {
-        let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
 
         let size = wgpu::Extent3d {
@@ -80,6 +166,8 @@ impl GameTexture {
                 view_formats: &[],
             }
         );
+        
+        let rgba = img.to_rgba8();
 
         queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -110,6 +198,10 @@ impl GameTexture {
             }
         );
         
-        Ok(Self { texture, view, sampler })
+        Ok(Self {
+            texture,
+            view,
+            sampler
+        })
     }
 }
