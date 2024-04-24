@@ -1,101 +1,10 @@
+use std::sync::Arc;
 use instant::Instant;
 use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
-
-use std::sync::Arc;
-
-use crate::{game_resource::GameTexture, game_object::*, GameConfig, log};
-
 use cgmath::Vector3;
-
-
-#[repr(C)]  // Do what C does.  The order, size, and alignment are what you expect from C, C++S
-#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                }
-            ]
-        }
-    }
-}
- 
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
-    Vertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
-    Vertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
-    Vertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 3,
-    3, 1, 2,
-];
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DrawInstance {
-    pos_scale: [f32; 4],
-    uv_scale_bias: [f32; 4],
-    per_instance_data: [f32; 4],
-}
-
-impl DrawInstance {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<DrawInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 2,     // Corresponds to @location in the shader
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ModelUniform {
-    pub time: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct PostProcessUniform {
-    time_mode_unused_unused: [f32;4],
-}
+use crate::{game_resource::*, game_object::*, GameConfig, log, PERF_SCOPE};
 
 #[allow(dead_code)]
 pub struct DeviceResources<'a> {
@@ -178,7 +87,7 @@ impl<'a> DeviceResources<'a> {
         // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: game_config.graphics_power_pref,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -195,30 +104,16 @@ impl<'a> DeviceResources<'a> {
                 } else {
                     wgpu::Limits::default()
                 },
-                label: None,
+                label: Some("Device Descriptor"),
             },
             None, // Trace path
         ).await.unwrap();
 
 		let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
-            .copied()
-            .filter(|f| f.is_srgb())
-            .next()
-            .unwrap_or(surface_caps.formats[0]);
-
+        let surface_format = surface_caps.formats[0];
         let size = window.inner_size();
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            format: surface_format,
-            width: size.width,
-            height: size.height,
-            present_mode: if game_config.vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync },
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2
-        };
-
+        let surface_config = surface.get_default_config(&adapter, game_config.window_width, game_config.window_height).unwrap();
+        
         surface.configure(&device, &surface_config);
 
         log!("Loading Texture");
@@ -446,7 +341,6 @@ impl<'a> DeviceResources<'a> {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-        
         });
 
         let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -678,6 +572,8 @@ impl<'a> GameRenderer<'a> {
     }
  
     pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
+        PERF_SCOPE!("begin_frame())");
+
         let device_resources = &self.device_resources.as_mut().unwrap();
 
 		let final_texture = device_resources.surface.get_current_texture().unwrap();
@@ -687,6 +583,8 @@ impl<'a> GameRenderer<'a> {
     }
 
     pub fn end_frame(&self, final_tex: wgpu::SurfaceTexture) {
+        PERF_SCOPE!("end_frame())");
+
         final_tex.present();
     }
 
@@ -705,6 +603,7 @@ impl<'a> GameRenderer<'a> {
     }
 
     pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> (Vec<GameObject>, Vec<GameObject>, Vec<GameObject>) {
+        PERF_SCOPE!("sorting render objects");
         let mut skybox_render_objs = Vec::<GameObject>::new();
         let mut cloud_render_objs = Vec::<GameObject>::new();
         let mut game_render_objs = Vec::<GameObject>::new();
@@ -739,7 +638,7 @@ impl<'a> GameRenderer<'a> {
 
         let game_object_iter = game_objects.iter();
         for game_object in game_object_iter {
-
+            PERF_SCOPE!("Creating instances");
             let game_object_position = game_object.position + extra_offset;
             let sprite_index = game_object.sprite_index + game_object.anim_frame;
             let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
@@ -760,7 +659,6 @@ impl<'a> GameRenderer<'a> {
         device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
   
         let color_attachment = {
-
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
                     view: &device_resources.render_textures[0].view,
@@ -930,36 +828,43 @@ impl<'a> GameRenderer<'a> {
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>) -> Result<(), wgpu::SurfaceError> {
 
+        PERF_SCOPE!("render_frame()");
+
         let (final_tex, final_view) = self.begin_frame();
 
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
         {
-            let mut command_encoder = self.get_encoder("Pass1");
+            PERF_SCOPE!("Skybox Pass (Opaque)");
+            let mut command_encoder = self.get_encoder("Skybox Pass");
             self.render_pass(RenderPassType::Opaque, &mut command_encoder, true, &skybox_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
-            let mut command_encoder = self.get_encoder("Pass2");
+            PERF_SCOPE!("Skybox Pass (Transparent)");
+            let mut command_encoder = self.get_encoder("Transparent");
             self.render_pass(RenderPassType::Transparent, &mut command_encoder, false, &cloud_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
-            let mut command_encoder = self.get_encoder("Pass3");
+            PERF_SCOPE!("World Objects Pass");
+            let mut command_encoder = self.get_encoder("World Object");
             self.render_pass(RenderPassType::Opaque, &mut command_encoder, false, &game_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
-            let mut command_encoder = self.get_encoder("Pass4");
+            PERF_SCOPE!("Postprocess pass");
+            let mut command_encoder = self.get_encoder("Postprocess Pass");
             self.render_postprocess(&mut command_encoder, &final_view);
             self.submit_encoder(command_encoder);
         }
 
         {
+            PERF_SCOPE!("Debug text pass");
             let mut command_encoder = self.get_encoder("Debug Text Pass");
             self.render_debug_text(&mut command_encoder, &final_view, game_objects.len() as u32);
             self.submit_encoder(command_encoder);

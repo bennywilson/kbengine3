@@ -1,3 +1,4 @@
+
 #[allow(unused_macros)]
 #[macro_export]
 macro_rules! game_random_f32 {
@@ -31,4 +32,18 @@ macro_rules! game_random_u32 {
 			$min + (t % dif)
 		}	 
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[macro_export]
+macro_rules! PERF_SCOPE {
+	($label:literal) => { }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[macro_export]
+macro_rules! PERF_SCOPE {
+	($label:literal) =>{
+		tracy_full::zone!($label);
+	}
 }
