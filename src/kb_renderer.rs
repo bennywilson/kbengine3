@@ -104,110 +104,7 @@ impl<'a> KbRenderer<'a> {
 
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
-
-    pub fn render_pass(&mut self, pass_type: KbRenderPassType, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
-        let device_resources = &mut self.device_resources.as_mut().unwrap();
-        let mut frame_instances = Vec::<KbDrawInstance>::new();
-
-        // Create instances
-        let u_scale = 1.0 / 8.0;
-        let v_scale = 1.0 / 8.0;
-        let extra_scale = 1.0;
-        let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
-
-        let game_object_iter = game_objects.iter();
-        for game_object in game_object_iter {
-            PERF_SCOPE!("Creating instances");
-            let game_object_position = game_object.position + extra_offset;
-            let sprite_index = game_object.sprite_index + game_object.anim_frame;
-            let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
-            let v_offset = ((sprite_index / 8) as f32) * v_scale;
-            let mul = if game_object.direction.x > 0.0 { 1.0 } else { -1.0 };
-            if mul < 0.0 {
-                u_offset = u_offset + u_scale;
-            }
-
-            let new_instance = KbDrawInstance {
-                pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
-                uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
-                per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
-            };
-            frame_instances.push(new_instance);
-        }
-        
-        device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
-  
-        let color_attachment = {
-            if should_clear {
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.12,
-                            g: 0.01,
-                            b: 0.35,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            } else {
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            }
-        };
-
-        let sprite_pipeline = &mut device_resources.sprite_pipeline;
-        device_resources.queue.write_buffer(&sprite_pipeline.uniform_buffer, 0, bytemuck::cast_slice(&[sprite_pipeline.uniform]));
-  
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[color_attachment],
-            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &device_resources.depth_textures[0].view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        if matches!(pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&sprite_pipeline.opaque_render_pipeline);
-        } else {
-            render_pass.set_pipeline(&sprite_pipeline.transparent_render_pipeline);
-        }
-
-        sprite_pipeline.uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
-        sprite_pipeline.uniform.time[0] = self.start_time.elapsed().as_secs_f32();
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            sprite_pipeline.sprite_uniform.time[1] = 1.0 / 2.2;
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            sprite_pipeline.uniform.time[1] = 1.0;
-        }
-
-        render_pass.set_bind_group(0, &sprite_pipeline.tex_bind_group, &[]);
-        render_pass.set_bind_group(1, &sprite_pipeline.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, sprite_pipeline.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
-    }
+    
     
     pub fn set_postprocess_mode(&mut self, postprocess_mode: KbPostProcessMode) { 
         self.postprocess_mode = postprocess_mode;
@@ -326,28 +223,40 @@ impl<'a> KbRenderer<'a> {
 
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
-            let mut command_encoder = self.get_encoder("Skybox Pass");
+            let mut command_encoder = self.get_encoder("Skybox Pass (Opaque)");
             let mut device_resources = self.device_resources.as_mut().unwrap();
             device_resources.sprite_pipeline.render(&mut command_encoder, 
                 &mut device_resources.queue,
                 (device_resources.surface_config.width, device_resources.surface_config.height),
                 (&device_resources.render_textures[0].view, &device_resources.depth_textures[0].view),
                 &device_resources.instance_buffer,
-                true, self.start_time, &game_render_objs, KbRenderPassType::Opaque);
+                true, self.start_time, &skybox_render_objs, KbRenderPassType::Opaque);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("Skybox Pass (Transparent)");
-            let mut command_encoder = self.get_encoder("Transparent");
-            self.render_pass(KbRenderPassType::Transparent, &mut command_encoder, false, &cloud_render_objs);
+            let mut command_encoder = self.get_encoder("Skybox Pass (Transparent)");
+            let mut device_resources = self.device_resources.as_mut().unwrap();
+            device_resources.sprite_pipeline.render(&mut command_encoder, 
+                &mut device_resources.queue,
+                (device_resources.surface_config.width, device_resources.surface_config.height),
+                (&device_resources.render_textures[0].view, &device_resources.depth_textures[0].view),
+                &device_resources.instance_buffer,
+                false, self.start_time, &cloud_render_objs, KbRenderPassType::Transparent);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("World Objects Pass");
-            let mut command_encoder = self.get_encoder("World Object");
-            self.render_pass(KbRenderPassType::Opaque, &mut command_encoder, false, &game_render_objs);
+            let mut command_encoder = self.get_encoder("World Objects");
+            let mut device_resources = self.device_resources.as_mut().unwrap();
+            device_resources.sprite_pipeline.render(&mut command_encoder, 
+                &mut device_resources.queue,
+                (device_resources.surface_config.width, device_resources.surface_config.height),
+                (&device_resources.render_textures[0].view, &device_resources.depth_textures[0].view),
+                &device_resources.instance_buffer,
+                false, self.start_time, &game_render_objs, KbRenderPassType::Opaque);
             self.submit_encoder(command_encoder);
         }
 
