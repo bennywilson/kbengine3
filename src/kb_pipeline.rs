@@ -1,5 +1,5 @@
-use image::GenericImageView;
-use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, SamplerBindingType,Adapter, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
+use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, 
+          SamplerBindingType, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 
 use crate::{kb_resource::*, log};
 
@@ -74,13 +74,6 @@ impl KbSpritePipeline {
                 label: Some("kbSpritePipeline: tex_bind_group"),
             }
         );
-
-        // Post process bind group
-        let size = wgpu::Extent3d {
-            width: surface_config.width,
-            height: surface_config.height,
-            depth_or_array_layers: 1,
-        };
 
         let mut textures = Vec::<KbTexture>::new();
         textures.push(postprocess_texture);
@@ -426,10 +419,14 @@ impl KbPostprocessPipeline {
     }
 }
 
-pub struct kb3DPipeline {
+pub struct KbModelPipeline {
 
 }
 
-impl kb3DPipeline {
+impl KbModelPipeline {
+    pub fn new(_device: &Device, _queue: &Queue, _surface_config: &SurfaceConfiguration) -> Self {
+        KbModelPipeline {
 
+        }
+    }
 }

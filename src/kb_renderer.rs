@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use instant::Instant;
-use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 use cgmath::Vector3;
@@ -13,13 +12,15 @@ pub struct KbDeviceResources<'a> {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    render_textures: Vec<KbTexture>,
-    depth_textures: Vec<KbTexture>,
-    sprite_pipeline: KbSpritePipeline,
-    postprocess_pipeline: KbPostprocessPipeline,
+
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
-    pub max_instances: u32,
+    render_textures: Vec<KbTexture>,
+    depth_textures: Vec<KbTexture>,
+
+    sprite_pipeline: KbSpritePipeline,
+    postprocess_pipeline: KbPostprocessPipeline,
+    model_pipeline: KbModelPipeline,
 }
 
 #[allow(dead_code)]
@@ -66,19 +67,15 @@ impl<'a> KbDeviceResources<'a> {
     }
 
      pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
-        log!("Creating instance");
-        
-        // Instance + Surface
+        log!("Creating instance"); 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: game_config.graphics_backend,
             ..Default::default()
         });
 
-        log!("Creating Surface.");
+        log!("Creating surface + adapter");
 
         let surface = instance.create_surface(window.clone()).unwrap();
-    
-        // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
                 power_preference: game_config.graphics_power_pref,
@@ -88,7 +85,6 @@ impl<'a> KbDeviceResources<'a> {
         ).await.unwrap();
 
         log!("Requesting Device");
-
 		let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
@@ -108,22 +104,15 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("Loading Texture");
 
-         let empty_instance = KbDrawInstance {
-            pos_scale: [0.0, 0.0, 0.0, 0.0],
-            uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
-            per_instance_data: [0.0, 0.0, 0.0, 0.0],
-        };
-
         let max_instances = game_config.max_render_instances;
-        let empty_instance_data = vec![empty_instance; max_instances as usize];
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&empty_instance_data),
+        let instance_buffer = device.create_buffer(
+            &wgpu::BufferDescriptor {
+                label: Some("instance_buffer"),
+                mapped_at_creation: false,
+                size: (std::mem::size_of::<KbDrawInstance>() * max_instances as usize) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-            }
-        );
-
+            });
+       
         let mut render_textures = Vec::<KbTexture>::new();
         let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
         render_textures.push(render_texture);
@@ -139,6 +128,7 @@ impl<'a> KbDeviceResources<'a> {
 
         let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
         let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
+        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
 
 	    KbDeviceResources {
             surface_config,
@@ -146,14 +136,14 @@ impl<'a> KbDeviceResources<'a> {
             adapter,
             device,
             queue,
+            instance_buffer,
+            brush,
             render_textures,
             depth_textures,
             sprite_pipeline,
             postprocess_pipeline,
-            instance_buffer,
-            brush,
-            max_instances
-        }    
+            model_pipeline
+        }
     }
 }
 
