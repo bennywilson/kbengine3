@@ -23,7 +23,7 @@ pub struct DeviceResources<'a> {
     bind_groups: Vec<wgpu::BindGroup>,
     textures: Vec<GameTexture>,
     render_textures: Vec<GameTexture>,
-    pub model_uniform: ModelUniform,
+    pub sprite_uniform: SpriteUniform,
     model_constant_buffer: wgpu::Buffer,
     model_bind_group: wgpu::BindGroup,
     postprocess_uniform: PostProcessUniform,
@@ -87,7 +87,7 @@ impl<'a> DeviceResources<'a> {
         // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: game_config.graphics_power_pref,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -260,14 +260,14 @@ impl<'a> DeviceResources<'a> {
         });
         
         // Model Buffer
-        let model_uniform = ModelUniform {
+        let sprite_uniform = SpriteUniform {
             ..Default::default()
         };
 
         let model_constant_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Model Constant Buffer"),
-                contents: bytemuck::cast_slice(&[model_uniform]),
+                contents: bytemuck::cast_slice(&[sprite_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -526,7 +526,7 @@ impl<'a> DeviceResources<'a> {
             bind_groups,
             textures,
             render_textures,
-            model_uniform,
+            sprite_uniform,
             model_constant_buffer,
             model_bind_group,
             postprocess_uniform,
@@ -564,7 +564,6 @@ impl<'a> GameRenderer<'a> {
             Some(_) => {}
             None => {
                 self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
-
             }
         }
 
@@ -685,7 +684,7 @@ impl<'a> GameRenderer<'a> {
             }
         };
 
-        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
+        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.sprite_uniform]));
   
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -701,16 +700,17 @@ impl<'a> GameRenderer<'a> {
             render_pass.set_pipeline(&device_resources.transparent_render_pipeline);
         }
 
-        device_resources.model_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        device_resources.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
+        device_resources.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
-            device_resources.model_uniform.time[1] = 1.0 / 2.2;
+            device_resources.sprite_uniform.time[1] = 1.0 / 2.2;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            device_resources.model_uniform.time[1] = 1.0;
+            device_resources.sprite_uniform.time[1] = 1.0;
         }
 
         render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
@@ -721,7 +721,7 @@ impl<'a> GameRenderer<'a> {
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }
     
-    pub fn set_postprocess_mode(&mut self, postprocess_mode: PostProcessMode) {
+    pub fn set_postprocess_mode(&mut self, postprocess_mode: PostProcessMode) { 
         self.postprocess_mode = postprocess_mode;
     }
 
@@ -877,6 +877,8 @@ impl<'a> GameRenderer<'a> {
     pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         let device_resources = &mut self.device_resources.as_mut().unwrap();
         device_resources.resize(size);
+        self.game_config.window_width = size.width;
+        self.game_config.window_height = size.height;
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

@@ -78,7 +78,8 @@ impl DrawInstance {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ModelUniform {
+pub struct SpriteUniform {
+    pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
 }
 

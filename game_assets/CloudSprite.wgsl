@@ -1,9 +1,10 @@
 // Vertex shader
-struct ModelUniform {
+struct SpriteUniform {
+    target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>
 };
 @group(1) @binding(0)
-var<uniform> modelBuffer: ModelUniform;
+var<uniform> sprite_uniform: SpriteUniform;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -36,8 +37,10 @@ fn vs_main(
     var pos: vec3<f32> = model.position.xyz;
     pos *= vec3<f32>(instance.pos_scale.zw, 1.0);
     pos += vec3<f32>(instance.pos_scale.xy, 1.0);
+    pos.x *= sprite_uniform.target_dimensions.z;
     out.clip_position = vec4<f32>(pos.xyz, 1.0);
     out.instance_data = instance.instance_data[0];
+
     return out;
 }
 
@@ -79,7 +82,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     var atlas_uvs: vec2<f32> = in.atlas_uvs;    
-    var time_scale = in.instance_data + modelBuffer.time_colorpow_.x;
+    var time_scale = in.instance_data + sprite_uniform.time_colorpow_.x;
     var noise1_uvs: vec2<f32> = (uvs * 0.3) + (vec2<f32>(1.0, 0.4) * time_scale * noise1_speed);
     var noise1_color: f32 = smoothstep(0.0, 0.7, textureSample(t_noise, s_diffuse, noise1_uvs).g);
 
@@ -108,8 +111,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var cloud_alpha: f32 = textureSample(t_noise, s_diffuse, uvs).b * 1.61 * smoothstep(0.0, 0.6, noise_color);
     outColor.a = cloud_alpha - (outColor.r * 0.6);//smoothstep(0.0, 1.0, cloud_alpha);
 
-    outColor.r = pow(outColor.r, modelBuffer.time_colorpow_.y);
-    outColor.g = pow(outColor.g, modelBuffer.time_colorpow_.y);
-    outColor.b = pow(outColor.b, modelBuffer.time_colorpow_.y);
+    outColor.r = pow(outColor.r, sprite_uniform.time_colorpow_.y);
+    outColor.g = pow(outColor.g, sprite_uniform.time_colorpow_.y);
+    outColor.b = pow(outColor.b, sprite_uniform.time_colorpow_.y);
     return outColor;
 }

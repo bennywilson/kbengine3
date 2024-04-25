@@ -88,33 +88,33 @@ impl GameObject {
 
             GameObjectType::Cloud => {
                 if self.velocity.x > 0.0 {
-                    if self.position.x > 1.1 {
-                        self.position.x = -1.1;
+                    if self.position.x > 2.1 {
+                        self.position.x = -2.1;
                     }
                 } else {
-                    if self.position.x < -1.1 {
-                        self.position.x = 1.1;
+                    if self.position.x < -2.1 {
+                        self.position.x = 2.1;
                     }
                 }
             }
 
             GameObjectType::Robot => {
                 if self.velocity.x > 0.0 {
-                    if self.position.x > 1.0 {
+                    if self.position.x > 1.9 {
                         self.velocity.x *= -1.0;
                     }
                 } else {
-                    if self.position.x < -1.0 {
+                    if self.position.x < -1.9 {
                         self.velocity.x *= -1.0;
                     }
                 }
             }
 
             GameObjectType::Character => {
-                if self.position.x > 1.0 {
-                    self.position.x = 1.0;
-                } else if self.position.x < -1.0 {
-                    self.position.x = -1.0;
+                if self.position.x > 1.9 {
+                    self.position.x = 1.9;
+                } else if self.position.x < -1.9 {
+                    self.position.x = -1.9;
                 }
             }
             _ => ()

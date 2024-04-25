@@ -95,7 +95,7 @@ impl GameEngine {
 			self.next_enemy_spawn_time  = game_time + self.enemy_spawn_delay;
 			self.num_enemies = self.num_enemies + 1;
 			
-			let mut start_x = 1.0;
+			let mut start_x = 2.0;
 			let mut vel_x = -self.enemy_speed;
 
 			let randnum = game_random_u32!(1, 2);
@@ -235,7 +235,7 @@ impl GameEngine {
 		// Create Player
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, CHARACTER_Z).into(),
-			scale: (0.1, 0.15, 0.15).into(),
+			scale: (0.15, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
 			object_type: GameObjectType::Character,
@@ -273,8 +273,8 @@ impl GameEngine {
 
 		// Sun
 		self.game_objects.push(GameObject { 
-			position: (-0.3, 1.0, SUN_Z).into(),
-			scale: (0.1, 0.15, 0.15).into(),
+			position: (-0.5, 1.0, SUN_Z).into(),
+			scale: (0.15, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
 			object_type: GameObjectType::Skybox,
@@ -294,9 +294,9 @@ impl GameEngine {
 		let mut i = 0;
 		while i < 10 {
 
-			let rand_x = game_random_f32!(-1.0, 1.0);
+			let rand_x = game_random_f32!(-2.0, 2.0);
 			let rand_y = game_random_f32!(0.8, 1.1);
-			let scale_x = game_random_f32!(0.11, 0.14);
+			let scale_x = game_random_f32!(0.17, 0.3);
 			let scale_y = game_random_f32!(0.13, 0.17);
 			let x_speed = game_random_f32!(0.03, 0.05);
 
@@ -333,7 +333,7 @@ impl GameEngine {
 		// Hills
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.75, HILL_Z).into(),
-			scale: (1.0, 1.6, 0.15).into(),
+			scale: (2.0, 1.6, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
 			object_type: GameObjectType::Background,
@@ -349,313 +349,58 @@ impl GameEngine {
 			is_enemy: false
 		});
 
-		// Buildings
-		self.game_objects.push(GameObject { 
-			position: (-0.8, 0.4, BUILDING_Z).into(),
-			scale: (0.1, 0.4, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (-0.6, 0.2, BUILDING_Z).into(),
-			scale: (0.1, 0.2, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (-0.35, 0.3, BUILDING_Z).into(),
-			scale: (0.13, 0.3, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 17,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		
-		self.game_objects.push(GameObject { 
-			position: (-0.18, 0.5, BUILDING_Z).into(),
-			scale: (0.1, 0.5, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.0, 0.1, BUILDING_Z).into(),
-			scale: (0.11, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 17,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.2, 0.3, BUILDING_Z).into(),
-			scale: (0.1, 0.3, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 17,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.4, 0.2, BUILDING_Z).into(),
-			scale: (0.13, 0.2, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.65, 0.3, BUILDING_Z).into(),
-			scale: (0.09, 0.3, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.85, 0.7, BUILDING_Z).into(),
-			scale: (0.12, 0.7, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 16,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
+		let mut x = -1.9;
+		while x < 1.9 {
+			let building_width = game_random_f32!(0.12, 0.20);
+			let building_height = game_random_f32!(0.25, 0.5);
+			self.game_objects.push(GameObject { 
+				position: (x, building_height, BUILDING_Z - (building_height * 3.0)).into(),
+				scale: (building_width, building_height, 1.0).into(),
+				direction: (1.0, 0.0, 0.0).into(),
+				velocity: (0.0, 0.0, 0.0).into(),
+				object_type: GameObjectType::Background,
+				object_state: GameObjectState::Idle,
+				next_attack_time: 0.0,
+				texture_index: 1,
+				sprite_index: game_random_u32!(32, 39) as i32,
+				anim_frame: 0,
+				life_start_time: Instant::now(),
+				state_start_time: Instant::now(),
+				gravity_scale: 0.0,
+				random_val: game_random_f32!(0.0, 1000.0),
+				is_enemy: false
+			});
+			x = x + game_random_f32!(0.2, 0.3);
+		}
 
 		// Trees
+		let mut x = -1.9;
+		while x < 1.9 {
+			let tree_width = game_random_f32!(0.05, 0.11);
+			let tree_height = game_random_f32!(0.13, 0.2);
+			self.game_objects.push(GameObject { 
+				position: (x, tree_height, BUILDING_Z + 1.0).into(),
+				scale: (tree_width, tree_height, 1.0).into(),
+				direction: (1.0, 0.0, 0.0).into(),
+				velocity: (0.0, 0.0, 0.0).into(),
+				object_type: GameObjectType::Background,
+				object_state: GameObjectState::Idle,
+				next_attack_time: 0.0,
+				texture_index: 1,
+				sprite_index: game_random_u32!(23, 24) as i32,
+				anim_frame: 0,
+				life_start_time: Instant::now(),
+				state_start_time: Instant::now(),
+				gravity_scale: 0.0,
+				random_val: game_random_f32!(0.0, 1000.0),
+				is_enemy: false
+			});
+			x = x + game_random_f32!(0.12, 0.19);
+		}
+		// Roads
 		self.game_objects.push(GameObject { 
-			position: (-0.95, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 23,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (-0.6, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 23,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (-0.3, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 24,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		self.game_objects.push(GameObject { 
-			position: (0.05, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 24,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.15, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 24,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.55, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 23,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.85, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 23,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.95, 0.1, BUILDING_Z + 1.0).into(),
-			scale: (0.07, 0.1, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 24,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.5, -0.5, BUILDING_Z + 2.0).into(),
-			scale: (0.5, 0.5, 1.0).into(),
+			position: (1.0, -0.5, BUILDING_Z + 2.0).into(),
+			scale: (1.0, 0.5, 1.0).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
 			object_type: GameObjectType::Background,
@@ -671,8 +416,8 @@ impl GameEngine {
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
-			position: (-0.5, -0.5, BUILDING_Z + 2.0).into(),
-			scale: (0.5, 0.5, 1.0).into(),
+			position: (-1.0, -0.5, BUILDING_Z + 2.0).into(),
+			scale: (1.0, 0.5, 1.0).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
 			object_type: GameObjectType::Background,
