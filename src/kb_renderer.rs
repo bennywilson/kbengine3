@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 use cgmath::Vector3;
-use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, kb_pipeline::*, log, PERF_SCOPE};
 
 #[allow(dead_code)]
 pub struct KbDeviceResources<'a> {
@@ -13,18 +13,10 @@ pub struct KbDeviceResources<'a> {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    num_indices: usize,
     render_textures: Vec<KbTexture>,
     depth_textures: Vec<KbTexture>,
-    sprite_resources: KbSpriteResources,
-  ///  pub sprite_uniform: SpriteUniform,
-    //model_constant_buffer: wgpu::Buffer,
-   // model_bind_group: wgpu::BindGroup,
-    postprocess_pipeline: wgpu::RenderPipeline,
-    postprocess_uniform: PostProcessUniform,
-    postprocess_constant_buffer: wgpu::Buffer,
-    postprocess_uniform_bind_group: wgpu::BindGroup,
-    postprocess_bind_group: wgpu::BindGroup,
+    sprite_pipeline: KbSpritePipeline,
+    postprocess_pipeline: KbPostprocessPipeline,
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
     pub max_instances: u32,
@@ -140,150 +132,9 @@ impl<'a> KbDeviceResources<'a> {
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
  
-                
-        // Post Process Pipeline
-        let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
-        });
-        
-        let postprocess_uniform = PostProcessUniform {
-            ..Default::default()
-        };
 
-        let postprocess_constant_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("postprocess_constant_buffer"),
-                contents: bytemuck::cast_slice(&[postprocess_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let postprocess_uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }
-            ],
-            label: Some("postprocess_uniform_bind_group_layout"),
-        });
-
-
-        let postprocess_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &postprocess_uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: postprocess_constant_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("postprocess_bind_group"),
-        });
-
-        let postprocess_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("postprocess_bind_group_layout"),
-        });
-
-        let postprocess_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("postprocess_pipeline_layout"),
-            bind_group_layouts: &[&postprocess_bind_group_layout, &postprocess_uniform_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let postprocess_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("postprocess_pipeline"),
-            layout: Some(&postprocess_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &postprocess_shader,
-                entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &postprocess_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState { 
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-           primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
-                        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
-        let postprocess_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &postprocess_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&render_textures[0].view),
-                    },
-                ],
-                label: Some("postprocess_bind_group"),
-            }
-        );
-        let sprite_resources = KbSpriteResources::new(&device, &queue, &surface_config);
+        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
 
 	    KbDeviceResources {
             surface_config,
@@ -291,18 +142,10 @@ impl<'a> KbDeviceResources<'a> {
             adapter,
             device,
             queue,
-            num_indices: 6,
             render_textures,
             depth_textures,
-            //sprite_uniform,
-           // model_constant_buffer,
-           // model_bind_group,
+            sprite_pipeline,
             postprocess_pipeline,
-            postprocess_uniform,
-            postprocess_constant_buffer,
-            postprocess_uniform_bind_group,
-            postprocess_bind_group,
-            sprite_resources,
             instance_buffer,
             brush,
             max_instances
@@ -455,8 +298,8 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        let sprite_resources = &mut device_resources.sprite_resources;
-        device_resources.queue.write_buffer(&sprite_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[sprite_resources.sprite_uniform]));
+        let sprite_pipeline = &mut device_resources.sprite_pipeline;
+        device_resources.queue.write_buffer(&sprite_pipeline.model_constant_buffer, 0, bytemuck::cast_slice(&[sprite_pipeline.sprite_uniform]));
   
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -474,29 +317,29 @@ impl<'a> KbRenderer<'a> {
         });
 
         if matches!(pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&sprite_resources.opaque_render_pipeline);
+            render_pass.set_pipeline(&sprite_pipeline.opaque_render_pipeline);
         } else {
-            render_pass.set_pipeline(&sprite_resources.transparent_render_pipeline);
+            render_pass.set_pipeline(&sprite_pipeline.transparent_render_pipeline);
         }
 
-        sprite_resources.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
-        sprite_resources.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        sprite_pipeline.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
+        sprite_pipeline.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
-            sprite_resources.sprite_uniform.time[1] = 1.0 / 2.2;
+            sprite_pipeline.sprite_uniform.time[1] = 1.0 / 2.2;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            sprite_resources.sprite_uniform.time[1] = 1.0;
+            sprite_pipeline.sprite_uniform.time[1] = 1.0;
         }
 
-        render_pass.set_bind_group(0, &sprite_resources.tex_bind_group, &[]);
-        render_pass.set_bind_group(1, &sprite_resources.model_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, sprite_resources.vertex_buffer.slice(..));
+        render_pass.set_bind_group(0, &sprite_pipeline.tex_bind_group, &[]);
+        render_pass.set_bind_group(1, &sprite_pipeline.model_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(sprite_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }
     
@@ -524,15 +367,16 @@ impl<'a> KbRenderer<'a> {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&device_resources.postprocess_pipeline);
-        render_pass.set_bind_group(0, &device_resources.postprocess_bind_group, &[]);
-        render_pass.set_bind_group(1, &device_resources.postprocess_uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, device_resources.sprite_resources.vertex_buffer.slice(..));
+        let postprocess_pipeline = &mut device_resources.postprocess_pipeline;
+        render_pass.set_pipeline(&postprocess_pipeline.postprocess_pipeline);
+        render_pass.set_bind_group(0, &postprocess_pipeline.postprocess_bind_group, &[]);
+        render_pass.set_bind_group(1, &postprocess_pipeline.postprocess_uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, device_resources.sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(device_resources.sprite_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(device_resources.sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        device_resources.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
-        device_resources.postprocess_uniform.time_mode_unused_unused[1] = {
+        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
+        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[1] = {
             match self.postprocess_mode {
                 KbPostProcessMode::Desaturation => { 1.0 }
                 KbPostProcessMode::ScanLines => { 2.0 }
@@ -541,7 +385,7 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        device_resources.queue.write_buffer(&device_resources.sprite_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.postprocess_uniform]));
+        device_resources.queue.write_buffer(&postprocess_pipeline.postprocess_constant_buffer, 0, bytemuck::cast_slice(&[postprocess_pipeline.postprocess_uniform]));
 
         render_pass.draw_indexed(0..6, 0, 0..1); 
     }
