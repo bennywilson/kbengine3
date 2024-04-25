@@ -4,10 +4,10 @@ use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 use cgmath::Vector3;
-use crate::{game_resource::*, game_object::*, GameConfig, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, log, PERF_SCOPE};
 
 #[allow(dead_code)]
-pub struct DeviceResources<'a> {
+pub struct KbDeviceResources<'a> {
     surface: wgpu::Surface<'a>,
     surface_config: wgpu::SurfaceConfiguration,
     adapter: wgpu::Adapter,
@@ -21,9 +21,10 @@ pub struct DeviceResources<'a> {
     num_vertices: usize,
     num_indices: usize,
     bind_groups: Vec<wgpu::BindGroup>,
-    textures: Vec<GameTexture>,
-    render_textures: Vec<GameTexture>,
-    pub model_uniform: ModelUniform,
+    textures: Vec<KbTexture>,
+    render_textures: Vec<KbTexture>,
+    depth_textures: Vec<KbTexture>,
+    pub sprite_uniform: SpriteUniform,
     model_constant_buffer: wgpu::Buffer,
     model_bind_group: wgpu::BindGroup,
     postprocess_uniform: PostProcessUniform,
@@ -35,13 +36,13 @@ pub struct DeviceResources<'a> {
 }
 
 #[allow(dead_code)]
-pub enum RenderPassType {
+pub enum KbRenderPassType {
     Opaque,
     Transparent,
     PostProcess,
 }
 
-pub enum PostProcessMode {
+pub enum KbPostProcessMode {
     Passthrough,
     Desaturation,
     ScanLines,
@@ -49,29 +50,30 @@ pub enum PostProcessMode {
 }
 
 #[allow(dead_code)] 
-pub struct GameRenderer<'a> {
-    device_resources: Option<DeviceResources<'a>>,
+pub struct KbRenderer<'a> {
+    device_resources: Option<KbDeviceResources<'a>>,
     pub size: winit::dpi::PhysicalSize<u32>,
-    postprocess_mode: PostProcessMode,
+    postprocess_mode: KbPostProcessMode,
     start_time: Instant,
     frame_times: Vec<f32>,
     frame_timer: Instant,
     frame_count: u32,
-    game_config: GameConfig,
+    game_config: KbConfig,
     window_id: winit::window::WindowId,
 }
 
-impl<'a> DeviceResources<'a> {
+impl<'a> KbDeviceResources<'a> {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
 		if new_size.width > 0 && new_size.height > 0 {
 			self.surface_config.width = new_size.width;
 			self.surface_config.height = new_size.height;
 			self.surface.configure(&self.device, &self.surface_config);
+       //     drop(self.depth_textures[0]);
+            self.depth_textures[0] = KbTexture::new_depth_texture(&self.device, &self.surface_config);
 		}
     }
 
-     pub async fn new(window: Arc::<winit::window::Window>, game_config: &GameConfig) -> Self {
-        
+     pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("Creating instance");
         
         // Instance + Surface
@@ -87,7 +89,7 @@ impl<'a> DeviceResources<'a> {
         // Adapter
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: game_config.graphics_power_pref,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -154,10 +156,10 @@ impl<'a> DeviceResources<'a> {
        
         let mut bind_groups = Vec::<wgpu::BindGroup>::new();
         let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let sprite_sheet_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+        let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
         let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
-        let postprocess_texture = GameTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
+        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
 
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -222,8 +224,12 @@ impl<'a> DeviceResources<'a> {
             depth_or_array_layers: 1,
         };
 
-        let mut render_textures = Vec::<GameTexture>::new();
-        let render_texture = GameTexture::new_render_texture(&device, surface_format, size).unwrap();
+        let mut depth_textures = Vec::<KbTexture>::new();
+        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config);
+        depth_textures.push(depth_texture);
+
+        let mut render_textures = Vec::<KbTexture>::new();
+        let render_texture = KbTexture::new_render_texture(&device, surface_format, size).unwrap();
         render_textures.push(render_texture);
 
         let postprocess_bind_group = device.create_bind_group(
@@ -248,7 +254,7 @@ impl<'a> DeviceResources<'a> {
         );
         bind_groups.push(postprocess_bind_group);
 
-        let mut textures = Vec::<GameTexture>::new();
+        let mut textures = Vec::<KbTexture>::new();
         textures.push(postprocess_texture);
 
         log!("Creating Shader");
@@ -260,14 +266,14 @@ impl<'a> DeviceResources<'a> {
         });
         
         // Model Buffer
-        let model_uniform = ModelUniform {
+        let sprite_uniform = SpriteUniform {
             ..Default::default()
         };
 
         let model_constant_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Model Constant Buffer"),
-                contents: bytemuck::cast_slice(&[model_uniform]),
+                contents: bytemuck::cast_slice(&[sprite_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -314,7 +320,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), DrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -334,7 +340,13 @@ impl<'a> DeviceResources<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -354,7 +366,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &transparent_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), DrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &transparent_shader,
@@ -374,7 +386,13 @@ impl<'a> DeviceResources<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -441,7 +459,7 @@ impl<'a> DeviceResources<'a> {
             vertex: wgpu::VertexState {
                 module: &postprocess_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), DrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &postprocess_shader,
@@ -489,7 +507,7 @@ impl<'a> DeviceResources<'a> {
             }
         );
 
-        let empty_instance = DrawInstance {
+        let empty_instance = KbDrawInstance {
             pos_scale: [0.0, 0.0, 0.0, 0.0],
             uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
             per_instance_data: [0.0, 0.0, 0.0, 0.0],
@@ -510,7 +528,7 @@ impl<'a> DeviceResources<'a> {
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
  
-	    DeviceResources {
+	    KbDeviceResources {
             surface_config,
             surface,
             adapter,
@@ -526,7 +544,8 @@ impl<'a> DeviceResources<'a> {
             bind_groups,
             textures,
             render_textures,
-            model_uniform,
+            depth_textures,
+            sprite_uniform,
             model_constant_buffer,
             model_bind_group,
             postprocess_uniform,
@@ -539,16 +558,16 @@ impl<'a> DeviceResources<'a> {
     }
 }
 
-impl<'a> GameRenderer<'a> {
+impl<'a> KbRenderer<'a> {
 
-    pub fn new(window: Arc<winit::window::Window>, game_config: GameConfig) -> Self {
+    pub fn new(window: Arc<winit::window::Window>, game_config: KbConfig) -> Self {
         log!("GameRenderer::new() called...");
 
-        GameRenderer {
+        KbRenderer {
             device_resources: None,
             size: window.inner_size(),
             start_time: Instant::now(),
-            postprocess_mode: PostProcessMode::Passthrough,
+            postprocess_mode: KbPostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
             frame_count: 0,
@@ -563,8 +582,7 @@ impl<'a> GameRenderer<'a> {
         match &self.device_resources {
             Some(_) => {}
             None => {
-                self.device_resources = Some(DeviceResources::new(window, &self.game_config).await);
-
+                self.device_resources = Some(KbDeviceResources::new(window, &self.game_config).await);
             }
         }
 
@@ -626,9 +644,9 @@ impl<'a> GameRenderer<'a> {
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
 
-    pub fn render_pass(&mut self, pass_type: RenderPassType, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
+    pub fn render_pass(&mut self, pass_type: KbRenderPassType, encoder: &mut wgpu::CommandEncoder, should_clear: bool, game_objects: &Vec<GameObject>) {
         let device_resources = &mut self.device_resources.as_mut().unwrap();
-        let mut frame_instances = Vec::<DrawInstance>::new();
+        let mut frame_instances = Vec::<KbDrawInstance>::new();
 
         // Create instances
         let u_scale = 1.0 / 8.0;
@@ -648,7 +666,7 @@ impl<'a> GameRenderer<'a> {
                 u_offset = u_offset + u_scale;
             }
 
-            let new_instance = DrawInstance {
+            let new_instance = KbDrawInstance {
                 pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
                 uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
                 per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
@@ -685,32 +703,40 @@ impl<'a> GameRenderer<'a> {
             }
         };
 
-        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.model_uniform]));
+        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.sprite_uniform]));
   
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[color_attachment],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &device_resources.depth_textures[0].view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             occlusion_query_set: None,
             timestamp_writes: None,
         });
 
-        if matches!(pass_type, RenderPassType::Opaque) {
+        if matches!(pass_type, KbRenderPassType::Opaque) {
             render_pass.set_pipeline(&device_resources.opaque_render_pipeline);
         } else {
             render_pass.set_pipeline(&device_resources.transparent_render_pipeline);
         }
 
-        device_resources.model_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        device_resources.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
+        device_resources.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
-            device_resources.model_uniform.time[1] = 1.0 / 2.2;
+            device_resources.sprite_uniform.time[1] = 1.0 / 2.2;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            device_resources.model_uniform.time[1] = 1.0;
+            device_resources.sprite_uniform.time[1] = 1.0;
         }
 
         render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
@@ -721,7 +747,7 @@ impl<'a> GameRenderer<'a> {
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }
     
-    pub fn set_postprocess_mode(&mut self, postprocess_mode: PostProcessMode) {
+    pub fn set_postprocess_mode(&mut self, postprocess_mode: KbPostProcessMode) { 
         self.postprocess_mode = postprocess_mode;
     }
 
@@ -755,9 +781,9 @@ impl<'a> GameRenderer<'a> {
         device_resources.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
         device_resources.postprocess_uniform.time_mode_unused_unused[1] = {
             match self.postprocess_mode {
-                PostProcessMode::Desaturation => { 1.0 }
-                PostProcessMode::ScanLines => { 2.0 }
-                PostProcessMode::Warp => { 3.0 }
+                KbPostProcessMode::Desaturation => { 1.0 }
+                KbPostProcessMode::ScanLines => { 2.0 }
+                KbPostProcessMode::Warp => { 3.0 }
                 _ => { 0.0 }
             }
         };
@@ -838,21 +864,21 @@ impl<'a> GameRenderer<'a> {
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
             let mut command_encoder = self.get_encoder("Skybox Pass");
-            self.render_pass(RenderPassType::Opaque, &mut command_encoder, true, &skybox_render_objs);
+            self.render_pass(KbRenderPassType::Opaque, &mut command_encoder, true, &skybox_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("Skybox Pass (Transparent)");
             let mut command_encoder = self.get_encoder("Transparent");
-            self.render_pass(RenderPassType::Transparent, &mut command_encoder, false, &cloud_render_objs);
+            self.render_pass(KbRenderPassType::Transparent, &mut command_encoder, false, &cloud_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("World Objects Pass");
             let mut command_encoder = self.get_encoder("World Object");
-            self.render_pass(RenderPassType::Opaque, &mut command_encoder, false, &game_render_objs);
+            self.render_pass(KbRenderPassType::Opaque, &mut command_encoder, false, &game_render_objs);
             self.submit_encoder(command_encoder);
         }
 
@@ -877,6 +903,8 @@ impl<'a> GameRenderer<'a> {
     pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         let device_resources = &mut self.device_resources.as_mut().unwrap();
         device_resources.resize(size);
+        self.game_config.window_width = size.width;
+        self.game_config.window_height = size.height;
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

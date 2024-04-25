@@ -1,5 +1,5 @@
 #[derive(Clone)]
-pub struct GameConfig {
+pub struct KbConfig {
 	pub enemy_spawn_delay: f32,
 	pub enemy_move_speed: f32,
 	pub max_render_instances: u32,
@@ -10,7 +10,7 @@ pub struct GameConfig {
 	pub vsync: bool,
 }
 
-impl GameConfig {
+impl KbConfig {
     pub fn new() -> Self {
 		let config_file_text = include_str!("../game_assets/game_config.txt");
 
@@ -77,7 +77,7 @@ impl GameConfig {
 			None => { true }
 		};
 
-        GameConfig {
+        KbConfig {
             enemy_spawn_delay,
             enemy_move_speed,
             max_render_instances,
