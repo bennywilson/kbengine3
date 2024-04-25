@@ -5,13 +5,14 @@ use winit::{
     window::WindowBuilder,
 };
 
-mod kb_resource;
-mod kb_object;
-mod kb_renderer;
+mod kb_config;
 mod kb_engine;
 mod kb_input;
-mod kb_config;
 mod kb_log;
+mod kb_object;
+mod kb_pipeline;
+mod kb_renderer;
+mod kb_resource;
 mod kb_utils;
 
 use crate::kb_engine::KbEngine;

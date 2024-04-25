@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
 use ab_glyph::FontRef;
 use cgmath::Vector3;
-use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, kb_pipeline::*, log, PERF_SCOPE};
 
 #[allow(dead_code)]
 pub struct KbDeviceResources<'a> {
@@ -13,23 +13,10 @@ pub struct KbDeviceResources<'a> {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    opaque_render_pipeline: wgpu::RenderPipeline,
-    transparent_render_pipeline: wgpu::RenderPipeline,
-    postprocess_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_vertices: usize,
-    num_indices: usize,
-    bind_groups: Vec<wgpu::BindGroup>,
-    textures: Vec<KbTexture>,
     render_textures: Vec<KbTexture>,
     depth_textures: Vec<KbTexture>,
-    pub sprite_uniform: SpriteUniform,
-    model_constant_buffer: wgpu::Buffer,
-    model_bind_group: wgpu::BindGroup,
-    postprocess_uniform: PostProcessUniform,
-    postprocess_constant_buffer: wgpu::Buffer,
-    postprocess_uniform_bind_group: wgpu::BindGroup,
+    sprite_pipeline: KbSpritePipeline,
+    postprocess_pipeline: KbPostprocessPipeline,
     instance_buffer: wgpu::Buffer,
     brush: TextBrush<FontRef<'a>>,
     pub max_instances: u32,
@@ -68,8 +55,8 @@ impl<'a> KbDeviceResources<'a> {
 			self.surface_config.width = new_size.width;
 			self.surface_config.height = new_size.height;
 			self.surface.configure(&self.device, &self.surface_config);
-       //     drop(self.depth_textures[0]);
             self.depth_textures[0] = KbTexture::new_depth_texture(&self.device, &self.surface_config);
+            // todo: resize other render targets
 		}
     }
 
@@ -111,403 +98,12 @@ impl<'a> KbDeviceResources<'a> {
             None, // Trace path
         ).await.unwrap();
 
-		let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats[0];
-        let size = window.inner_size();
         let surface_config = surface.get_default_config(&adapter, game_config.window_width, game_config.window_height).unwrap();
-        
         surface.configure(&device, &surface_config);
 
         log!("Loading Texture");
 
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("sprite_sheet_bind_group_layout"),
-        });
-       
-        let mut bind_groups = Vec::<wgpu::BindGroup>::new();
-        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
-
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
-
-        let tex_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
-                    },
-                ],
-                label: Some("sprite_sheet_bind_group"),
-            }
-        );
-        bind_groups.push(tex_bind_group);
-
-        let postprocess_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("postprocess_bind_group_layout"),
-        });
-
-        // Post process bind group
-        let size = wgpu::Extent3d {
-            width: window.inner_size().width,
-            height: window.inner_size().height,
-            depth_or_array_layers: 1,
-        };
-
-        let mut depth_textures = Vec::<KbTexture>::new();
-        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config);
-        depth_textures.push(depth_texture);
-
-        let mut render_textures = Vec::<KbTexture>::new();
-        let render_texture = KbTexture::new_render_texture(&device, surface_format, size).unwrap();
-        render_textures.push(render_texture);
-
-        let postprocess_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &postprocess_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&render_textures[0].view),
-                    },
-                ],
-                label: Some("postprocess_bind_group"),
-            }
-        );
-        bind_groups.push(postprocess_bind_group);
-
-        let mut textures = Vec::<KbTexture>::new();
-        textures.push(postprocess_texture);
-
-        log!("Creating Shader");
-
-        // Create shader
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BasicSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
-        });
-        
-        // Model Buffer
-        let sprite_uniform = SpriteUniform {
-            ..Default::default()
-        };
-
-        let model_constant_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Model Constant Buffer"),
-                contents: bytemuck::cast_slice(&[sprite_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let model_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }
-            ],
-            label: Some("model_bind_group_layout"),
-        });
-
-        let model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &model_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_constant_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("model_bind_group"),
-        });
-
-        log!("Creating Pipeline");
-
-        // Render pipeline
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &model_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let opaque_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState { 
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-           primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
-
-        let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("CloudSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/CloudSprite.wgsl").into()),
-        });
-
-        let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &transparent_shader,
-                entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &transparent_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState { 
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-           primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        
-        });
-
-        // Post Process Pipeline
-        let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
-        });
-        
-        let postprocess_uniform = PostProcessUniform {
-            ..Default::default()
-        };
-
-        let postprocess_constant_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("postprocess_constant_buffer"),
-                contents: bytemuck::cast_slice(&[postprocess_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let postprocess_uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }
-            ],
-            label: Some("postprocess_uniform_bind_group_layout"),
-        });
-
-        let postprocess_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &postprocess_uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_constant_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("postprocess_bind_group"),
-        });
-
-        let postprocess_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("postprocess_pipeline_layout"),
-            bind_group_layouts: &[&postprocess_bind_group_layout, &postprocess_uniform_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let postprocess_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("postprocess_pipeline"),
-            layout: Some(&postprocess_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &postprocess_shader,
-                entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &postprocess_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState { 
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-           primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
-
-        log!("Vertex/Index Buffers");
-
-        // Vertex/Index buffer
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-            }
-        );
-
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
-            }
-        );
-
-        let empty_instance = KbDrawInstance {
+         let empty_instance = KbDrawInstance {
             pos_scale: [0.0, 0.0, 0.0, 0.0],
             uv_scale_bias: [0.0, 0.0, 0.0, 0.0],
             per_instance_data: [0.0, 0.0, 0.0, 0.0],
@@ -523,34 +119,33 @@ impl<'a> KbDeviceResources<'a> {
             }
         );
 
+        let mut render_textures = Vec::<KbTexture>::new();
+        let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+        render_textures.push(render_texture);
+
+        let mut depth_textures = Vec::<KbTexture>::new();
+        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config);
+        depth_textures.push(depth_texture);
+
         log!("Creating Font");
 
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
  
+
+        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
+
 	    KbDeviceResources {
             surface_config,
             surface,
             adapter,
             device,
             queue,
-            opaque_render_pipeline,
-            transparent_render_pipeline,
-            postprocess_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_vertices: 3,
-            num_indices: 6,
-            bind_groups,
-            textures,
             render_textures,
             depth_textures,
-            sprite_uniform,
-            model_constant_buffer,
-            model_bind_group,
-            postprocess_uniform,
-            postprocess_constant_buffer,
-            postprocess_uniform_bind_group,
+            sprite_pipeline,
+            postprocess_pipeline,
             instance_buffer,
             brush,
             max_instances
@@ -703,7 +298,8 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.sprite_uniform]));
+        let sprite_pipeline = &mut device_resources.sprite_pipeline;
+        device_resources.queue.write_buffer(&sprite_pipeline.uniform_buffer, 0, bytemuck::cast_slice(&[sprite_pipeline.uniform]));
   
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -721,29 +317,29 @@ impl<'a> KbRenderer<'a> {
         });
 
         if matches!(pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&device_resources.opaque_render_pipeline);
+            render_pass.set_pipeline(&sprite_pipeline.opaque_render_pipeline);
         } else {
-            render_pass.set_pipeline(&device_resources.transparent_render_pipeline);
+            render_pass.set_pipeline(&sprite_pipeline.transparent_render_pipeline);
         }
 
-        device_resources.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
-        device_resources.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        sprite_pipeline.uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
+        sprite_pipeline.uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
-            device_resources.sprite_uniform.time[1] = 1.0 / 2.2;
+            sprite_pipeline.sprite_uniform.time[1] = 1.0 / 2.2;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            device_resources.sprite_uniform.time[1] = 1.0;
+            sprite_pipeline.uniform.time[1] = 1.0;
         }
 
-        render_pass.set_bind_group(0, &device_resources.bind_groups[0], &[]);
-        render_pass.set_bind_group(1, &device_resources.model_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
+        render_pass.set_bind_group(0, &sprite_pipeline.tex_bind_group, &[]);
+        render_pass.set_bind_group(1, &sprite_pipeline.uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }
     
@@ -771,15 +367,16 @@ impl<'a> KbRenderer<'a> {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&device_resources.postprocess_pipeline);
-        render_pass.set_bind_group(0, &device_resources.bind_groups[1], &[]);
-        render_pass.set_bind_group(1, &device_resources.postprocess_uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, device_resources.vertex_buffer.slice(..));
+        let postprocess_pipeline = &mut device_resources.postprocess_pipeline;
+        render_pass.set_pipeline(&postprocess_pipeline.postprocess_pipeline);
+        render_pass.set_bind_group(0, &postprocess_pipeline.postprocess_bind_group, &[]);
+        render_pass.set_bind_group(1, &postprocess_pipeline.postprocess_uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, device_resources.sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(device_resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(device_resources.sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        device_resources.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
-        device_resources.postprocess_uniform.time_mode_unused_unused[1] = {
+        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
+        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[1] = {
             match self.postprocess_mode {
                 KbPostProcessMode::Desaturation => { 1.0 }
                 KbPostProcessMode::ScanLines => { 2.0 }
@@ -788,7 +385,7 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        device_resources.queue.write_buffer(&device_resources.model_constant_buffer, 0, bytemuck::cast_slice(&[device_resources.postprocess_uniform]));
+        device_resources.queue.write_buffer(&postprocess_pipeline.postprocess_constant_buffer, 0, bytemuck::cast_slice(&[postprocess_pipeline.postprocess_uniform]));
 
         render_pass.draw_indexed(0..6, 0, 0..1); 
     }
