@@ -1,13 +1,15 @@
+use cgmath::Vector3;
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, 
           SamplerBindingType, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 
-use crate::{kb_resource::*, log};
+use crate::{kb_config::KbConfig, kb_object::GameObject, kb_resource::*, log, PERF_SCOPE};
 
 pub struct KbSpritePipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,
     pub transparent_render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
     pub uniform: SpriteUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
@@ -15,7 +17,9 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration) -> Self {
+    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration, game_config: &KbConfig) -> Self {
+        log!("Creating KbSpritePipeline...");
+
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -78,7 +82,7 @@ impl KbSpritePipeline {
         let mut textures = Vec::<KbTexture>::new();
         textures.push(postprocess_texture);
 
-        log!("Creating Shader");
+        log!("  Creating shader");
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -126,7 +130,7 @@ impl KbSpritePipeline {
             label: Some("model_bind_group"),
         });
 
-        log!("Creating Pipeline");
+        log!("  Creating pipeline");
 
         // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -223,7 +227,7 @@ impl KbSpritePipeline {
         
         });
 
-        log!("Vertex/Index Buffers");
+        log!("  Creating vertex/index buffers");
 
         // Vertex/Index buffer
         let vertex_buffer = device.create_buffer_init(
@@ -242,16 +246,132 @@ impl KbSpritePipeline {
             }
         );
 
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (std::mem::size_of::<KbDrawInstance>() * game_config.max_render_instances as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
+
         KbSpritePipeline {
             opaque_render_pipeline,
             transparent_render_pipeline,
             vertex_buffer,
             index_buffer,
+            instance_buffer,
             uniform,
             uniform_buffer,
             uniform_bind_group,
             tex_bind_group,
         }
+    }
+
+    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) -> wgpu::CommandEncoder {
+		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some("KbSpritePipeline::render()"),
+		});
+
+        let mut frame_instances = Vec::<KbDrawInstance>::new();
+
+        // Create instances
+        let u_scale = 1.0 / 8.0;
+        let v_scale = 1.0 / 8.0;
+        let extra_scale = 1.0;
+        let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
+
+        let game_object_iter = game_objects.iter();
+        for game_object in game_object_iter {
+            PERF_SCOPE!("Creating instances");
+            let game_object_position = game_object.position + extra_offset;
+            let sprite_index = game_object.sprite_index + game_object.anim_frame;
+            let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
+            let v_offset = ((sprite_index / 8) as f32) * v_scale;
+            let mul = if game_object.direction.x > 0.0 { 1.0 } else { -1.0 };
+            if mul < 0.0 {
+                u_offset = u_offset + u_scale;
+            }
+
+            let new_instance = KbDrawInstance {
+                pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
+                uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
+                per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
+            };
+            frame_instances.push(new_instance);
+        }
+        
+        let color_attachment = {
+            if should_clear {
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &device_resources.render_textures[0].view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.12,
+                            g: 0.01,
+                            b: 0.35,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            } else {
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &device_resources.render_textures[0].view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            }
+        };
+
+
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &device_resources.render_textures[1].view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+        device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
+
+        if matches!(render_pass_type, KbRenderPassType::Opaque) {
+            render_pass.set_pipeline(&self.opaque_render_pipeline);
+        } else {
+            render_pass.set_pipeline(&self.transparent_render_pipeline);
+        }
+
+        self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
+        self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.uniform.time[1] = 1.0 / 2.2;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.uniform.time[1] = 1.0;
+        }
+
+        render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
+        drop(render_pass);
+        command_encoder
     }
 }
 
@@ -327,8 +447,6 @@ impl KbPostprocessPipeline {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },

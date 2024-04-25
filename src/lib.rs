@@ -18,6 +18,7 @@ mod kb_utils;
 use crate::kb_engine::KbEngine;
 use crate::kb_renderer::KbRenderer;
 use crate::kb_config::KbConfig;
+use crate::kb_resource::KbPostProcessMode;
 
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
@@ -25,7 +26,7 @@ const WEBAPP_CANVAS_ID: &str = "target";
 pub async fn run_game() {
     env_logger::init();
 
-    let game_config = KbConfig::new();
+    let mut game_config = KbConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -54,12 +55,12 @@ pub async fn run_game() {
     let mut game_engine = KbEngine::new(&game_config);
     game_engine.initialize_world();
     
-    let mut game_renderer = KbRenderer::new(window.clone(), game_config.clone());
+    let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
 
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::EventLoopExtWebSys;
-        game_renderer.init_renderer(window.clone()).await;
+      //  game_renderer.init_renderer(window.clone()).await;
 	    let _ = event_loop.spawn(move |event, control_flow| {
             let _ = &mut game_renderer;
             let _ = &game_config;
@@ -73,10 +74,10 @@ pub async fn run_game() {
                     match event {
                         WindowEvent::RedrawRequested => {
                             game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects);
+                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
                             match render_result {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
+                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -84,14 +85,20 @@ pub async fn run_game() {
         
                         WindowEvent::CloseRequested => { control_flow.exit() }
 
-                        WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
+                        WindowEvent::Resized(physical_size) => {
+                            if physical_size.width > 0 && physical_size.height > 0 {
+                                game_config.window_width = physical_size.width;
+                                game_config.window_height = physical_size.height;
+                                game_renderer.resize(&game_config);
+                            }
+                        }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Warp); }
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Warp); }
                         }
                         _ => { }
                     }
@@ -108,7 +115,7 @@ pub async fn run_game() {
     {
         let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
 
-        game_renderer.init_renderer(window.clone()).await;
+//        game_renderer.init_renderer(window.clone(), &game_config).await;
 	    let _ = event_loop.run( |event, control_flow| {
 
             match event {
@@ -121,10 +128,10 @@ pub async fn run_game() {
                     match event {
                         WindowEvent::RedrawRequested => {
                             game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects);
+                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
                             match render_result {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
+                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -132,15 +139,21 @@ pub async fn run_game() {
         
                         WindowEvent::CloseRequested => { control_flow.exit() }
 
-                        WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
+                        WindowEvent::Resized(physical_size) => {
+                            if physical_size.width > 0 && physical_size.height > 0 {
+                                game_config.window_width = physical_size.width;
+                                game_config.window_height = physical_size.height;
+                                game_renderer.resize(&game_config);
+                            }
+                        }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
 
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Warp); }
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Warp); }
                         }
                         _ => { }
                     }

@@ -1,5 +1,6 @@
 #[derive(Clone)]
 pub struct KbConfig {
+	// From file
 	pub enemy_spawn_delay: f32,
 	pub enemy_move_speed: f32,
 	pub max_render_instances: u32,
@@ -8,6 +9,9 @@ pub struct KbConfig {
 	pub graphics_backend: wgpu::Backends,
 	pub graphics_power_pref: wgpu::PowerPreference,
 	pub _vsync: bool,
+
+	//
+	pub start_time: instant::Instant
 }
 
 impl KbConfig {
@@ -86,6 +90,7 @@ impl KbConfig {
             graphics_backend,
             graphics_power_pref,
 			_vsync,
+			start_time: instant::Instant::now()
         }
     }
 }
