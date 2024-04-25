@@ -1,14 +1,15 @@
 use cgmath::Vector3;
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, 
-          SamplerBindingType, TextureSampleType, TextureViewDimension, Queue, RenderPass, util::DeviceExt};
+          SamplerBindingType, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 
-use crate::{kb_object::GameObject, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_object::GameObject, kb_resource::*, log, PERF_SCOPE};
 
 pub struct KbSpritePipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,
     pub transparent_render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
     pub uniform: SpriteUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
@@ -16,7 +17,7 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration) -> Self {
+    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration, game_config: &KbConfig) -> Self {
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -243,11 +244,20 @@ impl KbSpritePipeline {
             }
         );
 
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (std::mem::size_of::<KbDrawInstance>() * game_config.max_render_instances as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
+
         KbSpritePipeline {
             opaque_render_pipeline,
             transparent_render_pipeline,
             vertex_buffer,
             index_buffer,
+            instance_buffer,
             uniform,
             uniform_buffer,
             uniform_bind_group,
@@ -255,7 +265,7 @@ impl KbSpritePipeline {
         }
     }
 
-    pub fn render(&mut self, command_encoder: &mut wgpu::CommandEncoder, queue: &mut Queue, window_dim:(u32, u32), views: (&wgpu::TextureView, &wgpu::TextureView), instance_buffer: &wgpu::Buffer, should_clear: bool, start_time: instant::Instant, game_objects: &Vec<GameObject>, render_pass_type: KbRenderPassType) {
+    pub fn render(&mut self, command_encoder: &mut wgpu::CommandEncoder, queue: &mut Queue, game_config: &KbConfig, render_textures: &Vec<KbTexture>, should_clear: bool, game_objects: &Vec<GameObject>, render_pass_type: KbRenderPassType) {
         let mut frame_instances = Vec::<KbDrawInstance>::new();
 
         // Create instances
@@ -287,7 +297,7 @@ impl KbSpritePipeline {
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &views.0,
+                    view: &render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -301,7 +311,7 @@ impl KbSpritePipeline {
                 })
             } else {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &views.0,
+                    view: &render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -316,7 +326,7 @@ impl KbSpritePipeline {
             label: Some("Render Pass"),
             color_attachments: &[color_attachment],
             depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &views.1,
+                view: &render_textures[1].view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -327,8 +337,7 @@ impl KbSpritePipeline {
             timestamp_writes: None,
         });
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
-
+        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
         if matches!(render_pass_type, KbRenderPassType::Opaque) {
             render_pass.set_pipeline(&self.opaque_render_pipeline);
@@ -336,8 +345,8 @@ impl KbSpritePipeline {
             render_pass.set_pipeline(&self.transparent_render_pipeline);
         }
 
-        self.uniform.screen_dimensions = [window_dim.0 as f32, window_dim.1 as f32, (window_dim.1 as f32) / (window_dim.0 as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
-        self.uniform.time[0] = start_time.elapsed().as_secs_f32();
+        self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
+        self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -352,7 +361,7 @@ impl KbSpritePipeline {
         render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
         render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }

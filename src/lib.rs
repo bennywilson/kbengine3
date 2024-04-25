@@ -26,7 +26,7 @@ const WEBAPP_CANVAS_ID: &str = "target";
 pub async fn run_game() {
     env_logger::init();
 
-    let game_config = KbConfig::new();
+    let mut game_config = KbConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -55,7 +55,7 @@ pub async fn run_game() {
     let mut game_engine = KbEngine::new(&game_config);
     game_engine.initialize_world();
     
-    let mut game_renderer = KbRenderer::new(window.clone(), game_config.clone());
+    let mut game_renderer = KbRenderer::new(window.clone(), &game_config);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -109,7 +109,7 @@ pub async fn run_game() {
     {
         let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
 
-        game_renderer.init_renderer(window.clone()).await;
+        game_renderer.init_renderer(window.clone(), &game_config).await;
 	    let _ = event_loop.run( |event, control_flow| {
 
             match event {
@@ -122,10 +122,10 @@ pub async fn run_game() {
                     match event {
                         WindowEvent::RedrawRequested => {
                             game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects);
+                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
                             match render_result {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(game_renderer.size); },
+                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -133,7 +133,13 @@ pub async fn run_game() {
         
                         WindowEvent::CloseRequested => { control_flow.exit() }
 
-                        WindowEvent::Resized(physical_size) => { game_renderer.resize(*physical_size); }
+                        WindowEvent::Resized(physical_size) => {
+                            if physical_size.width > 0 && physical_size.height > 0 {
+                                game_config.window_width = physical_size.width;
+                                game_config.window_height = physical_size.height;
+                                game_renderer.resize(&game_config);
+                            }
+                        }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);

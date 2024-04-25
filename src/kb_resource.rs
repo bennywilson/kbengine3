@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use ab_glyph::FontRef;
 use anyhow::*;
-use cgmath::Vector3;
 use image::GenericImageView;
 use wgpu::SurfaceConfiguration;
-use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
+use wgpu_text::{BrushBuilder, TextBrush};
 
 use crate::{kb_config::KbConfig, kb_pipeline::{KbModelPipeline, KbPostprocessPipeline, KbSpritePipeline}, log};
 
@@ -104,7 +103,7 @@ pub struct KbTexture {
 }
 
 impl KbTexture {
-    pub fn new_depth_texture(device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> Self {
+    pub fn new_depth_texture(device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> Result<Self> {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
@@ -136,11 +135,11 @@ impl KbTexture {
                 ..Default::default()
             }
         );
-        KbTexture {
+        Ok(KbTexture {
             texture,
             view,
             sampler
-        }
+        })
     }
 
     pub fn new_render_texture(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) ->Result<Self> {        
@@ -276,8 +275,7 @@ pub struct KbDeviceResources<'a> {
 
     pub instance_buffer: wgpu::Buffer,
     pub brush: TextBrush<FontRef<'a>>,
-    pub render_textures: Vec<KbTexture>,
-    pub depth_textures: Vec<KbTexture>,
+    pub render_textures: Vec<KbTexture>,    // [0] is color, [1] is depth
 
     pub sprite_pipeline: KbSpritePipeline,
     pub postprocess_pipeline: KbPostprocessPipeline,
@@ -285,19 +283,18 @@ pub struct KbDeviceResources<'a> {
 }
 
 impl<'a> KbDeviceResources<'a> {
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-		if new_size.width > 0 && new_size.height > 0 {
-			self.surface_config.width = new_size.width;
-			self.surface_config.height = new_size.height;
-			self.surface.configure(&self.device, &self.surface_config);
-            self.depth_textures[0] = KbTexture::new_depth_texture(&self.device, &self.surface_config);
-            for texture in &mut self.render_textures {
-                *texture = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
-            }
-            self.sprite_pipeline = KbSpritePipeline::new(&self.device, &self.queue, &self.surface_config);
-            self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device, &self.queue, &self.surface_config, &self.render_textures[0]);
+    pub fn resize(&mut self, game_config: &KbConfig) {
+        assert!(game_config.window_width > 0 && game_config.window_height > 0);
 
-		}
+        self.surface_config.width = game_config.window_width;
+        self.surface_config.height = game_config.window_height;
+        self.surface.configure(&self.device, &self.surface_config);
+
+        self.render_textures[0] = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
+        self.render_textures[1] = KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
+
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device, &self.queue, &self.surface_config, &game_config);
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device, &self.queue, &self.surface_config, &self.render_textures[0]);
     }
 
      pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
@@ -351,16 +348,15 @@ impl<'a> KbDeviceResources<'a> {
         let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
         render_textures.push(render_texture);
 
-        let mut depth_textures = Vec::<KbTexture>::new();
-        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config);
-        depth_textures.push(depth_texture);
+        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config).unwrap();
+        render_textures.push(depth_texture);
 
         log!("Creating Font");
 
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
-        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
+        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
         let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
         let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
 
@@ -373,7 +369,6 @@ impl<'a> KbDeviceResources<'a> {
             instance_buffer,
             brush,
             render_textures,
-            depth_textures,
             sprite_pipeline,
             postprocess_pipeline,
             model_pipeline
