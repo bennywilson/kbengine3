@@ -255,7 +255,7 @@ impl KbSpritePipeline {
         }
     }
 
-    pub fn render<'a>(&'a mut self, render_pass: &'a mut RenderPass<'a>, start_time: instant::Instant, surface_config: &wgpu::SurfaceConfiguration, device_resources: &'a KbDeviceResources<'a>, should_clear: bool, out_view: &wgpu::TextureView, game_objects: &Vec<GameObject>, render_pass_type: KbRenderPassType) {
+    pub fn render(&mut self, command_encoder: &mut wgpu::CommandEncoder, queue: &mut Queue, window_dim:(u32, u32), views: (&wgpu::TextureView, &wgpu::TextureView), instance_buffer: &wgpu::Buffer, should_clear: bool, start_time: instant::Instant, game_objects: &Vec<GameObject>, render_pass_type: KbRenderPassType) {
         let mut frame_instances = Vec::<KbDrawInstance>::new();
 
         // Create instances
@@ -284,12 +284,10 @@ impl KbSpritePipeline {
             frame_instances.push(new_instance);
         }
         
-        device_resources.queue.write_buffer(&device_resources.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
-  
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &out_view,
+                    view: &views.0,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -303,7 +301,7 @@ impl KbSpritePipeline {
                 })
             } else {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &out_view,
+                    view: &views.0,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -313,9 +311,23 @@ impl KbSpritePipeline {
             }
         };
 
-        let queue = &device_resources.queue;
 
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &views.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+        queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
 
         if matches!(render_pass_type, KbRenderPassType::Opaque) {
@@ -324,7 +336,7 @@ impl KbSpritePipeline {
             render_pass.set_pipeline(&self.transparent_render_pipeline);
         }
 
-        self.uniform.screen_dimensions = [surface_config.width as f32, surface_config.height as f32, (surface_config.height as f32) / (surface_config.width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
+        self.uniform.screen_dimensions = [window_dim.0 as f32, window_dim.1 as f32, (window_dim.1 as f32) / (window_dim.0 as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
         self.uniform.time[0] = start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
@@ -340,7 +352,7 @@ impl KbSpritePipeline {
         render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
         render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
     }

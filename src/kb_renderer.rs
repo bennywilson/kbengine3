@@ -327,7 +327,13 @@ impl<'a> KbRenderer<'a> {
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
             let mut command_encoder = self.get_encoder("Skybox Pass");
-            self.render_pass(KbRenderPassType::Opaque, &mut command_encoder, true, &skybox_render_objs);
+            let mut device_resources = self.device_resources.as_mut().unwrap();
+            device_resources.sprite_pipeline.render(&mut command_encoder, 
+                &mut device_resources.queue,
+                (device_resources.surface_config.width, device_resources.surface_config.height),
+                (&device_resources.render_textures[0].view, &device_resources.depth_textures[0].view),
+                &device_resources.instance_buffer,
+                true, self.start_time, &game_render_objs, KbRenderPassType::Opaque);
             self.submit_encoder(command_encoder);
         }
 
