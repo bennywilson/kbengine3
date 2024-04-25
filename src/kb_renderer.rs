@@ -56,7 +56,12 @@ impl<'a> KbDeviceResources<'a> {
 			self.surface_config.height = new_size.height;
 			self.surface.configure(&self.device, &self.surface_config);
             self.depth_textures[0] = KbTexture::new_depth_texture(&self.device, &self.surface_config);
-            // todo: resize other render targets
+            for texture in &mut self.render_textures {
+                *texture = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
+            }
+            self.sprite_pipeline = KbSpritePipeline::new(&self.device, &self.queue, &self.surface_config);
+            self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device, &self.queue, &self.surface_config, &self.render_textures[0]);
+
 		}
     }
 
@@ -131,7 +136,6 @@ impl<'a> KbDeviceResources<'a> {
 
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
- 
 
         let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
         let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
