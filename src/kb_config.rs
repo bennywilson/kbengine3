@@ -7,7 +7,7 @@ pub struct KbConfig {
 	pub window_height: u32,
 	pub graphics_backend: wgpu::Backends,
 	pub graphics_power_pref: wgpu::PowerPreference,
-	pub vsync: bool,
+	pub _vsync: bool,
 }
 
 impl KbConfig {
@@ -72,7 +72,7 @@ impl KbConfig {
 		};
 
 		let json_val = json_file["vsync"].as_bool();
-		let vsync = match json_val {
+		let _vsync = match json_val {
 			Some(val) => { val }
 			None => { true }
 		};
@@ -85,7 +85,7 @@ impl KbConfig {
 			window_height,
             graphics_backend,
             graphics_power_pref,
-			vsync,
+			_vsync,
         }
     }
 }
