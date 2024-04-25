@@ -1,5 +1,5 @@
-use instant::{Instant};
-use crate::{game_object::*, game_input::InputManager, game_config::GameConfig, log, game_random_f32, game_random_u32};
+use instant::Instant;
+use crate::{kb_object::*,kb_input::InputManager, kb_config::KbConfig, log, game_random_f32, game_random_u32};
 
 use cgmath::Vector3;
 use cgmath::InnerSpace;
@@ -12,15 +12,15 @@ const BUILDING_Z:f32 = 50.0;
 const CHARACTER_Z:f32 = 100.0;
 
 #[allow(dead_code)] 
-trait GameAsset {
+trait KbAsset {
     fn asset_name(&self) -> &String;
 }
 
-struct GameTexture {
+struct KbTexture {
 	name: String,
 }
 
-impl GameAsset for GameTexture {
+impl KbAsset for KbTexture {
      fn asset_name(&self) -> &String {
 		 return &self.name;
 	 }
@@ -28,12 +28,12 @@ impl GameAsset for GameTexture {
 
 #[allow(dead_code)] 
 #[derive(Default)]
-pub struct AssetManager {
-	resources: Vec<Box<dyn GameAsset>>,
+pub struct KbAssetManager {
+	resources: Vec<Box<dyn KbAsset>>,
 }
 
 #[allow(dead_code)] 
-impl AssetManager {
+impl KbAssetManager {
 	pub fn new() -> Self {
 		Self {
 			..Default::default()
@@ -45,9 +45,9 @@ impl AssetManager {
 }
 
 #[allow(dead_code)] 
-pub struct GameEngine {
+pub struct KbEngine {
 	pub input_manager: InputManager,
-	asset_manager: AssetManager,
+	asset_manager: KbAssetManager,
 	pub game_objects: Vec<GameObject>,
 	game_start_time:  Instant,
 	current_frame_time:  Instant,
@@ -60,12 +60,12 @@ pub struct GameEngine {
 	enemy_speed: f32,
 }
 
-impl GameEngine {
-    pub fn new(game_config: &GameConfig) -> Self {
+impl KbEngine {
+    pub fn new(game_config: &KbConfig) -> Self {
 		log!("GameEngine::new() caled...");
 
 		let input_manager = InputManager::new();
-        let asset_manager = AssetManager::new();
+        let asset_manager = KbAssetManager::new();
 
 		let cur_time = Instant::now();
 

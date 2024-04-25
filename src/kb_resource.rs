@@ -1,17 +1,18 @@
-use image::GenericImageView;
 use anyhow::*;
+use image::GenericImageView;
+use wgpu::SurfaceConfiguration;
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
+pub struct KbVertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
 }
 
-impl Vertex {
+impl KbVertex {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<KbVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -29,11 +30,11 @@ impl Vertex {
     }
 }
  
-pub const VERTICES: &[Vertex] = &[
-    Vertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
-    Vertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
-    Vertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
-    Vertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
+pub const VERTICES: &[KbVertex] = &[
+    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
+    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
+    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
+    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
 ];
 
 pub const INDICES: &[u16] = &[
@@ -43,17 +44,17 @@ pub const INDICES: &[u16] = &[
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct DrawInstance {
+pub struct KbDrawInstance {
     pub pos_scale: [f32; 4],
     pub uv_scale_bias: [f32; 4],
     pub per_instance_data: [f32; 4],
 }
 
-impl DrawInstance {
+impl KbDrawInstance {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<DrawInstance>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<KbDrawInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -90,13 +91,51 @@ pub struct PostProcessUniform {
 }
 
 #[allow(dead_code)] 
-pub struct GameTexture {
+pub struct KbTexture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
-impl GameTexture {
+impl KbTexture {
+    pub fn new_depth_texture(device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> Self {
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(
+            &wgpu::SamplerDescriptor { // 4.
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 100.0,
+                ..Default::default()
+            }
+        );
+        KbTexture {
+            texture,
+            view,
+            sampler
+        }
+    }
     pub fn new_render_texture(device: &wgpu::Device, format: wgpu::TextureFormat, target_size: wgpu::Extent3d) ->Result<Self> {
         
         let texture = device.create_texture(
@@ -125,7 +164,7 @@ impl GameTexture {
             }
         );
 
-        Ok(GameTexture {
+        Ok(KbTexture {
             texture,
             view,
             sampler
@@ -205,4 +244,7 @@ impl GameTexture {
             sampler
         })
     }
+}
+struct KbRenderPipe {
+
 }

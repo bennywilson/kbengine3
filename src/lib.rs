@@ -1,22 +1,22 @@
+use std::sync::Arc;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-mod game_resource;
-mod game_object;
-mod game_renderer;
-mod game_engine;
-mod game_input;
-mod game_config;
-mod game_log;
-mod game_utils;
+mod kb_resource;
+mod kb_object;
+mod kb_renderer;
+mod kb_engine;
+mod kb_input;
+mod kb_config;
+mod kb_log;
+mod kb_utils;
 
-use std::sync::Arc;
-use crate::game_engine::GameEngine;
-use crate::game_renderer::GameRenderer;
-use crate::game_config::GameConfig;
+use crate::kb_engine::KbEngine;
+use crate::kb_renderer::KbRenderer;
+use crate::kb_config::KbConfig;
 
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
@@ -24,7 +24,7 @@ const WEBAPP_CANVAS_ID: &str = "target";
 pub async fn run_game() {
     env_logger::init();
 
-    let game_config = GameConfig::new();
+    let game_config = KbConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -50,10 +50,10 @@ pub async fn run_game() {
 
     let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
 
-    let mut game_engine = GameEngine::new(&game_config);
+    let mut game_engine = KbEngine::new(&game_config);
     game_engine.initialize_world();
     
-    let mut game_renderer = GameRenderer::new(window.clone(), game_config.clone());
+    let mut game_renderer = KbRenderer::new(window.clone(), game_config.clone());
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -136,10 +136,10 @@ pub async fn run_game() {
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
 
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(game_renderer::PostProcessMode::Warp); }
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Warp); }
                         }
                         _ => { }
                     }
