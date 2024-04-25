@@ -1,6 +1,5 @@
-use anyhow::*;
 use image::GenericImageView;
-use wgpu::{SurfaceConfiguration, util::DeviceExt};
+use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, SamplerBindingType,Adapter, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 
 use crate::{kb_resource::*, log};
 
@@ -9,47 +8,46 @@ pub struct KbSpritePipeline {
     pub transparent_render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub sprite_uniform: SpriteUniform,
-    pub model_constant_buffer: wgpu::Buffer,
-    pub model_bind_group: wgpu::BindGroup,
+    pub uniform: SpriteUniform,
+    pub uniform_buffer: wgpu::Buffer,
+    pub uniform_bind_group: wgpu::BindGroup,
     pub tex_bind_group: wgpu::BindGroup,
 }
 
 impl KbSpritePipeline {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-       let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration) -> Self {
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
-                wgpu::BindGroupLayoutEntry {
+                BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
                         multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
+                BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
+                BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
                 },
             ],
-            label: Some("sprite_sheet_bind_group_layout"),
+            label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
        
-        let mut bind_groups = Vec::<wgpu::BindGroup>::new();
         let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
         let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
@@ -73,7 +71,7 @@ impl KbSpritePipeline {
                         resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
                     },
                 ],
-                label: Some("sprite_sheet_bind_group"),
+                label: Some("kbSpritePipeline: tex_bind_group"),
             }
         );
 
@@ -96,19 +94,19 @@ impl KbSpritePipeline {
         });
         
         // Model Buffer
-        let sprite_uniform = SpriteUniform {
+        let uniform = SpriteUniform {
             ..Default::default()
         };
 
-        let model_constant_buffer = device.create_buffer_init(
+        let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Model Constant Buffer"),
-                contents: bytemuck::cast_slice(&[sprite_uniform]),
+                label: Some("sprite_uniform_buffer"),
+                contents: bytemuck::cast_slice(&[uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
 
-        let model_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -121,15 +119,15 @@ impl KbSpritePipeline {
                 count: None,
             }
             ],
-            label: Some("model_bind_group_layout"),
+            label: Some("sprite_uniform_bind_group_layout"),
         });
 
-        let model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &model_bind_group_layout,
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: model_constant_buffer.as_entire_binding(),
+                    resource: uniform_buffer.as_entire_binding(),
                 }
             ],
             label: Some("model_bind_group"),
@@ -140,7 +138,7 @@ impl KbSpritePipeline {
         // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &model_bind_group_layout],
+            bind_group_layouts: &[&texture_bind_group_layout, &uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -256,9 +254,9 @@ impl KbSpritePipeline {
             transparent_render_pipeline,
             vertex_buffer,
             index_buffer,
-            sprite_uniform,
-            model_constant_buffer,
-            model_bind_group,
+            uniform,
+            uniform_buffer,
+            uniform_bind_group,
             tex_bind_group,
         }
     }

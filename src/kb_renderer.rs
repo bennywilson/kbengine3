@@ -299,7 +299,7 @@ impl<'a> KbRenderer<'a> {
         };
 
         let sprite_pipeline = &mut device_resources.sprite_pipeline;
-        device_resources.queue.write_buffer(&sprite_pipeline.model_constant_buffer, 0, bytemuck::cast_slice(&[sprite_pipeline.sprite_uniform]));
+        device_resources.queue.write_buffer(&sprite_pipeline.uniform_buffer, 0, bytemuck::cast_slice(&[sprite_pipeline.uniform]));
   
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -322,8 +322,8 @@ impl<'a> KbRenderer<'a> {
             render_pass.set_pipeline(&sprite_pipeline.transparent_render_pipeline);
         }
 
-        sprite_pipeline.sprite_uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
-        sprite_pipeline.sprite_uniform.time[0] = self.start_time.elapsed().as_secs_f32();
+        sprite_pipeline.uniform.screen_dimensions = [self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0];
+        sprite_pipeline.uniform.time[0] = self.start_time.elapsed().as_secs_f32();
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -332,11 +332,11 @@ impl<'a> KbRenderer<'a> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            sprite_pipeline.sprite_uniform.time[1] = 1.0;
+            sprite_pipeline.uniform.time[1] = 1.0;
         }
 
         render_pass.set_bind_group(0, &sprite_pipeline.tex_bind_group, &[]);
-        render_pass.set_bind_group(1, &sprite_pipeline.model_bind_group, &[]);
+        render_pass.set_bind_group(1, &sprite_pipeline.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
         render_pass.set_index_buffer(sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
