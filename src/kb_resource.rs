@@ -1,6 +1,12 @@
+use std::sync::Arc;
+use ab_glyph::FontRef;
 use anyhow::*;
+use cgmath::Vector3;
 use image::GenericImageView;
 use wgpu::SurfaceConfiguration;
+use wgpu_text::{glyph_brush::{Section as TextSection, Text}, BrushBuilder, TextBrush};
+
+use crate::{kb_config::KbConfig, kb_pipeline::{KbModelPipeline, KbPostprocessPipeline, KbSpritePipeline}, log};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -243,5 +249,134 @@ impl KbTexture {
             view,
             sampler
         })
+    }
+}
+
+#[allow(dead_code)]
+pub enum KbRenderPassType {
+    Opaque,
+    Transparent,
+    PostProcess,
+}
+
+pub enum KbPostProcessMode {
+    Passthrough,
+    Desaturation,
+    ScanLines,
+    Warp,
+}
+
+#[allow(dead_code)]
+pub struct KbDeviceResources<'a> {
+    pub surface: wgpu::Surface<'a>,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+
+    pub instance_buffer: wgpu::Buffer,
+    pub brush: TextBrush<FontRef<'a>>,
+    pub render_textures: Vec<KbTexture>,
+    pub depth_textures: Vec<KbTexture>,
+
+    pub sprite_pipeline: KbSpritePipeline,
+    pub postprocess_pipeline: KbPostprocessPipeline,
+    pub model_pipeline: KbModelPipeline,
+}
+
+impl<'a> KbDeviceResources<'a> {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+		if new_size.width > 0 && new_size.height > 0 {
+			self.surface_config.width = new_size.width;
+			self.surface_config.height = new_size.height;
+			self.surface.configure(&self.device, &self.surface_config);
+            self.depth_textures[0] = KbTexture::new_depth_texture(&self.device, &self.surface_config);
+            for texture in &mut self.render_textures {
+                *texture = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
+            }
+            self.sprite_pipeline = KbSpritePipeline::new(&self.device, &self.queue, &self.surface_config);
+            self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device, &self.queue, &self.surface_config, &self.render_textures[0]);
+
+		}
+    }
+
+     pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
+        log!("Creating instance"); 
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: game_config.graphics_backend,
+            ..Default::default()
+        });
+
+        log!("Creating surface + adapter");
+
+        let surface = instance.create_surface(window.clone()).unwrap();
+        let adapter = instance.request_adapter(
+            &wgpu::RequestAdapterOptions {
+                power_preference: game_config.graphics_power_pref,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            },
+        ).await.unwrap();
+
+        log!("Requesting Device");
+		let (device, queue) = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                // WebGL doesn't support all of wgpu's features
+                required_limits: if cfg!(target_arch = "wasm32") {
+                    wgpu::Limits::downlevel_webgl2_defaults()
+                } else {
+                    wgpu::Limits::default()
+                },
+                label: Some("Device Descriptor"),
+            },
+            None, // Trace path
+        ).await.unwrap();
+
+        let surface_config = surface.get_default_config(&adapter, game_config.window_width, game_config.window_height).unwrap();
+        surface.configure(&device, &surface_config);
+
+        log!("Loading Texture");
+
+        let max_instances = game_config.max_render_instances;
+        let instance_buffer = device.create_buffer(
+            &wgpu::BufferDescriptor {
+                label: Some("instance_buffer"),
+                mapped_at_creation: false,
+                size: (std::mem::size_of::<KbDrawInstance>() * max_instances as usize) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            });
+       
+        let mut render_textures = Vec::<KbTexture>::new();
+        let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+        render_textures.push(render_texture);
+
+        let mut depth_textures = Vec::<KbTexture>::new();
+        let depth_texture = KbTexture::new_depth_texture(&device, &surface_config);
+        depth_textures.push(depth_texture);
+
+        log!("Creating Font");
+
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
+                .build(&device, surface_config.width, surface_config.height, surface_config.format);
+
+        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
+        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
+
+	    KbDeviceResources {
+            surface_config,
+            surface,
+            adapter,
+            device,
+            queue,
+            instance_buffer,
+            brush,
+            render_textures,
+            depth_textures,
+            sprite_pipeline,
+            postprocess_pipeline,
+            model_pipeline
+        }
     }
 }

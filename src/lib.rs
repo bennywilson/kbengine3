@@ -18,6 +18,7 @@ mod kb_utils;
 use crate::kb_engine::KbEngine;
 use crate::kb_renderer::KbRenderer;
 use crate::kb_config::KbConfig;
+use crate::kb_resource::KbPostProcessMode;
 
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
@@ -137,10 +138,10 @@ pub async fn run_game() {
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
 
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(kb_renderer::KbPostProcessMode::Warp); }
+                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Passthrough); }
+                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Desaturation); }
+                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::ScanLines); }
+                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Warp); }
                         }
                         _ => { }
                     }
