@@ -3,12 +3,17 @@ use std::sync::Arc;
 
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_pipeline::{KbSpritePipeline, KbModelPipeline, KbPostprocessPipeline}, kb_resource::{KbDeviceResources, KbPostProcessMode, KbRenderPassType}, log, PERF_SCOPE};
 
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
-    device_resources: Option<KbDeviceResources<'a>>,
+
+    device_resources: KbDeviceResources<'a>,
+    sprite_pipeline: KbSpritePipeline,
+    postprocess_pipeline: KbPostprocessPipeline,
+    model_pipeline: KbModelPipeline,
+
     pub size: winit::dpi::PhysicalSize<u32>,
     postprocess_mode: KbPostProcessMode,
     start_time: Instant,
@@ -20,11 +25,24 @@ pub struct KbRenderer<'a> {
 
 impl<'a> KbRenderer<'a> {
 
-    pub fn new(window: Arc<winit::window::Window>, _game_config: &KbConfig) -> Self {
+    pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
 
+        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
+        
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+
+        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &device_resources.render_textures[0]);
+        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
+
         KbRenderer {
-            device_resources: None,
+            device_resources,
+            sprite_pipeline,
+            model_pipeline,
+            postprocess_pipeline,
             size: window.inner_size(),
             start_time: Instant::now(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -35,7 +53,7 @@ impl<'a> KbRenderer<'a> {
         }
     }
 
-    pub async fn init_renderer(&mut self, window: Arc::<winit::window::Window>, game_config: &KbConfig) {
+   /* async fn init_renderer(&mut self, window: Arc::<winit::window::Window>, game_config: &KbConfig) {
         log!("init_renderer() called...");
 
         match &self.device_resources {
@@ -46,14 +64,12 @@ impl<'a> KbRenderer<'a> {
         }
 
         log!("init_renderer() complete");
-    }
+    }*/
  
     pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
         PERF_SCOPE!("begin_frame())");
 
-        let device_resources = &self.device_resources.as_mut().unwrap();
-
-		let final_texture = device_resources.surface.get_current_texture().unwrap();
+		let final_texture = self.device_resources.surface.get_current_texture().unwrap();
         let final_view = final_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         (final_texture, final_view)
@@ -66,8 +82,7 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn get_encoder(&mut self, label: &str) -> wgpu::CommandEncoder {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-		let encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+		let encoder = self.device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some(label),
 		});
 
@@ -75,8 +90,7 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn submit_encoder(&mut self, command_encoder: wgpu::CommandEncoder) {
-        let device_resources = &self.device_resources.as_mut().unwrap();
-        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
+        self.device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
 
     pub fn get_sorted_render_objects(&self, game_objects: &Vec<GameObject>) -> (Vec<GameObject>, Vec<GameObject>, Vec<GameObject>) {
@@ -109,7 +123,7 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn render_postprocess(&mut self, encoder: &mut wgpu::CommandEncoder, final_view: &wgpu::TextureView) {
-        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        let device_resources = &mut self.device_resources;
 
         let color_attachment = Some(
             wgpu::RenderPassColorAttachment {
@@ -128,13 +142,13 @@ impl<'a> KbRenderer<'a> {
             timestamp_writes: None,
         });
 
-        let postprocess_pipeline = &mut device_resources.postprocess_pipeline;
+        let postprocess_pipeline = &mut self.postprocess_pipeline;//&mut device_resources.postprocess_pipeline;
         render_pass.set_pipeline(&postprocess_pipeline.postprocess_pipeline);
         render_pass.set_bind_group(0, &postprocess_pipeline.postprocess_bind_group, &[]);
         render_pass.set_bind_group(1, &postprocess_pipeline.postprocess_uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, device_resources.sprite_pipeline.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, self.sprite_pipeline.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(device_resources.sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(self.sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
         postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
         postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[1] = {
@@ -152,7 +166,7 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32, game_config: &KbConfig) { 
-        let device_resources = &mut self.device_resources.as_mut().unwrap();
+        let device_resources = &mut self.device_resources;
 
         let color_attachment = {
             Some(wgpu::RenderPassColorAttachment {
@@ -221,37 +235,19 @@ impl<'a> KbRenderer<'a> {
 
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
-            let mut command_encoder = self.get_encoder("Skybox Pass (Opaque)");
-            let device_resources = self.device_resources.as_mut().unwrap();
-            device_resources.sprite_pipeline.render(&mut command_encoder, 
-                &mut device_resources.queue,
-                game_config,
-                &device_resources.render_textures,
-                true, &skybox_render_objs, KbRenderPassType::Opaque);
+            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("Skybox Pass (Transparent)");
-            let mut command_encoder = self.get_encoder("Skybox Pass (Transparent)");
-            let device_resources = self.device_resources.as_mut().unwrap();
-            device_resources.sprite_pipeline.render(&mut command_encoder, 
-                &mut device_resources.queue,
-                game_config,
-                &device_resources.render_textures,
-                false, &cloud_render_objs, KbRenderPassType::Transparent);
+            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
             self.submit_encoder(command_encoder);
         }
 
         {
             PERF_SCOPE!("World Objects Pass");
-            let mut command_encoder = self.get_encoder("World Objects");
-            let device_resources = self.device_resources.as_mut().unwrap();
-            device_resources.sprite_pipeline.render(&mut command_encoder, 
-                &mut device_resources.queue,
-                game_config,
-                &device_resources.render_textures,
-                false, &game_render_objs, KbRenderPassType::Opaque);
+            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
             self.submit_encoder(command_encoder);
         }
 
@@ -274,8 +270,15 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn resize(&mut self, game_config: &KbConfig) {
-        let device_resources = &mut self.device_resources.as_mut().unwrap();
-        device_resources.resize(&game_config);
+        log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
+
+        &mut self.device_resources.resize(&game_config);
+        
+        let device = &self.device_resources.device;
+        let queue = &self.device_resources.queue;
+        let surface_config = &self.device_resources.surface_config;
+        self.sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &self.device_resources.render_textures[0]);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

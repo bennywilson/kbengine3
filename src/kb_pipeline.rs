@@ -18,6 +18,8 @@ pub struct KbSpritePipeline {
 
 impl KbSpritePipeline {
     pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration, game_config: &KbConfig) -> Self {
+        log!("Creating KbSpritePipeline...");
+
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -80,7 +82,7 @@ impl KbSpritePipeline {
         let mut textures = Vec::<KbTexture>::new();
         textures.push(postprocess_texture);
 
-        log!("Creating Shader");
+        log!("  Creating shader");
 
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -128,7 +130,7 @@ impl KbSpritePipeline {
             label: Some("model_bind_group"),
         });
 
-        log!("Creating Pipeline");
+        log!("  Creating pipeline");
 
         // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -225,7 +227,7 @@ impl KbSpritePipeline {
         
         });
 
-        log!("Vertex/Index Buffers");
+        log!("  Creating vertex/index buffers");
 
         // Vertex/Index buffer
         let vertex_buffer = device.create_buffer_init(
@@ -265,7 +267,11 @@ impl KbSpritePipeline {
         }
     }
 
-    pub fn render(&mut self, command_encoder: &mut wgpu::CommandEncoder, queue: &mut Queue, game_config: &KbConfig, render_textures: &Vec<KbTexture>, should_clear: bool, game_objects: &Vec<GameObject>, render_pass_type: KbRenderPassType) {
+    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) -> wgpu::CommandEncoder {
+		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some("KbSpritePipeline::render()"),
+		});
+
         let mut frame_instances = Vec::<KbDrawInstance>::new();
 
         // Create instances
@@ -297,7 +303,7 @@ impl KbSpritePipeline {
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &render_textures[0].view,
+                    view: &device_resources.render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -311,7 +317,7 @@ impl KbSpritePipeline {
                 })
             } else {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &render_textures[0].view,
+                    view: &device_resources.render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -326,7 +332,7 @@ impl KbSpritePipeline {
             label: Some("Render Pass"),
             color_attachments: &[color_attachment],
             depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &render_textures[1].view,
+                view: &device_resources.render_textures[1].view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -336,8 +342,8 @@ impl KbSpritePipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
+        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+        device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
         if matches!(render_pass_type, KbRenderPassType::Opaque) {
             render_pass.set_pipeline(&self.opaque_render_pipeline);
@@ -350,7 +356,7 @@ impl KbSpritePipeline {
 
         #[cfg(target_arch = "wasm32")]
         {
-            self.sprite_uniform.time[1] = 1.0 / 2.2;
+            self.uniform.time[1] = 1.0 / 2.2;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -364,6 +370,8 @@ impl KbSpritePipeline {
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
+        drop(render_pass);
+        command_encoder
     }
 }
 

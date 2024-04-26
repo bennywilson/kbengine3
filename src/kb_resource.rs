@@ -276,10 +276,6 @@ pub struct KbDeviceResources<'a> {
     pub instance_buffer: wgpu::Buffer,
     pub brush: TextBrush<FontRef<'a>>,
     pub render_textures: Vec<KbTexture>,    // [0] is color, [1] is depth
-
-    pub sprite_pipeline: KbSpritePipeline,
-    pub postprocess_pipeline: KbPostprocessPipeline,
-    pub model_pipeline: KbModelPipeline,
 }
 
 impl<'a> KbDeviceResources<'a> {
@@ -292,9 +288,6 @@ impl<'a> KbDeviceResources<'a> {
 
         self.render_textures[0] = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
         self.render_textures[1] = KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
-
-        self.sprite_pipeline = KbSpritePipeline::new(&self.device, &self.queue, &self.surface_config, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device, &self.queue, &self.surface_config, &self.render_textures[0]);
     }
 
      pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
@@ -356,10 +349,6 @@ impl<'a> KbDeviceResources<'a> {
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
-        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &render_textures[0]);
-        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
-
 	    KbDeviceResources {
             surface_config,
             surface,
@@ -369,9 +358,6 @@ impl<'a> KbDeviceResources<'a> {
             instance_buffer,
             brush,
             render_textures,
-            sprite_pipeline,
-            postprocess_pipeline,
-            model_pipeline
         }
     }
 }
