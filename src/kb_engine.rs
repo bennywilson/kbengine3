@@ -40,5 +40,5 @@ pub trait KbGameEngine {
 
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 
-	fn tick_frame(&mut self, input_manager: &InputManager);
+	fn tick_frame(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager);
 }

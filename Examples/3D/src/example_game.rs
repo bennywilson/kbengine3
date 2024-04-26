@@ -26,7 +26,7 @@ impl KbGameEngine for Example3DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame(&mut self, _input_manager: &InputManager) {
+	fn tick_frame(&mut self, _renderer: &KbRenderer, _input_manager: &InputManager) {
 	}
 
 	fn initialize_world(&mut self, renderer: &mut KbRenderer)

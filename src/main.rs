@@ -1,6 +1,6 @@
 use cgmath::Vector3;
 
-use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectType}};
+use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectType}, kb_renderer::KbRenderer};
 use kb_engine3::log;
 
 const SKY_Z:f32 = 0.0;
@@ -24,7 +24,7 @@ impl KbGameEngine for EmptyGame {
 		}
     }
 	
-	fn initialize_world(&mut self)
+	fn initialize_world(&mut self, _game_renderer: &mut KbRenderer)
 	{
 		log!("EmptyGame::initialize_world() caled...");
 
@@ -51,7 +51,7 @@ impl KbGameEngine for EmptyGame {
 		&self.game_objects
 	}
 
-	fn tick_frame(&mut self, _input_manager: &InputManager) {
+	fn tick_frame(&mut self, _game_renderer: &mut KbRenderer, _input_manager: &InputManager) {
 		// Add game update logic here
 	}
 }

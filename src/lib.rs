@@ -73,7 +73,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame(&input_manager);
+                            game_engine.tick_frame(&mut game_renderer, &input_manager);
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
@@ -132,7 +132,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame(&input_manager);
+                            game_engine.tick_frame(&mut game_renderer, &input_manager);
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
