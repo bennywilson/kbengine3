@@ -52,19 +52,6 @@ impl<'a> KbRenderer<'a> {
             window_id: window.id()
         }
     }
-
-   /* async fn init_renderer(&mut self, window: Arc::<winit::window::Window>, game_config: &KbConfig) {
-        log!("init_renderer() called...");
-
-        match &self.device_resources {
-            Some(_) => {}
-            None => {
-                self.device_resources = Some(KbDeviceResources::new(window, &game_config).await);
-            }
-        }
-
-        log!("init_renderer() complete");
-    }*/
  
     pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
         PERF_SCOPE!("begin_frame())");
@@ -220,7 +207,7 @@ impl<'a> KbRenderer<'a> {
     pub fn resize(&mut self, game_config: &KbConfig) {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
-        &mut self.device_resources.resize(&game_config);
+        self.device_resources.resize(&game_config);
         
         let device = &self.device_resources.device;
         let queue = &self.device_resources.queue;

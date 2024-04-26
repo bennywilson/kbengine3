@@ -1,0 +1,12 @@
+[package]
+name = "Demo_Game"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cgmath = "0.18"
+getrandom = { version = "0.2", features = ["js"] }
+instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
+pollster = "0.3"
+
+kb_engine3 = { path = "../../" }
