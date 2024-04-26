@@ -2,7 +2,7 @@ use cgmath::Vector3;
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, SurfaceConfiguration, ShaderStages, 
           SamplerBindingType, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 
-use crate::{kb_config::KbConfig, kb_object::GameObject, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_game_object::GameObject, kb_resource::*, log, PERF_SCOPE};
 
 pub struct KbSpritePipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,

@@ -8,7 +8,7 @@ use winit::{
 pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;
-pub mod kb_object;
+pub mod kb_game_object;
 pub mod kb_pipeline;
 pub mod kb_renderer;
 pub mod kb_resource;
@@ -51,10 +51,11 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
     let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
 
     let mut game_engine = T::new(&game_config);
-    game_engine.initialize_world();
-
     let mut input_manager = InputManager::new();
     let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
+
+    game_engine.initialize_world(&mut game_renderer);
+
 
     #[cfg(target_arch = "wasm32")]
     {

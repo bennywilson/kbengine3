@@ -1,7 +1,7 @@
 use cgmath::{InnerSpace, Vector3};
 use instant::Instant;
 
-use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_object::{GameObject, GameObjectState, GameObjectType}};
+use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectState, GameObjectType}, kb_renderer::KbRenderer};
 use kb_engine3::{game_random_f32, game_random_u32, log};
 
 const SKY_Z:f32 = 0.0;
@@ -195,8 +195,7 @@ impl KbGameEngine for ExampleGame {
 		}
 	}
 
-	fn initialize_world(&mut self)
-	{
+	fn initialize_world(&mut self, _renderer: &mut KbRenderer) {
 		log!("GameEngine::initialize_world() caled...");
 
 		// Create Player

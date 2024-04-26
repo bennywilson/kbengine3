@@ -9,6 +9,11 @@ To run the examples, open a command prompt and cd to the directory this read me 
     To run 2D demo #2 enter: cargo run --manifest-path Examples/2D/Cargo.toml
     To run 3D demo #3 enter: cargo run --manifest-path Examples/3D/Cargo.toml
 
+To generate and test a WASM build, run the following commands and then navigate to 127.0.0.1:8000 in a web browser:
+    cargo build --target wasm32-unknown-unknown --release
+    wasm-bindgen --target web --out-dir target/wasm32-unknown-unknown/release target/wasm32-unknown-unknown/release/kb_engine_2D_demo.wasm
+    python3 -m http.server -d target/wasm32-unknown-unknown/release
+
 Note:
 Be sure to set your working directory to the root of the kbEngine3 folder when debugging in Visual Studio, running from RenderDoc, etc.
 

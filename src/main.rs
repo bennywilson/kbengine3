@@ -1,6 +1,6 @@
 use cgmath::Vector3;
 
-use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_object::{GameObject, GameObjectType}};
+use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectType}};
 use kb_engine3::log;
 
 const SKY_Z:f32 = 0.0;

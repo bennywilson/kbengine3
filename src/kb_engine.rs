@@ -1,4 +1,4 @@
-use crate::{kb_object::*,kb_input::InputManager, kb_config::KbConfig};
+use crate::{kb_config::KbConfig, kb_game_object::*, kb_input::InputManager, kb_renderer::KbRenderer};
 
 #[allow(dead_code)] 
 trait KbAsset {
@@ -36,7 +36,7 @@ impl KbAssetManager {
 pub trait KbGameEngine {
 	fn new(game_config: &KbConfig) -> Self;
 
-	fn initialize_world(&mut self);
+	fn initialize_world(&mut self, renderer: &mut KbRenderer);
 
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 

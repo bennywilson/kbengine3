@@ -3,6 +3,38 @@ use instant::Instant;
 
 use crate::{game_random_f32};
 
+static mut NEXT_ACTOR_ID: u32 = 0;
+
+#[derive(Clone)]
+pub struct KbActor {
+    pub id: u32,
+    position: Vector3<f32>,
+    scale: Vector3<f32>,
+}
+
+impl KbActor {
+    pub fn new() -> Self {
+        unsafe {
+            NEXT_ACTOR_ID = NEXT_ACTOR_ID + 1;
+            KbActor {
+                id: NEXT_ACTOR_ID,
+                position: (0.0, 0.0, 0.0).into(),
+                scale: (0.0, 0.0, 0.0).into(),
+            }
+        }
+    }
+
+    pub fn set_position(&mut self, position: Vector3<f32>) {
+        self.position = position;
+    }
+
+    pub fn set_scale(&mut self, scale: Vector3<f32>) {
+        self.scale = scale;
+    }
+}
+
+// todo: deprecate the below
+
 #[derive(Clone)]
 pub enum GameObjectType {
     Character,
@@ -40,7 +72,6 @@ pub struct GameObject {
     pub is_enemy: bool,
     pub random_val: f32,
 }
-
 
 #[allow(dead_code)] 
 impl GameObject {

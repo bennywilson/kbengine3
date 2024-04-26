@@ -1,19 +1,18 @@
 use instant::Instant;
-use std::sync::Arc;
-
+use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_pipeline::{KbSpritePipeline, KbModelPipeline, KbPostprocessPipeline}, kb_resource::{KbDeviceResources, KbPostProcessMode, KbRenderPassType}, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_pipeline::{KbSpritePipeline, KbModelPipeline, KbPostprocessPipeline}, kb_resource::{KbDeviceResources, KbPostProcessMode, KbRenderPassType}, log, PERF_SCOPE};
 
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
-
     device_resources: KbDeviceResources<'a>,
     sprite_pipeline: KbSpritePipeline,
     postprocess_pipeline: KbPostprocessPipeline,
     model_pipeline: KbModelPipeline,
 
+    actor_map: HashMap::<u32, KbActor>,
     pub size: winit::dpi::PhysicalSize<u32>,
     postprocess_mode: KbPostProcessMode,
     start_time: Instant,
@@ -43,6 +42,7 @@ impl<'a> KbRenderer<'a> {
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
+            actor_map: HashMap::<u32, KbActor>::new(),
             size: window.inner_size(),
             start_time: Instant::now(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -167,6 +167,8 @@ impl<'a> KbRenderer<'a> {
 
         PERF_SCOPE!("render_frame()");
 
+        log!("Map size = {} ", self.actor_map.len());
+
         let (final_tex, final_view) = self.begin_frame();
 
        
@@ -218,5 +220,13 @@ impl<'a> KbRenderer<'a> {
 
     pub fn window_id(&self) -> winit::window::WindowId {
         self.window_id
+    }
+
+    pub fn add_or_update_actor(&mut self, actor: &KbActor) {
+        self.actor_map.insert(actor.id, actor.clone());
+    }
+
+    pub fn remove_actor(&mut self, actor: &KbActor) {
+        self.actor_map.remove(&actor.id);
     }
 }
