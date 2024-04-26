@@ -23,10 +23,8 @@ use crate::kb_resource::KbPostProcessMode;
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
 
-pub async fn run_game<T>() where T: KbGameEngine {
+pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'static {
     env_logger::init();
-
-    let mut game_config = KbConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -74,8 +72,8 @@ pub async fn run_game<T>() where T: KbGameEngine {
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
+                            game_engine.tick_frame(&input_manager);
+                            let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },

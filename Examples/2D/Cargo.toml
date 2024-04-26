@@ -1,5 +1,5 @@
 [package]
-name = "Demo_Game"
+name = "kb_engine_2D_demo"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,3 +10,11 @@ instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
 pollster = "0.3"
 
 kb_engine3 = { path = "../../" }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+#console_log = { version = "0.2.0", features = [] }
+#wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.42"
+#wgpu = { version = "0.19.3", features = ["webgl"] }
+web-sys =  { version = "0.3.69", features = [] }
