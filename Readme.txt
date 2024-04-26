@@ -3,11 +3,23 @@ Hi and thanks for checking out my project!  This project demonstrates using Rust
 All sprites are drawn with a single draw_indexed call using instancing.
 
 ========== Building and Debugging ==========
+
+To run the examples, open a command prompt and cd to the directory this read me is in:
+    To run 2D demo #1 enter: kbEngine3\Cargo run
+    To run 2D demo #2 enter: cargo run --manifest-path Examples/2D/Cargo.toml
+    To run 3D demo #3 enter: cargo run --manifest-path Examples/3D/Cargo.toml
+
+To generate and test a WASM build, run the following commands and then navigate to 127.0.0.1:8000 in a web browser:
+    cargo build --target wasm32-unknown-unknown --release
+    wasm-bindgen --target web --out-dir target/wasm32-unknown-unknown/release target/wasm32-unknown-unknown/release/kb_engine_2D_demo.wasm
+    python3 -m http.server -d target/wasm32-unknown-unknown/release
+
+Note:
 Be sure to set your working directory to the root of the kbEngine3 folder when debugging in Visual Studio, running from RenderDoc, etc.
-I'm using the following docs and tutorials:
+
 
 ========== Config file ==========
-There is a config file at GameAssets\game_config.txt that lets you control several parameters.  An example config is below:
+Each example uses a config file that lets you control several parameters.  There is an example config file at GameAssets\game_config.txt :
 
 {
     "enemy_spawn_delay": 0.3,
@@ -36,6 +48,8 @@ https://doc.rust-lang.org/book/ch01-00-getting-started.html
 https://sotrh.github.io/learn-wgpu/#what-is-wgpu
 
 https://registry.khronos.org/vulkan/specs/1.3/html/vkspec.html
+
+https://github.com/wolfpld/tracy
 
 Benny Wilson
 bennywilson@benny-wilson.com

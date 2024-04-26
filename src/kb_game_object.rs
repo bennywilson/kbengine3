@@ -1,6 +1,39 @@
-use instant::{Instant};
-
 use cgmath::Vector3;
+use instant::Instant;
+
+use crate::{game_random_f32};
+
+static mut NEXT_ACTOR_ID: u32 = 0;
+
+#[derive(Clone)]
+pub struct KbActor {
+    pub id: u32,
+    position: Vector3<f32>,
+    scale: Vector3<f32>,
+}
+
+impl KbActor {
+    pub fn new() -> Self {
+        unsafe {
+            NEXT_ACTOR_ID = NEXT_ACTOR_ID + 1;
+            KbActor {
+                id: NEXT_ACTOR_ID,
+                position: (0.0, 0.0, 0.0).into(),
+                scale: (0.0, 0.0, 0.0).into(),
+            }
+        }
+    }
+
+    pub fn set_position(&mut self, position: Vector3<f32>) {
+        self.position = position;
+    }
+
+    pub fn set_scale(&mut self, scale: Vector3<f32>) {
+        self.scale = scale;
+    }
+}
+
+// todo: deprecate the below
 
 #[derive(Clone)]
 pub enum GameObjectType {
@@ -40,9 +73,28 @@ pub struct GameObject {
     pub random_val: f32,
 }
 
-
 #[allow(dead_code)] 
 impl GameObject {
+    pub fn new(object_type: GameObjectType, sprite_index: i32, position: Vector3<f32>, direction: Vector3<f32>, scale: Vector3<f32>) -> Self {
+
+        GameObject {
+            position,
+            direction,
+            scale,
+            velocity: (0.0, 0.0, 0.0).into(),
+            object_type,
+            object_state: GameObjectState::Idle,
+			next_attack_time: 0.0,
+			texture_index: 0,
+			sprite_index,
+			anim_frame: 0,
+			life_start_time: Instant::now(),
+			state_start_time: Instant::now(),
+			gravity_scale: 3.1,
+			random_val: game_random_f32!(0.0, 1000.0),
+			is_enemy: false
+        }
+    }
 
     fn set_state(&mut self, next_state: GameObjectState) {
         self.object_state = next_state;
