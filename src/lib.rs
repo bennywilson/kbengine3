@@ -9,7 +9,6 @@ pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;
 pub mod kb_game_object;
-pub mod kb_pipeline;
 pub mod kb_renderer;
 pub mod kb_resource;
 pub mod kb_utils;

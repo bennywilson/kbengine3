@@ -1,20 +1,14 @@
-// Vertex shader
-struct SpriteUniform {
+struct ModelUniform {
+    view_proj: mat4x4<f32>,
     target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>
 };
 @group(1) @binding(0)
-var<uniform> sprite_uniform: SpriteUniform;
+var<uniform> model_uniform: ModelUniform;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
-}
-
-struct InstanceInput {
-    @location(2) pos_scale: vec4<f32>,
-    @location(3) uv_scale_bias: vec4<f32>,
-    @location(4) instance_data: vec4<f32>
 }
 
 struct VertexOutput {
@@ -24,19 +18,17 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(
-    model: VertexInput,
-    instance: InstanceInput,
+    model: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    out.tex_coords = (model.tex_coords * instance.uv_scale_bias.xy) + instance.uv_scale_bias.zw;
+    out.tex_coords = model.tex_coords;
 
     var pos: vec3<f32> = model.position.xyz;
-    pos *= vec3<f32>(instance.pos_scale.zw, 1.0);
-    pos += vec3<f32>(instance.pos_scale.xy, 1.0);
-    pos.x *= sprite_uniform.target_dimensions.z;
 
-    out.clip_position = vec4<f32>(pos.xyz, 1.0);
+    out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
+//out.clip_position.z = 0.5;
+//out.clip_position.w = 0.5;
 
     return out;
 }
@@ -57,13 +49,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv = in.tex_coords;
 
     outColor = textureSample(t_diffuse, s_diffuse, uv);
-    if (outColor.a < 0.5) {
-        discard;
-    }
-
-    outColor.r = pow(outColor.r, sprite_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, sprite_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, sprite_uniform.time_colorpow_.y);
-
     return outColor;
 }

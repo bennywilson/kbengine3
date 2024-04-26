@@ -2,8 +2,7 @@ use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_pipeline::{KbSpritePipeline, KbModelPipeline, KbPostprocessPipeline}, kb_resource::{KbDeviceResources, KbPostProcessMode, KbRenderPassType}, log, PERF_SCOPE};
-
+use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_resource::*, log, PERF_SCOPE};
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
@@ -13,9 +12,9 @@ pub struct KbRenderer<'a> {
     model_pipeline: KbModelPipeline,
 
     actor_map: HashMap::<u32, KbActor>,
-    pub size: winit::dpi::PhysicalSize<u32>,
+    model: KbModel,
+
     postprocess_mode: KbPostProcessMode,
-    start_time: Instant,
     frame_times: Vec<f32>,
     frame_timer: Instant,
     frame_count: u32,
@@ -23,10 +22,8 @@ pub struct KbRenderer<'a> {
 }
 
 impl<'a> KbRenderer<'a> {
-
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
-
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
         
         let device = &device_resources.device;
@@ -36,15 +33,17 @@ impl<'a> KbRenderer<'a> {
         let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
         let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &device_resources.render_textures[0]);
         let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
+        let model = KbModel::new(device);
 
         KbRenderer {
             device_resources,
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
+
             actor_map: HashMap::<u32, KbActor>::new(),
-            size: window.inner_size(),
-            start_time: Instant::now(),
+            model,
+
             postprocess_mode: KbPostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
@@ -167,14 +166,16 @@ impl<'a> KbRenderer<'a> {
 
         PERF_SCOPE!("render_frame()");
 
-        log!("Map size = {} ", self.actor_map.len());
-
         let (final_tex, final_view) = self.begin_frame();
 
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
         {
+            PERF_SCOPE!("Model Pass");
+            self.model_pipeline.render(KbRenderPassType::Opaque, true, &self.model, &mut self.device_resources, game_config);
+        }
+     /*   {
             PERF_SCOPE!("Skybox Pass (Opaque)");
             self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
         }
@@ -187,7 +188,7 @@ impl<'a> KbRenderer<'a> {
         {
             PERF_SCOPE!("World Objects Pass");
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
-        }
+        }*/
 
         {
             PERF_SCOPE!("Postprocess pass");
