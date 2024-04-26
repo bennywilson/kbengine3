@@ -1,6 +1,7 @@
 use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::Vector3;
+use cgmath::SquareMatrix;
 use image::GenericImageView;
 use std::sync::Arc;
 
@@ -966,6 +967,7 @@ impl KbPostprocessPipeline {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbModelUniform {
+    pub inv_world: [[f32; 4]; 4],
     pub view_proj: [[f32; 4]; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
@@ -980,43 +982,46 @@ pub struct KbModel {
 impl KbModel {
     pub fn new(device: &wgpu::Device) -> Self {
 
+    let u = (0.0, 3.0 / 8.0);
+    let v = (0.625, 0.625 + 3.0 / 8.0);
+
     let extent = 1.25;
         let vertices = &[
             // Front
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [1.0, 1.0], },
+            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [-extent, extent, extent], tex_coords: [u.0, v.0], },
+            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.1], },
 
             // Top
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [1.0, 1.0], },
-
-            // Left
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [1.0, 1.0], },
+            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [extent, extent, -extent], tex_coords: [u.0, v.0], },
+            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [-extent, extent, extent], tex_coords: [u.1, v.1], },
 
             // Right
-            KbVertex { position: [-extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [1.0, 1.0], },
+            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.1], },
+            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [extent, extent, -extent], tex_coords: [u.0, v.0], },
+
+            // Left
+            KbVertex { position: [-extent, extent, extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.1, v.1], },
+            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.0], },
 
             // Back
-            KbVertex { position: [extent, extent, -extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [1.0, 1.0], },
+            KbVertex { position: [extent, extent, -extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.0], },
+            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.1, v.1], },
 
             // Bottom
-            KbVertex { position: [extent, -extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [1.0, 1.0], },
+            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.0], },
+            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.0, v.0], },
+            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
+            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.1, v.1], },
         ];
 
         let indices: [u16;36] = [
@@ -1281,7 +1286,7 @@ impl KbModelPipeline {
        // } else {
        //     render_pass.set_pipeline(&self.transparent_render_pipeline);
        // }
-       let eye: cgmath::Point3<f32> = (0.0, -1.8, 5.0).into();
+       let eye: cgmath::Point3<f32> = (0.0, 3.0 * 0.75, 10.0 * 0.75).into();
        let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
        let up = cgmath::Vector3::unit_y();
        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 15.0));
@@ -1289,6 +1294,7 @@ impl KbModelPipeline {
        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
        let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
+       self.uniform.inv_world = world.invert().unwrap().into();
         self.uniform.view_proj = (proj * view * world).into();
         self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
         self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
