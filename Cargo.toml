@@ -4,20 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-winit = "0.29.15"
-env_logger = "0.10"
-log = "0.4"
-wgpu_text = "0.8.7"
-pollster = "0.3"
-bytemuck = { version = "1.12", features = [ "derive" ] }
-anyhow = "1.0"
-cgmath = "0.18"
-getrandom = { version = "0.2", features = ["js"] }
-json = "0.12.4"
 ab_glyph = "0.2.24"
+anyhow = "1.0"
+bytemuck = { version = "1.12", features = [ "derive" ] }
+cgmath = "0.18"
+env_logger = "0.10"
+getrandom = { version = "0.2", features = ["js"] }
+gltf="1.4.0"
+instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
+json = "0.12.4"
+load_file = "1.0.1"
+log = "0.4"
+pollster = "0.3"
+winit = "0.29.15"
+wgpu_text = "0.8.7"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
-instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
 
 [dependencies.image]
 version = "0.24"
@@ -34,3 +36,4 @@ wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
 wgpu = { version = "0.19.3", features = ["webgl"] }
 web-sys =  { version = "0.3.69", features = [] }
+

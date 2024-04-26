@@ -4,10 +4,10 @@ All sprites are drawn with a single draw_indexed call using instancing.
 
 ========== Building and Debugging ==========
 
-To run the examples, open a command prompt and cd to the directory this read me is in:
-    To run 2D demo #1 enter: kbEngine3\Cargo run
-    To run 2D demo #2 enter: cargo run --manifest-path Examples/2D/Cargo.toml
-    To run 3D demo #3 enter: cargo run --manifest-path Examples/3D/Cargo.toml
+To run the examples, open a command prompt:
+    To run 2D demo #1, cd to this director and enter: cargo run
+    To run 2D demo #2, cd to kbEngine3\Examples\2D\ and enter: cargo run
+    To run 3D demo #3 cd to kbEngine3\Examples\3D\ and enter: cargo run
 
 To generate and test a WASM build, run the following commands and then navigate to 127.0.0.1:8000 in a web browser:
     cargo build --target wasm32-unknown-unknown --release

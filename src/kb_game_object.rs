@@ -1,7 +1,7 @@
 use cgmath::Vector3;
 use instant::Instant;
 
-use crate::{game_random_f32};
+use crate::{kb_renderer::{KbModelHandle, INVALID_MODEL_HANDLE}, game_random_f32};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -10,6 +10,8 @@ pub struct KbActor {
     pub id: u32,
     position: Vector3<f32>,
     scale: Vector3<f32>,
+
+    model_handle: KbModelHandle,
 }
 
 impl KbActor {
@@ -20,16 +22,33 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
+                model_handle: KbModelHandle { index: INVALID_MODEL_HANDLE } 
             }
         }
     }
 
-    pub fn set_position(&mut self, position: Vector3<f32>) {
-        self.position = position;
+    pub fn set_position(&mut self, position: &Vector3<f32>) {
+        self.position = position.clone();
     }
 
-    pub fn set_scale(&mut self, scale: Vector3<f32>) {
-        self.scale = scale;
+    pub fn get_position(&self) -> Vector3<f32> {
+        self.position
+    }
+
+    pub fn set_scale(&mut self, scale: &Vector3<f32>) {
+        self.scale = scale.clone();
+    }
+ 
+    pub fn get_scale(&self) -> Vector3<f32> {
+        self.scale
+    }
+
+    pub fn set_model(&mut self, new_model: &KbModelHandle) {
+        self.model_handle = new_model.clone();
+    }
+
+    pub fn get_model(&self) -> KbModelHandle {
+        self.model_handle.clone()
     }
 }
 
@@ -101,14 +120,14 @@ impl GameObject {
         self.state_start_time = Instant::now();
     }
 
-    fn update_movement(&mut self, frame_time: f32) {
+    fn update_movement(&mut self, delta_time: f32) {
         
-        self.position = self.position + self.velocity * frame_time;
+        self.position = self.position + self.velocity * delta_time;
 
         // Apply Gravity
         if f32::abs(self.gravity_scale) > 0.001 {
             if self.position.y > 0.0 {
-                self.velocity.y -= frame_time * self.gravity_scale;
+                self.velocity.y -= delta_time * self.gravity_scale;
             } else if self.position.y < 0.0 {
                 self.velocity.y = 0.0;
                 self.position.y = 0.0;

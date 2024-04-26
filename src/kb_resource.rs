@@ -1,19 +1,24 @@
 use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::Vector3;
+use cgmath::SquareMatrix;
 use image::GenericImageView;
+use std::result::Result::Ok;
 use std::sync::Arc;
-
-use wgpu::{BindGroupLayoutEntry, BindingType, Device, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
+use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
+use std::collections::HashMap;
 
-use crate::{kb_config::KbConfig, kb_game_object::GameObject, log, PERF_SCOPE};
+use load_file::load_bytes;
+
+use crate::{kb_config::KbConfig, kb_game_object::{KbActor, GameObject}, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbVertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
+    normal: [f32; 3],
 }
 
 impl KbVertex {
@@ -31,6 +36,11 @@ impl KbVertex {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
                 }
             ]
         }
@@ -38,10 +48,10 @@ impl KbVertex {
 }
  
 pub const VERTICES: &[KbVertex] = &[
-    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
-    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
-    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
-    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
+    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], normal: [0.0, 0.0, 1.0] },
 ];
 
 pub const INDICES: &[u16] = &[
@@ -66,17 +76,17 @@ impl KbDrawInstance {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 2,     // Corresponds to @location in the shader
+                    shader_location: 3,     // Corresponds to @location in the shader
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 3,
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 4,
+                    shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
             ],
@@ -105,7 +115,7 @@ pub struct KbTexture {
 }
 
 impl KbTexture {
-    pub fn new_depth_texture(device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> Result<Self> {
+    pub fn new_depth_texture(device: &Device, surface_config: &SurfaceConfiguration) -> Result<Self> {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
@@ -144,7 +154,7 @@ impl KbTexture {
         })
     }
 
-    pub fn new_render_texture(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) ->Result<Self> {        
+    pub fn new_render_texture(device: &Device, surface_config: &wgpu::SurfaceConfiguration) ->Result<Self> {        
         let texture = device.create_texture(
             &wgpu::TextureDescriptor {
                 label: Some("Render Target"),
@@ -179,8 +189,8 @@ impl KbTexture {
     }
 
     pub fn from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         bytes: &[u8], 
         label: &str
     ) -> Result<Self> {
@@ -189,8 +199,8 @@ impl KbTexture {
     }
 
     pub fn from_image(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img: &image::DynamicImage,
         label: Option<&str>
     ) -> Result<Self> {
@@ -273,8 +283,8 @@ pub struct KbDeviceResources<'a> {
     pub surface: wgpu::Surface<'a>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Device,
+    pub queue: Queue,
 
     pub instance_buffer: wgpu::Buffer,
     pub brush: TextBrush<FontRef<'a>>,
@@ -313,7 +323,7 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("Requesting Device");
 		let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
+            &DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
                 // WebGL doesn't support all of wgpu's features
                 required_limits: if cfg!(target_arch = "wasm32") {
@@ -378,9 +388,14 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration, game_config: &KbConfig) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, game_config: &KbConfig) -> Self {
         log!("Creating KbSpritePipeline...");
 
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+
+        
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -747,8 +762,12 @@ pub struct KbPostprocessPipeline {
 }
 
 impl KbPostprocessPipeline {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_config: &wgpu::SurfaceConfiguration, render_texture: &KbTexture) -> Self {
-                        
+    pub fn new(device_resources: &KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+        let render_texture = &device_resources.render_textures[0];
+
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("postprocess_uber.wgsl"),
@@ -966,7 +985,8 @@ impl KbPostprocessPipeline {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbModelUniform {
-    pub view_proj: [[f32; 4]; 4],
+    pub inv_world: [[f32; 4]; 4],
+    pub mvp_matrix: [[f32; 4]; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
 }
@@ -974,77 +994,144 @@ pub struct KbModelUniform {
 pub struct KbModel {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32
+    pub num_indices: u32,
+
+    pub textures: Vec<KbTexture>,
+    pub tex_bind_group: wgpu::BindGroup,
+
+    uniforms: Vec<KbModelUniform>,
+    uniform_buffers: Vec<wgpu::Buffer>,
+    uniform_bind_groups: Vec<wgpu::BindGroup>,
+
+    next_uniform_buffer: usize,
 }
 
 impl KbModel {
-    pub fn new(device: &wgpu::Device) -> Self {
 
-    let extent = 1.25;
-        let vertices = &[
-            // Front
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [1.0, 1.0], },
+    pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
+        let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
+        self.next_uniform_buffer = self.next_uniform_buffer + 1;
+        ret_val
+    }
 
-            // Top
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [1.0, 1.0], },
+    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
+        &self.uniform_bind_groups[index]
+    }
 
-            // Left
-            KbVertex { position: [extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [1.0, 1.0], },
+    pub fn get_uniform_info_count(&self) -> usize {
+        self.next_uniform_buffer
+    }
 
-            // Right
-            KbVertex { position: [-extent, extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [1.0, 1.0], },
+    pub fn free_uniform_infos(&mut self) {
+        self.next_uniform_buffer = 0;
+    }
 
-            // Back
-            KbVertex { position: [extent, extent, -extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [1.0, 1.0], },
+    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
 
-            // Bottom
-            KbVertex { position: [extent, -extent, extent], tex_coords: [1.0, 0.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [0.0, 0.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [0.0, 1.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [1.0, 1.0], },
-        ];
+        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
 
-        let indices: [u16;36] = [
-            0, 1, 3,
-            3, 1, 2,
+        log!("Loading Model ==============================================================");
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+        let mut indices = Vec::<u16>::new();
+        let mut vertices = Vec::<KbVertex>::new();
 
-            4, 5, 7,
-            7, 5, 6,
+        let mut textures = Vec::<KbTexture>::new();
 
-            9, 11, 8,
-            9, 10, 11,
+        log!("gltf texture len = {}", gltf_doc.textures().len());
 
-            12, 15, 13,
-            15, 14, 13,
 
-            16, 19, 17,
-            19, 18, 17,
+        log!("cwd = {}",  std::env::current_dir().unwrap().display());
 
-            20, 23, 21,
-            23, 22, 21,
-        ];      
+        for gltf_texture in gltf_doc.textures() {
+            log!("  Hitting that iteration");
+
+            match gltf_texture.source().source() {
+
+                gltf::image::Source::View { view: _, mime_type: _ } => {
+                    log!("      Arm 0 ");
+                }
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    match std::env::current_dir() {
+                        Ok(dir) => {
+                            let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
+                            log!("  Trying to load {}", file_path);
+                            let file_bytes = load_bytes!(&file_path);
+                            let new_texture = KbTexture::from_bytes(device, queue, file_bytes, uri).unwrap();
+                            textures.push(new_texture);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        for m in gltf_doc.meshes() {
+            for p in m.primitives() {
+                let r = p.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(gltf::mesh::util::ReadIndices::U16(gltf::accessor::Iter::Standard(iter))) = r.read_indices(){
+                    for v in iter {
+                        indices.push(v);
+                    }
+                }
+
+                let mut positions = Vec::new();
+                if let Some(iter) = r.read_positions(){
+                    for v in iter{
+                        positions.push(v);
+                    }
+                }
+
+                let mut uvs = Vec::new();
+                if let Some(gltf::mesh::util::ReadTexCoords::F32(gltf::accessor::Iter::Standard(iter))) = r.read_tex_coords(0){
+                    for v in iter{
+                        uvs.push(v);
+                    }
+                }
+
+                let mut normals = Vec::new();
+                if let Some(iter) = r.read_normals(){
+                    for v in iter{
+                        normals.push(v);
+                    }
+                }
+
+                /*
+                    let mut joints = Vec::new();
+                    if let Some(gltf::mesh::util::ReadJoints::U8(gltf::accessor::Iter::Standard(iter))) = r.read_joints(0){
+                        for v in iter{
+                            joints.push(v);
+                        }
+                    }
+                    let mut weights = Vec::new();
+                    if let Some(gltf::mesh::util::ReadWeights::F32(gltf::accessor::Iter::Standard(iter))) = r.read_weights(0){
+                        for v in iter{
+                            weights.push(v);
+                        }
+                    }
+                */
+                let mut i = 0;
+                while i < positions.len() {
+                    let vertex = KbVertex {
+                        position: positions[i],
+                        tex_coords: uvs[i],
+                        normal: normals[i]
+                    };
+                    vertices.push(vertex);
+                    i = i + 1;
+                }
+            }
+        }
+
+        log!("Index length = {}", indices.len());
 
         let num_indices = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("KbModel_vertex_buffer"),
-                contents: bytemuck::cast_slice(vertices),
+                contents: bytemuck::cast_slice(vertices.as_slice()),
                 usage: wgpu::BufferUsages::VERTEX
             }
         );
@@ -1053,17 +1140,122 @@ impl KbModel {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&indices),
+                contents: bytemuck::cast_slice(&indices.as_slice()),
                 usage: wgpu::BufferUsages::INDEX
             }
         );
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
+      
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
+
+        // Uniform buffer
+ /*
+     pub uniform_buffers: Vec<wgpu::Buffer>,
+    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
+ */
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
+
+        let uniform = KbModelUniform{ ..Default::default() };
+        let mut uniforms: Vec<KbModelUniform> = Vec::with_capacity(MAX_UNIFORMS);
+
+        let mut i = 0;
+        while i < MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+            uniforms.push(uniform);
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+            i = i + 1;
+        }
+        
+
         KbModel {
             vertex_buffer,
             index_buffer,
-            num_indices
+            num_indices,
+
+            uniforms,
+            uniform_bind_groups,
+            uniform_buffers,
+
+            textures,
+            tex_bind_group,
+
+            next_uniform_buffer: 0
         }
     }
 }
+
+pub const MAX_UNIFORMS: usize = 100;
 
 pub struct KbModelPipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,
@@ -1074,7 +1266,11 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration) -> Self {
+    pub fn new(device_resources: &KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+
         log!("Creating KbModelPipeline...");
 
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1128,13 +1324,10 @@ impl KbModelPipeline {
         });
         
         // Uniform buffer
-        let uniform = KbModelUniform {
-            ..Default::default()
-        };
-
+        let uniform = KbModelUniform{ ..Default::default() };
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("KbModelPipeline_uniform_buffer"),
+                label: Some("kbModelPipeline_uniform_buffer"),
                 contents: bytemuck::cast_slice(&[uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
@@ -1166,7 +1359,34 @@ impl KbModelPipeline {
             ],
             label: Some("KbModelPipeline_uniform_bind_group"),
         });
-
+        /*
+                let local_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(entity_uniform_size),
+                    },
+                    count: None,
+                }],
+                label: None,
+            });
+        let entity_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &local_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &entity_uniform_buf,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(entity_uniform_size),
+                }),
+            }],
+            label: None,
+        });
+        */
         log!("  Creating pipeline");
 
         // Render pipeline
@@ -1204,8 +1424,8 @@ impl KbModelPipeline {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -1226,11 +1446,11 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, model: &KbModel, device_resources: &mut KbDeviceResources, game_config: &KbConfig) {
-    	let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("KbSpritePipeline::render()"),
-		});
-      
+    pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+        let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("KbModelPipeline::render()"),
+        });
+
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
@@ -1258,7 +1478,6 @@ impl KbModelPipeline {
             }
         };
 
-
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[color_attachment],
@@ -1273,43 +1492,69 @@ impl KbModelPipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        //device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
-       // if matches!(render_pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&self.opaque_render_pipeline);
-       // } else {
-       //     render_pass.set_pipeline(&self.transparent_render_pipeline);
-       // }
-       let eye: cgmath::Point3<f32> = (0.0, -1.8, 5.0).into();
-       let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
-       let up = cgmath::Vector3::unit_y();
-       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 15.0));
-       let world = cgmath::Matrix4::from_angle_y(radians);
-       let view = cgmath::Matrix4::look_at_rh(eye, target, up);
-       let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+        render_pass.set_pipeline(&self.opaque_render_pipeline);
 
-        self.uniform.view_proj = (proj * view * world).into();
-        self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
-        self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+        // Uniform info
+        let fragment_texture_fix = {
+            #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
+            #[cfg(not(target_arch = "wasm32"))] { 1.0 }
+        };
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.uniform.time[1] = 1.0 / 2.2;
+        let view_matrix = {
+            let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
+            let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
+            let up = cgmath::Vector3::unit_y();
+            cgmath::Matrix4::look_at_rh(eye, target, up)
+        };
+        let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
+
+        // Iterate over actors and add their uniform info to their corresponding KbModels
+        let model_len = models.len();
+        let actor_iter = actors.iter();
+        for actor_key_value in actor_iter {
+            let actor = actor_key_value.1;
+            let model_id = actor.get_model().index;
+            if model_id as usize > model_len {
+                continue;
+            }
+
+            let model = &mut models[model_id as usize];
+            let (uniform, uniform_buffer) = model.alloc_uniform_info();
+            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
+
+            uniform.inv_world = world_matrix.invert().unwrap().into();
+            uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
+            uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
+            uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+            uniform.time[1] = fragment_texture_fix;
+            device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[*uniform]));
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.uniform.time[1] = 1.0;
-        }
+        // Iterate over KbModels and render them setting the uniform info from above
+        let model_iter = models.iter_mut();
+        for model in model_iter {
+            render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+            let mut i = 0;
+            while i < model.get_uniform_info_count() {
+                let uniform_bind_group = &model.get_uniform_bind_group(i);
+                render_pass.set_bind_group(1, uniform_bind_group, &[]);
+                render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
+                render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+
+                i = i + 1;
+            }
+        }
+        
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
-    }
 
+        let model_iter = models.iter_mut();
+        for model in model_iter {
+            model.free_uniform_infos();
+        }
+    }
 }
