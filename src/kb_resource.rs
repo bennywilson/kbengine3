@@ -5,7 +5,7 @@ use image::GenericImageView;
 use wgpu::SurfaceConfiguration;
 use wgpu_text::{BrushBuilder, TextBrush};
 
-use crate::{kb_config::KbConfig, kb_pipeline::{KbModelPipeline, KbPostprocessPipeline, KbSpritePipeline}, log};
+use crate::{kb_config::KbConfig, log};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -258,6 +258,7 @@ pub enum KbRenderPassType {
     PostProcess,
 }
 
+#[derive(Clone)]
 pub enum KbPostProcessMode {
     Passthrough,
     Desaturation,

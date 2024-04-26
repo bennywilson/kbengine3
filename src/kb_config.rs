@@ -1,3 +1,5 @@
+use crate::KbPostProcessMode;
+
 #[derive(Clone)]
 pub struct KbConfig {
 	// From file
@@ -10,8 +12,9 @@ pub struct KbConfig {
 	pub graphics_power_pref: wgpu::PowerPreference,
 	pub _vsync: bool,
 
-	//
-	pub start_time: instant::Instant
+	// Dynamic
+	pub start_time: instant::Instant,
+	pub postprocess_mode: KbPostProcessMode,
 }
 
 impl KbConfig {
@@ -90,7 +93,9 @@ impl KbConfig {
             graphics_backend,
             graphics_power_pref,
 			_vsync,
-			start_time: instant::Instant::now()
+
+			start_time: instant::Instant::now(),
+			postprocess_mode: KbPostProcessMode::Passthrough,
         }
     }
 }

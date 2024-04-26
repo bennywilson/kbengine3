@@ -95,11 +95,16 @@ pub async fn run_game() {
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Warp); }
+
+                            game_config.postprocess_mode = {
+                                if game_engine.input_manager.one_pressed { KbPostProcessMode::Passthrough } else
+                                if game_engine.input_manager.two_pressed { KbPostProcessMode::Desaturation } else
+                                if game_engine.input_manager.three_pressed { KbPostProcessMode::ScanLines } else
+                                if game_engine.input_manager.four_pressed { KbPostProcessMode::Warp } else 
+                                { game_config.postprocess_mode.clone() }
+                            }
                         }
+
                         _ => { }
                     }
                 }
@@ -150,11 +155,15 @@ pub async fn run_game() {
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             game_engine.input_manager.update(event.physical_key, event.state);
 
-                            if game_engine.input_manager.one_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Passthrough); }
-                            if game_engine.input_manager.two_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Desaturation); }
-                            if game_engine.input_manager.three_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::ScanLines); }
-                            if game_engine.input_manager.four_pressed { game_renderer.set_postprocess_mode(KbPostProcessMode::Warp); }
+                            game_config.postprocess_mode = {
+                                if game_engine.input_manager.one_pressed { KbPostProcessMode::Passthrough } else
+                                if game_engine.input_manager.two_pressed { KbPostProcessMode::Desaturation } else
+                                if game_engine.input_manager.three_pressed { KbPostProcessMode::ScanLines } else
+                                if game_engine.input_manager.four_pressed { KbPostProcessMode::Warp } else 
+                                { game_config.postprocess_mode.clone() }
+                            }
                         }
+
                         _ => { }
                     }
                 }

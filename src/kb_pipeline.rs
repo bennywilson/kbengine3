@@ -267,7 +267,7 @@ impl KbSpritePipeline {
         }
     }
 
-    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) -> wgpu::CommandEncoder {
+    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) {
 		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbSpritePipeline::render()"),
 		});
@@ -371,11 +371,13 @@ impl KbSpritePipeline {
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..frame_instances.len() as _);
         drop(render_pass);
-        command_encoder
+        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
 }
 
 pub struct KbPostprocessPipeline {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
     pub postprocess_pipeline: wgpu::RenderPipeline,
     pub postprocess_uniform: PostProcessUniform,
     pub postprocess_constant_buffer: wgpu::Buffer,
@@ -526,14 +528,77 @@ impl KbPostprocessPipeline {
                 label: Some("postprocess_bind_group"),
             }
         );
+ 
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            }
+        );
 
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+            }
+        );
         KbPostprocessPipeline {
             postprocess_pipeline,
             postprocess_uniform,
             postprocess_constant_buffer,
             postprocess_uniform_bind_group,
             postprocess_bind_group,
+            vertex_buffer,
+            index_buffer,
         }
+    }
+
+    pub fn render(&mut self, target_view: &wgpu::TextureView, device_resources: &mut KbDeviceResources, game_config: &KbConfig,) {
+		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some("KbPostprocessPipeline::render()"),
+		});
+
+        let color_attachment = Some(
+            wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+            }});
+
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("postprocess_render_pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(&self.postprocess_pipeline);
+        render_pass.set_bind_group(0, &self.postprocess_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.postprocess_uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+        self.postprocess_uniform.time_mode_unused_unused[0] = game_config.start_time.elapsed().as_secs_f32();
+        self.postprocess_uniform.time_mode_unused_unused[1] = {
+            match game_config.postprocess_mode {
+                KbPostProcessMode::Desaturation => { 1.0 }
+                KbPostProcessMode::ScanLines => { 2.0 }
+                KbPostProcessMode::Warp => { 3.0 }
+                _ => { 0.0 }
+            }
+        };
+
+        device_resources.queue.write_buffer(&self.postprocess_constant_buffer, 0, bytemuck::cast_slice(&[self.postprocess_uniform]));
+        render_pass.draw_indexed(0..6, 0, 0..1);
+        drop(render_pass);
+
+        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
 }
 

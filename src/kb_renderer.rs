@@ -116,54 +116,6 @@ impl<'a> KbRenderer<'a> {
 
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
-    
-    
-    pub fn set_postprocess_mode(&mut self, postprocess_mode: KbPostProcessMode) { 
-        self.postprocess_mode = postprocess_mode;
-    }
-
-    pub fn render_postprocess(&mut self, encoder: &mut wgpu::CommandEncoder, final_view: &wgpu::TextureView) {
-        let device_resources = &mut self.device_resources;
-
-        let color_attachment = Some(
-            wgpu::RenderPassColorAttachment {
-                view: &final_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-            }});
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[color_attachment],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        let postprocess_pipeline = &mut self.postprocess_pipeline;//&mut device_resources.postprocess_pipeline;
-        render_pass.set_pipeline(&postprocess_pipeline.postprocess_pipeline);
-        render_pass.set_bind_group(0, &postprocess_pipeline.postprocess_bind_group, &[]);
-        render_pass.set_bind_group(1, &postprocess_pipeline.postprocess_uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.sprite_pipeline.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.sprite_pipeline.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[0] = self.start_time.elapsed().as_secs_f32();
-        postprocess_pipeline.postprocess_uniform.time_mode_unused_unused[1] = {
-            match self.postprocess_mode {
-                KbPostProcessMode::Desaturation => { 1.0 }
-                KbPostProcessMode::ScanLines => { 2.0 }
-                KbPostProcessMode::Warp => { 3.0 }
-                _ => { 0.0 }
-            }
-        };
-
-        device_resources.queue.write_buffer(&postprocess_pipeline.postprocess_constant_buffer, 0, bytemuck::cast_slice(&[postprocess_pipeline.postprocess_uniform]));
-
-        render_pass.draw_indexed(0..6, 0, 0..1); 
-    }
 
     pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32, game_config: &KbConfig) { 
         let device_resources = &mut self.device_resources;
@@ -235,27 +187,22 @@ impl<'a> KbRenderer<'a> {
 
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
-            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
-            self.submit_encoder(command_encoder);
+            self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
         }
 
         {
             PERF_SCOPE!("Skybox Pass (Transparent)");
-            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
-            self.submit_encoder(command_encoder);
+            self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
 
         {
             PERF_SCOPE!("World Objects Pass");
-            let command_encoder = self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
-            self.submit_encoder(command_encoder);
+            self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
         {
             PERF_SCOPE!("Postprocess pass");
-            let mut command_encoder = self.get_encoder("Postprocess Pass");
-            self.render_postprocess(&mut command_encoder, &final_view);
-            self.submit_encoder(command_encoder);
+            self.postprocess_pipeline.render(&final_view, &mut self.device_resources, game_config);
         }
 
         {
@@ -264,8 +211,9 @@ impl<'a> KbRenderer<'a> {
             self.render_debug_text(&mut command_encoder, &final_view, game_objects.len() as u32, &game_config);
             self.submit_encoder(command_encoder);
         }
+
         self.end_frame(final_tex);
-  
+ 
         Ok(())
     }
 
