@@ -10,6 +10,7 @@ var<uniform> model_uniform: ModelUniform;
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
+    @location(2) normal: vec3<f32>
 }
 
 struct VertexOutput {
@@ -30,7 +31,7 @@ fn vs_main(
     out.tex_coords = model.tex_coords;
 
     var pos: vec3<f32> = model.position.xyz;
-    out.normal = normalize(pos);
+    out.normal = model.normal;
 
     out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
     out.inv_light_1 = (model_uniform.inv_world * vec4<f32>(1.0, 1.0, 1.0, 0.0)).xyz;
@@ -68,6 +69,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     dot = saturate(dot(normal, normalize(in.inv_light_3)));
     var light_3 = dot * vec3<f32>(0.0, 0.0, 0.0);
+
+    light_1 = light_1 * 0.9 + 0.1;
+    light_2 = light_2 * 0.9 + 0.1;
+    light_3 = light_3 * 0.9 + 0.1;
 
     var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
 

@@ -15,6 +15,7 @@ use crate::{kb_config::KbConfig, kb_game_object::GameObject, log, PERF_SCOPE};
 pub struct KbVertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
+    normal: [f32; 3],
 }
 
 impl KbVertex {
@@ -32,6 +33,11 @@ impl KbVertex {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
                 }
             ]
         }
@@ -39,10 +45,10 @@ impl KbVertex {
 }
  
 pub const VERTICES: &[KbVertex] = &[
-    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
-    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
-    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], },
-    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], },
+    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], normal: [0.0, 0.0, 1.0] },
 ];
 
 pub const INDICES: &[u16] = &[
@@ -67,17 +73,17 @@ impl KbDrawInstance {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 2,     // Corresponds to @location in the shader
+                    shader_location: 3,     // Corresponds to @location in the shader
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 3,
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 4,
+                    shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
             ],
@@ -980,76 +986,81 @@ pub struct KbModel {
 }
 
 impl KbModel {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(file_name: &str, device: &wgpu::Device) -> Self {
+        let (gltf_doc, buffers, images) = gltf::import(file_name).unwrap();
 
-    let u = (0.0, 3.0 / 8.0);
-    let v = (0.625, 0.625 + 3.0 / 8.0);
+        log!("Loading Model ==============================================================");
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+        let mut indices = Vec::<u16>::new();
+        let mut vertices = Vec::<KbVertex>::new();
 
-    let extent = 1.25;
-        let vertices = &[
-            // Front
-            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [u.0, v.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.1], },
+        for m in gltf_doc.meshes(){
+            for p in m.primitives(){
+                let r = p.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(gltf::mesh::util::ReadIndices::U16(gltf::accessor::Iter::Standard(iter))) = r.read_indices(){
+                    for v in iter {
+                        indices.push(v);
+                    }
+                }
 
-            // Top
-            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [u.0, v.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [-extent, extent, extent], tex_coords: [u.1, v.1], },
+                let mut positions = Vec::new();
+                if let Some(iter) = r.read_positions(){
+                    for v in iter{
+                        positions.push(v);
+                    }
+                }
 
-            // Right
-            KbVertex { position: [extent, extent, extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.1], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [extent, extent, -extent], tex_coords: [u.0, v.0], },
+                let mut uvs = Vec::new();
+                if let Some(gltf::mesh::util::ReadTexCoords::F32(gltf::accessor::Iter::Standard(iter))) = r.read_tex_coords(0){
+                    for v in iter{
+                        uvs.push(v);
+                    }
+                }
 
-            // Left
-            KbVertex { position: [-extent, extent, extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.1, v.1], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.0], },
+                let mut normals = Vec::new();
+                if let Some(iter) = r.read_normals(){
+                    for v in iter{
+                        normals.push(v);
+                    }
+                }
 
-            // Back
-            KbVertex { position: [extent, extent, -extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [-extent, extent, -extent], tex_coords: [u.0, v.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.1, v.1], },
+                /*
+                    let mut joints = Vec::new();
+                    if let Some(gltf::mesh::util::ReadJoints::U8(gltf::accessor::Iter::Standard(iter))) = r.read_joints(0){
+                        for v in iter{
+                            joints.push(v);
+                        }
+                    }
+                    let mut weights = Vec::new();
+                    if let Some(gltf::mesh::util::ReadWeights::F32(gltf::accessor::Iter::Standard(iter))) = r.read_weights(0){
+                        for v in iter{
+                            weights.push(v);
+                        }
+                    }
+                */
+                let mut i = 0;
+                while i < positions.len() {
+                    let u = uvs[i][0] * (3.0/8.0);
+                    let v = uvs[i][1] * (3.0/8.0) + 5.0/8.0;
+                    let vertex = KbVertex {
+                        position: positions[i],
+                        tex_coords: [u,v],
+                        normal: normals[i]
+                    };
+                    vertices.push(vertex);
+                    i = i + 1;
+                }
+            }
+        }
 
-            // Bottom
-            KbVertex { position: [extent, -extent, extent], tex_coords: [u.1, v.0], },
-            KbVertex { position: [extent, -extent, -extent], tex_coords: [u.0, v.0], },
-            KbVertex { position: [-extent, -extent, -extent], tex_coords: [u.0, v.1], },
-            KbVertex { position: [-extent, -extent, extent], tex_coords: [u.1, v.1], },
-        ];
-
-        let indices: [u16;36] = [
-            0, 1, 3,
-            3, 1, 2,
-
-            4, 5, 7,
-            7, 5, 6,
-
-            9, 11, 8,
-            9, 10, 11,
-
-            12, 15, 13,
-            15, 14, 13,
-
-            16, 19, 17,
-            19, 18, 17,
-
-            20, 23, 21,
-            23, 22, 21,
-        ];      
+        log!("Index length = {}", indices.len());
 
         let num_indices = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("KbModel_vertex_buffer"),
-                contents: bytemuck::cast_slice(vertices),
+                contents: bytemuck::cast_slice(vertices.as_slice()),
                 usage: wgpu::BufferUsages::VERTEX
             }
         );
@@ -1058,7 +1069,7 @@ impl KbModel {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&indices),
+                contents: bytemuck::cast_slice(&indices.as_slice()),
                 usage: wgpu::BufferUsages::INDEX
             }
         );
@@ -1209,8 +1220,8 @@ impl KbModelPipeline {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -1286,15 +1297,15 @@ impl KbModelPipeline {
        // } else {
        //     render_pass.set_pipeline(&self.transparent_render_pipeline);
        // }
-       let eye: cgmath::Point3<f32> = (0.0, 3.0 * 0.75, 10.0 * 0.75).into();
+       let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
        let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
        let up = cgmath::Vector3::unit_y();
-       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 15.0));
-       let world = cgmath::Matrix4::from_angle_y(radians);
+       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 445.0));
+        let world = cgmath::Matrix4::from_angle_y(radians);
        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
        let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
-       self.uniform.inv_world = world.invert().unwrap().into();
+        self.uniform.inv_world = world.invert().unwrap().into();
         self.uniform.view_proj = (proj * view * world).into();
         self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
         self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();

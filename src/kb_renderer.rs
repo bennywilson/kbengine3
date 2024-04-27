@@ -12,7 +12,8 @@ pub struct KbRenderer<'a> {
     model_pipeline: KbModelPipeline,
 
     actor_map: HashMap::<u32, KbActor>,
-    model: KbModel,
+
+    models: Vec<KbModel>,
 
     postprocess_mode: KbPostProcessMode,
     frame_times: Vec<f32>,
@@ -33,7 +34,7 @@ impl<'a> KbRenderer<'a> {
         let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
         let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &device_resources.render_textures[0]);
         let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
-        let model = KbModel::new(device);
+       // let model = KbModel::new(device);
 
         KbRenderer {
             device_resources,
@@ -42,7 +43,7 @@ impl<'a> KbRenderer<'a> {
             postprocess_pipeline,
 
             actor_map: HashMap::<u32, KbActor>::new(),
-            model,
+            models: Vec::<KbModel>::new(),
 
             postprocess_mode: KbPostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
@@ -171,9 +172,9 @@ impl<'a> KbRenderer<'a> {
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
-        {
+        if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(KbRenderPassType::Opaque, true, &self.model, &mut self.device_resources, game_config);
+            self.model_pipeline.render(KbRenderPassType::Opaque, true, &self.models[0], &mut self.device_resources, game_config);
         }
      /*   {
             PERF_SCOPE!("Skybox Pass (Opaque)");
@@ -229,5 +230,10 @@ impl<'a> KbRenderer<'a> {
 
     pub fn remove_actor(&mut self, actor: &KbActor) {
         self.actor_map.remove(&actor.id);
+    }
+
+    pub fn load_model(&mut self, file_path: &str) {
+        let model = KbModel::new(file_path, &self.device_resources.device);
+        self.models.push(model);
     }
 }
