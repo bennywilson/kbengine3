@@ -26,7 +26,14 @@ impl KbGameEngine for Example3DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame(&mut self, _renderer: &mut KbRenderer, _input_manager: &InputManager) {
+	fn tick_frame(&mut self, renderer: &mut KbRenderer, _input_manager: &InputManager) {
+
+		let actor = &mut self.actors[1];
+		let mut position = actor.get_position();
+		position.x = position.x + 0.01;
+		actor.set_position(position);
+
+		renderer.add_or_update_actor(&actor);
 	}
 
 	fn initialize_world(&mut self, renderer: &mut KbRenderer)
@@ -39,21 +46,21 @@ impl KbGameEngine for Example3DGame {
 
 		let mut actor = KbActor::new();
 		actor.set_position([0.0, 0.0, 0.0].into());
-		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_scale([1.0, 1.0, 1.0].into());
 		actor.set_model_id(0);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[0]);
 
 		let mut actor = KbActor::new();
-		actor.set_position([5.0, 0.0, 0.0].into());
-		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_position([0.0, 0.0, 0.0].into());
+		actor.set_scale([1.0, 1.0, 1.0].into());
 		actor.set_model_id(1);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[1]);
 	
 		let mut actor = KbActor::new();
-		actor.set_position([5.0, 0.0, 0.0].into());
-		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_position([0.0, 0.0, 0.0].into());
+		actor.set_scale([1.0, 1.0, 1.0].into());
 		actor.set_model_id(2);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[2]);

@@ -27,15 +27,13 @@ impl<'a> KbRenderer<'a> {
         log!("GameRenderer::new() called...");
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
         
-        let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        let surface_config = &device_resources.surface_config;
-
-        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &device_resources.render_textures[0]);
-        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
-       // let model = KbModel::new(device);
-
+        
+        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);
+        
+        let model_pipeline = KbModelPipeline::new(&device_resources);
+  
+        
         KbRenderer {
             device_resources,
             sprite_pipeline,
@@ -214,12 +212,8 @@ impl<'a> KbRenderer<'a> {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
         self.device_resources.resize(&game_config);
-        
-        let device = &self.device_resources.device;
-        let queue = &self.device_resources.queue;
-        let surface_config = &self.device_resources.surface_config;
-        self.sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &self.device_resources.render_textures[0]);
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &game_config);
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

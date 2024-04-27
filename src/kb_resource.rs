@@ -388,9 +388,14 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration, game_config: &KbConfig) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, game_config: &KbConfig) -> Self {
         log!("Creating KbSpritePipeline...");
 
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+
+        
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -757,8 +762,12 @@ pub struct KbPostprocessPipeline {
 }
 
 impl KbPostprocessPipeline {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_config: &wgpu::SurfaceConfiguration, render_texture: &KbTexture) -> Self {
-                        
+    pub fn new(device_resources: &KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+        let render_texture = &device_resources.render_textures[0];
+
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("postprocess_uber.wgsl"),
@@ -1159,6 +1168,8 @@ impl KbModel {
     }
 }
 
+pub const MAX_UNIFORMS: usize = 100;
+
 pub struct KbModelPipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,
     pub uniform: KbModelUniform,
@@ -1168,7 +1179,11 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device: &Device, queue: &Queue, surface_config: &SurfaceConfiguration) -> Self {
+    pub fn new(device_resources: &KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let surface_config = &device_resources.surface_config;
+
         log!("Creating KbModelPipeline...");
 
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1222,13 +1237,10 @@ impl KbModelPipeline {
         });
         
         // Uniform buffer
-        let uniform = KbModelUniform {
-            ..Default::default()
-        };
-
+        let uniform = KbModelUniform{ ..Default::default() };
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("KbModelPipeline_uniform_buffer"),
+                label: Some("kbModelPipeline_uniform_buffer"),
                 contents: bytemuck::cast_slice(&[uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
@@ -1366,7 +1378,6 @@ impl KbModelPipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
         //device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
        // if matches!(render_pass_type, KbRenderPassType::Opaque) {
@@ -1374,28 +1385,40 @@ impl KbModelPipeline {
        // } else {
        //     render_pass.set_pipeline(&self.transparent_render_pipeline);
        // }
-        let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
-        let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
-        let up = cgmath::Vector3::unit_y();
-        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
-        let world = cgmath::Matrix4::from_translation(Vector3::<f32>::new(0.45, 0.45, 0.0)) * cgmath::Matrix4::from_angle_y(radians);
-        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
-        let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
-        self.uniform.inv_world = world.invert().unwrap().into();
-        self.uniform.view_proj = (proj * view * world).into();
-        self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
-        self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+       // let mut buffer_idx = 0;
+        let actor_iter = actors.iter();
+        for actor_key_value in actor_iter {
+            let actor = actor_key_value.1;
+            let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
+            let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
+            let up = cgmath::Vector3::unit_y();
+            let view = cgmath::Matrix4::look_at_rh(eye, target, up);
+            let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.uniform.time[1] = 1.0 / 2.2;
+            let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
+            let world = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians);
+
+            let uniform = &mut self.uniform;
+
+            uniform.inv_world = world.invert().unwrap().into();
+            uniform.view_proj = (proj * view * world).into();
+            uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
+            uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                uniform.time[1] = 1.0 / 2.2;
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                uniform.time[1] = 1.0;
+            } 
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.uniform.time[1] = 1.0;
-        }
+        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+        let mut i = 0;
 
         let actor_iter = actors.iter();
         for actor in actor_iter {
@@ -1411,6 +1434,7 @@ impl KbModelPipeline {
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+            i = i + 1;
         }
 
         drop(render_pass);

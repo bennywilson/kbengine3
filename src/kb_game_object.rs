@@ -39,6 +39,10 @@ impl KbActor {
         self.model_id = new_id;
     }
 
+    pub fn get_position(&self) -> Vector3<f32> {
+        self.position
+    }
+
     pub fn get_model_id(&self) -> i32 {
         self.model_id
     }
