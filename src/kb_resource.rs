@@ -1300,7 +1300,7 @@ impl KbModelPipeline {
        let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
        let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
        let up = cgmath::Vector3::unit_y();
-       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 445.0));
+       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
         let world = cgmath::Matrix4::from_angle_y(radians);
        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
        let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
