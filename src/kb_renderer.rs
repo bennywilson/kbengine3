@@ -172,11 +172,7 @@ impl<'a> KbRenderer<'a> {
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
-        if self.models.len() > 0 {
-            PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(KbRenderPassType::Opaque, true, &self.models[0], &mut self.device_resources, game_config);
-        }
-     /*   {
+        {
             PERF_SCOPE!("Skybox Pass (Opaque)");
             self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
         }
@@ -189,7 +185,13 @@ impl<'a> KbRenderer<'a> {
         {
             PERF_SCOPE!("World Objects Pass");
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
-        }*/
+        }
+
+          if self.models.len() > 0 {
+            PERF_SCOPE!("Model Pass");
+            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &self.models, &self.actor_map, game_config);
+        }
+
 
         {
             PERF_SCOPE!("Postprocess pass");
@@ -233,7 +235,7 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn load_model(&mut self, file_path: &str) {
-        let model = KbModel::new(file_path, &self.device_resources.device);
+        let model = KbModel::new(file_path, &mut self.device_resources);
         self.models.push(model);
     }
 }

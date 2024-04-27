@@ -34,13 +34,30 @@ impl KbGameEngine for Example3DGame {
 		log!("GameEngine::initialize_world() caled...");
 
 		renderer.load_model("game_assets/pinky.gltf");
+		renderer.load_model("game_assets/ELP_Barrel.gltf");
+		renderer.load_model("game_assets/Shotgun.gltf");
 
 		let mut actor = KbActor::new();
 		actor.set_position([0.0, 0.0, 0.0].into());
 		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_model_id(0);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[0]);
-		
+
+		let mut actor = KbActor::new();
+		actor.set_position([5.0, 0.0, 0.0].into());
+		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_model_id(1);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[1]);
+	
+		let mut actor = KbActor::new();
+		actor.set_position([5.0, 0.0, 0.0].into());
+		actor.set_scale([0.0, 0.0, 0.0].into());
+		actor.set_model_id(2);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[2]);
+
 		// Sky
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, 0.0).into(),

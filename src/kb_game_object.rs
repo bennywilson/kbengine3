@@ -10,6 +10,8 @@ pub struct KbActor {
     pub id: u32,
     position: Vector3<f32>,
     scale: Vector3<f32>,
+
+    model_id: i32,
 }
 
 impl KbActor {
@@ -20,6 +22,7 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
+                model_id: -1
             }
         }
     }
@@ -30,6 +33,14 @@ impl KbActor {
 
     pub fn set_scale(&mut self, scale: Vector3<f32>) {
         self.scale = scale;
+    }
+    
+    pub fn set_model_id(&mut self, new_id: i32) {
+        self.model_id = new_id;
+    }
+
+    pub fn get_model_id(&self) -> i32 {
+        self.model_id
     }
 }
 

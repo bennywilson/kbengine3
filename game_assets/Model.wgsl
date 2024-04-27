@@ -30,7 +30,7 @@ fn vs_main(
 
     out.tex_coords = model.tex_coords;
 
-    var pos: vec3<f32> = model.position.xyz;
+    var pos: vec3<f32> = model.position.xyz * 0.3;
     out.normal = model.normal;
 
     out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);

@@ -82,9 +82,9 @@
 	],
 	"images":[
 		{
-			"mimeType":"image/jpeg",
+			"mimeType":"image/png",
 			"name":"Pinky_Base_T",
-			"uri":"Pinky_Base_T.jpg"
+			"uri":"Pinky_Base_T.png"
 		}
 	],
 	"accessors":[
@@ -170,7 +170,7 @@
 	"buffers":[
 		{
 			"byteLength":746912,
-			"uri":"pinky.bin"
+			"uri":"Pinky.bin"
 		}
 	]
 }

@@ -13,6 +13,7 @@ getrandom = { version = "0.2", features = ["js"] }
 gltf="1.4.0"
 instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
 json = "0.12.4"
+load_file = "1.0.1"
 log = "0.4"
 pollster = "0.3"
 winit = "0.29.15"

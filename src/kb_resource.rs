@@ -3,12 +3,15 @@ use anyhow::*;
 use cgmath::Vector3;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
+use std::result::Result::Ok;
 use std::sync::Arc;
-
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
+use std::collections::HashMap;
 
-use crate::{kb_config::KbConfig, kb_game_object::GameObject, log, PERF_SCOPE};
+use load_file::load_bytes;
+
+use crate::{kb_config::KbConfig, kb_game_object::{KbActor, GameObject}, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -982,11 +985,16 @@ pub struct KbModelUniform {
 pub struct KbModel {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32
+    pub num_indices: u32,
+    pub textures: Vec<KbTexture>,
+    pub tex_bind_group: wgpu::BindGroup,
 }
 
 impl KbModel {
-    pub fn new(file_name: &str, device: &wgpu::Device) -> Self {
+    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+
         let (gltf_doc, buffers, images) = gltf::import(file_name).unwrap();
 
         log!("Loading Model ==============================================================");
@@ -994,8 +1002,38 @@ impl KbModel {
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
 
-        for m in gltf_doc.meshes(){
-            for p in m.primitives(){
+        let mut textures = Vec::<KbTexture>::new();
+
+        log!("gltf texture len = {}", gltf_doc.textures().len());
+
+
+        log!("cwd = {}",  std::env::current_dir().unwrap().display());
+
+        for gltf_texture in gltf_doc.textures() {
+            log!("  Hitting that iteration");
+
+            match gltf_texture.source().source() {
+
+                gltf::image::Source::View { view: _, mime_type: _ } => {
+                    log!("      Arm 0 ");
+                }
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    match std::env::current_dir() {
+                        Ok(dir) => {
+                            let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
+                            log!("  Trying to load {}", file_path);
+                            let file_bytes = load_bytes!(&file_path);
+                            let new_texture = KbTexture::from_bytes(device, queue, file_bytes, uri).unwrap();
+                            textures.push(new_texture);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        for m in gltf_doc.meshes() {
+            for p in m.primitives() {
                 let r = p.reader(|buffer| Some(&buffers[buffer.index()]));
                 if let Some(gltf::mesh::util::ReadIndices::U16(gltf::accessor::Iter::Standard(iter))) = r.read_indices(){
                     for v in iter {
@@ -1040,11 +1078,9 @@ impl KbModel {
                 */
                 let mut i = 0;
                 while i < positions.len() {
-                    let u = uvs[i][0] * (3.0/8.0);
-                    let v = uvs[i][1] * (3.0/8.0) + 5.0/8.0;
                     let vertex = KbVertex {
                         position: positions[i],
-                        tex_coords: [u,v],
+                        tex_coords: uvs[i],
                         normal: normals[i]
                     };
                     vertices.push(vertex);
@@ -1073,10 +1109,52 @@ impl KbModel {
                 usage: wgpu::BufferUsages::INDEX
             }
         );
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
+      
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
+
         KbModel {
             vertex_buffer,
             index_buffer,
-            num_indices
+            num_indices,
+            textures,
+            tex_bind_group
         }
     }
 }
@@ -1242,9 +1320,9 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, model: &KbModel, device_resources: &mut KbDeviceResources, game_config: &KbConfig) {
+    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
     	let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("KbSpritePipeline::render()"),
+			label: Some("KbModelPipeline::render()"),
 		});
       
         let color_attachment = {
@@ -1274,7 +1352,6 @@ impl KbModelPipeline {
             }
         };
 
-
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[color_attachment],
@@ -1297,13 +1374,13 @@ impl KbModelPipeline {
        // } else {
        //     render_pass.set_pipeline(&self.transparent_render_pipeline);
        // }
-       let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
-       let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
-       let up = cgmath::Vector3::unit_y();
-       let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
-        let world = cgmath::Matrix4::from_angle_y(radians);
-       let view = cgmath::Matrix4::look_at_rh(eye, target, up);
-       let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+        let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
+        let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
+        let up = cgmath::Vector3::unit_y();
+        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
+        let world = cgmath::Matrix4::from_translation(Vector3::<f32>::new(0.45, 0.45, 0.0)) * cgmath::Matrix4::from_angle_y(radians);
+        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
+        let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
         self.uniform.inv_world = world.invert().unwrap().into();
         self.uniform.view_proj = (proj * view * world).into();
@@ -1320,13 +1397,23 @@ impl KbModelPipeline {
             self.uniform.time[1] = 1.0;
         }
 
-        render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+        let actor_iter = actors.iter();
+        for actor in actor_iter {
+            let model_id = actor.1.get_model_id();
+            if model_id < 0 || model_id as usize > models.len() {
+                continue;
+            }
+
+            let model = &models[model_id as usize];
+
+            render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+        }
+
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
-
 }
