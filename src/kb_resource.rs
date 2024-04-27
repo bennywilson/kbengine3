@@ -995,8 +995,15 @@ pub struct KbModel {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
+
     pub textures: Vec<KbTexture>,
     pub tex_bind_group: wgpu::BindGroup,
+
+    pub uniforms: Vec<KbModelUniform>,
+    pub uniform_buffers: Vec<wgpu::Buffer>,
+    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
+
+    pub frame_instance: u32,
 }
 
 impl KbModel {
@@ -1158,12 +1165,73 @@ impl KbModel {
             }
         );
 
+        // Uniform buffer
+ /*
+     pub uniform_buffers: Vec<wgpu::Buffer>,
+    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
+ */
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
+
+        let uniform = KbModelUniform{ ..Default::default() };
+        let mut uniforms: Vec<KbModelUniform> = Vec::with_capacity(MAX_UNIFORMS);
+
+        let mut i = 0;
+        while i < MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+            uniforms.push(uniform);
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+            i = i + 1;
+        }
+        
+
         KbModel {
             vertex_buffer,
             index_buffer,
             num_indices,
+
+            uniforms,
+            uniform_bind_groups,
+            uniform_buffers,
+
             textures,
-            tex_bind_group
+            tex_bind_group,
+
+            frame_instance: 0
         }
     }
 }
@@ -1272,7 +1340,34 @@ impl KbModelPipeline {
             ],
             label: Some("KbModelPipeline_uniform_bind_group"),
         });
-
+        /*
+                let local_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(entity_uniform_size),
+                    },
+                    count: None,
+                }],
+                label: None,
+            });
+        let entity_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &local_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &entity_uniform_buf,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(entity_uniform_size),
+                }),
+            }],
+            label: None,
+        });
+        */
         log!("  Creating pipeline");
 
         // Render pipeline
@@ -1332,7 +1427,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
     	let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbModelPipeline::render()"),
 		});
@@ -1385,11 +1480,22 @@ impl KbModelPipeline {
        // } else {
        //     render_pass.set_pipeline(&self.transparent_render_pipeline);
        // }
+       let model_iter = models.iter_mut();
+       for model in model_iter {
+           model.frame_instance = 0;
+       }
 
-       // let mut buffer_idx = 0;
+       let model_len = models.len();
+        let mut i = 0;
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
+            let model_id = actor.get_model_id();
+            if model_id < 0 || model_id as usize > model_len {
+                continue;
+            }
+            let model = &mut models[model_id as usize];
+
             let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
             let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
             let up = cgmath::Vector3::unit_y();
@@ -1397,9 +1503,10 @@ impl KbModelPipeline {
             let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
 
             let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
-            let world = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians);
+      
+            let world = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
 
-            let uniform = &mut self.uniform;
+            let uniform = &mut model.uniforms[model.frame_instance as usize];
 
             uniform.inv_world = world.invert().unwrap().into();
             uniform.view_proj = (proj * view * world).into();
@@ -1414,27 +1521,23 @@ impl KbModelPipeline {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 uniform.time[1] = 1.0;
-            } 
-        }
-
-        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        let mut i = 0;
-
-        let actor_iter = actors.iter();
-        for actor in actor_iter {
-            let model_id = actor.1.get_model_id();
-            if model_id < 0 || model_id as usize > models.len() {
-                continue;
             }
 
-            let model = &models[model_id as usize];
+            device_resources.queue.write_buffer(&model.uniform_buffers[model.frame_instance as usize], 0, bytemuck::cast_slice(&[*uniform]));
+            model.frame_instance = model.frame_instance + 1;
+        }
 
-            render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
-            i = i + 1;
+
+        for model in models {
+            let mut i = 0;
+            while i < model.frame_instance {
+                render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
+                render_pass.set_bind_group(1, &model.uniform_bind_groups[i as usize], &[]);
+                render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+                i = i + 1;
+            }
         }
 
         drop(render_pass);

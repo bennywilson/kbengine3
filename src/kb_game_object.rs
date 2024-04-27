@@ -31,16 +31,20 @@ impl KbActor {
         self.position = position;
     }
 
+    pub fn get_position(&self) -> Vector3<f32> {
+        self.position
+    }
+
     pub fn set_scale(&mut self, scale: Vector3<f32>) {
         self.scale = scale;
     }
-    
-    pub fn set_model_id(&mut self, new_id: i32) {
-        self.model_id = new_id;
+ 
+    pub fn get_scale(&self) -> Vector3<f32> {
+        self.scale
     }
 
-    pub fn get_position(&self) -> Vector3<f32> {
-        self.position
+    pub fn set_model_id(&mut self, new_id: i32) {
+        self.model_id = new_id;
     }
 
     pub fn get_model_id(&self) -> i32 {
@@ -116,14 +120,14 @@ impl GameObject {
         self.state_start_time = Instant::now();
     }
 
-    fn update_movement(&mut self, frame_time: f32) {
+    fn update_movement(&mut self, delta_time: f32) {
         
-        self.position = self.position + self.velocity * frame_time;
+        self.position = self.position + self.velocity * delta_time;
 
         // Apply Gravity
         if f32::abs(self.gravity_scale) > 0.001 {
             if self.position.y > 0.0 {
-                self.velocity.y -= frame_time * self.gravity_scale;
+                self.velocity.y -= delta_time * self.gravity_scale;
             } else if self.position.y < 0.0 {
                 self.velocity.y = 0.0;
                 self.position.y = 0.0;
