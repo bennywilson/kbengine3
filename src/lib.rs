@@ -5,28 +5,25 @@ use winit::{
     window::WindowBuilder,
 };
 
-mod kb_config;
-mod kb_engine;
-mod kb_input;
-mod kb_log;
-mod kb_object;
-mod kb_pipeline;
-mod kb_renderer;
-mod kb_resource;
-mod kb_utils;
+pub mod kb_config;
+pub mod kb_engine;
+pub mod kb_input;
+pub mod kb_game_object;
+pub mod kb_renderer;
+pub mod kb_resource;
+pub mod kb_utils;
 
-use crate::kb_engine::KbEngine;
-use crate::kb_renderer::KbRenderer;
 use crate::kb_config::KbConfig;
+use crate::kb_engine::KbGameEngine;
+use crate::kb_input::InputManager;
+use crate::kb_renderer::KbRenderer;
 use crate::kb_resource::KbPostProcessMode;
 
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
 
-pub async fn run_game() {
+pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'static {
     env_logger::init();
-
-    let mut game_config = KbConfig::new();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -52,10 +49,12 @@ pub async fn run_game() {
 
     let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
 
-    let mut game_engine = KbEngine::new(&game_config);
-    game_engine.initialize_world();
-    
+    let mut game_engine = T::new(&game_config);
+    let mut input_manager = InputManager::new();
     let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
+
+    game_engine.initialize_world(&mut game_renderer);
+
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -73,8 +72,8 @@ pub async fn run_game() {
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
+                            game_engine.tick_frame(&mut game_renderer, &input_manager);
+                            let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
@@ -94,13 +93,13 @@ pub async fn run_game() {
                         }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
-                            game_engine.input_manager.update(event.physical_key, event.state);
+                            input_manager.update(event.physical_key, event.state);
 
                             game_config.postprocess_mode = {
-                                if game_engine.input_manager.one_pressed { KbPostProcessMode::Passthrough } else
-                                if game_engine.input_manager.two_pressed { KbPostProcessMode::Desaturation } else
-                                if game_engine.input_manager.three_pressed { KbPostProcessMode::ScanLines } else
-                                if game_engine.input_manager.four_pressed { KbPostProcessMode::Warp } else 
+                                if input_manager.one_pressed { KbPostProcessMode::Passthrough } else
+                                if input_manager.two_pressed { KbPostProcessMode::Desaturation } else
+                                if input_manager.three_pressed { KbPostProcessMode::ScanLines } else
+                                if input_manager.four_pressed { KbPostProcessMode::Warp } else 
                                 { game_config.postprocess_mode.clone() }
                             }
                         }
@@ -132,8 +131,8 @@ pub async fn run_game() {
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame();
-                            let render_result = game_renderer.render_frame(&game_engine.game_objects, &game_config);
+                            game_engine.tick_frame(&mut game_renderer, &input_manager);
+                            let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
@@ -153,13 +152,13 @@ pub async fn run_game() {
                         }
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
-                            game_engine.input_manager.update(event.physical_key, event.state);
+                            input_manager.update(event.physical_key, event.state);
 
                             game_config.postprocess_mode = {
-                                if game_engine.input_manager.one_pressed { KbPostProcessMode::Passthrough } else
-                                if game_engine.input_manager.two_pressed { KbPostProcessMode::Desaturation } else
-                                if game_engine.input_manager.three_pressed { KbPostProcessMode::ScanLines } else
-                                if game_engine.input_manager.four_pressed { KbPostProcessMode::Warp } else 
+                                if input_manager.one_pressed { KbPostProcessMode::Passthrough } else
+                                if input_manager.two_pressed { KbPostProcessMode::Desaturation } else
+                                if input_manager.three_pressed { KbPostProcessMode::ScanLines } else
+                                if input_manager.four_pressed { KbPostProcessMode::Warp } else 
                                 { game_config.postprocess_mode.clone() }
                             }
                         }

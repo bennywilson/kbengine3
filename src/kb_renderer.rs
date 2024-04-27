@@ -1,22 +1,28 @@
 use instant::Instant;
-use std::sync::Arc;
-
+use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_object::{GameObject, GameObjectType}, kb_pipeline::{KbSpritePipeline, KbModelPipeline, KbPostprocessPipeline}, kb_resource::{KbDeviceResources, KbPostProcessMode, KbRenderPassType}, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_resource::*, log, PERF_SCOPE};
 
+pub const INVALID_MODEL_HANDLE: u32 = u32::max_value();
+
+#[derive(Clone)]
+pub struct KbModelHandle {
+    pub index: u32,
+}
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
-
     device_resources: KbDeviceResources<'a>,
     sprite_pipeline: KbSpritePipeline,
     postprocess_pipeline: KbPostprocessPipeline,
     model_pipeline: KbModelPipeline,
 
-    pub size: winit::dpi::PhysicalSize<u32>,
+    actor_map: HashMap::<u32, KbActor>,
+
+    models: Vec<KbModel>,
+
     postprocess_mode: KbPostProcessMode,
-    start_time: Instant,
     frame_times: Vec<f32>,
     frame_timer: Instant,
     frame_count: u32,
@@ -24,27 +30,26 @@ pub struct KbRenderer<'a> {
 }
 
 impl<'a> KbRenderer<'a> {
-
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
-
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
         
-        let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        let surface_config = &device_resources.surface_config;
-
-        let sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &device_resources.render_textures[0]);
-        let model_pipeline = KbModelPipeline::new(&device, &queue, &surface_config);
-
+        
+        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);
+        
+        let model_pipeline = KbModelPipeline::new(&device_resources);
+  
+        
         KbRenderer {
             device_resources,
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
-            size: window.inner_size(),
-            start_time: Instant::now(),
+
+            actor_map: HashMap::<u32, KbActor>::new(),
+            models: Vec::<KbModel>::new(),
+
             postprocess_mode: KbPostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
@@ -52,19 +57,6 @@ impl<'a> KbRenderer<'a> {
             window_id: window.id()
         }
     }
-
-   /* async fn init_renderer(&mut self, window: Arc::<winit::window::Window>, game_config: &KbConfig) {
-        log!("init_renderer() called...");
-
-        match &self.device_resources {
-            Some(_) => {}
-            None => {
-                self.device_resources = Some(KbDeviceResources::new(window, &game_config).await);
-            }
-        }
-
-        log!("init_renderer() complete");
-    }*/
  
     pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView) {
         PERF_SCOPE!("begin_frame())");
@@ -200,6 +192,12 @@ impl<'a> KbRenderer<'a> {
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
+          if self.models.len() > 0 {
+            PERF_SCOPE!("Model Pass");
+            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &mut self.models, &self.actor_map, game_config);
+        }
+
+
         {
             PERF_SCOPE!("Postprocess pass");
             self.postprocess_pipeline.render(&final_view, &mut self.device_resources, game_config);
@@ -220,16 +218,30 @@ impl<'a> KbRenderer<'a> {
     pub fn resize(&mut self, game_config: &KbConfig) {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
-        &mut self.device_resources.resize(&game_config);
-        
-        let device = &self.device_resources.device;
-        let queue = &self.device_resources.queue;
-        let surface_config = &self.device_resources.surface_config;
-        self.sprite_pipeline = KbSpritePipeline::new(&device, &queue, &surface_config, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&device, &queue, &surface_config, &self.device_resources.render_textures[0]);
+        self.device_resources.resize(&game_config);
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &game_config);
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {
         self.window_id
+    }
+
+    pub fn add_or_update_actor(&mut self, actor: &KbActor) {
+        self.actor_map.insert(actor.id, actor.clone());
+    }
+
+    pub fn remove_actor(&mut self, actor: &KbActor) {
+        self.actor_map.remove(&actor.id);
+    }
+
+    pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+        let index = self.models.len() as u32;
+        let model = KbModel::new(file_path, &mut self.device_resources);
+        self.models.push(model);
+
+        KbModelHandle {
+            index
+        }
     }
 }

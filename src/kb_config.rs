@@ -18,8 +18,7 @@ pub struct KbConfig {
 }
 
 impl KbConfig {
-    pub fn new() -> Self {
-		let config_file_text = include_str!("../game_assets/game_config.txt");
+    pub fn new(config_file_text: &str) -> Self {
 
         let json_file = json::parse(&config_file_text).unwrap();
 		
