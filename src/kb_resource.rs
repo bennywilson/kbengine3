@@ -999,17 +999,14 @@ pub struct KbModel {
     pub textures: Vec<KbTexture>,
     pub tex_bind_group: wgpu::BindGroup,
 
-    pub uniforms: Vec<KbModelUniform>,
-    pub uniform_buffers: Vec<wgpu::Buffer>,
-    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
+    uniforms: Vec<KbModelUniform>,
+    uniform_buffers: Vec<wgpu::Buffer>,
+    uniform_bind_groups: Vec<wgpu::BindGroup>,
 
     next_uniform_buffer: usize,
 }
 
 impl KbModel {
-    pub fn free_uniform_infos(&mut self) {
-        self.next_uniform_buffer = 0;
-    }
 
     pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
         let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
@@ -1017,8 +1014,16 @@ impl KbModel {
         ret_val
     }
 
+    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
+        &self.uniform_bind_groups[index]
+    }
+
     pub fn get_uniform_info_count(&self) -> usize {
         self.next_uniform_buffer
+    }
+
+    pub fn free_uniform_infos(&mut self) {
+        self.next_uniform_buffer = 0;
     }
 
     pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
@@ -1442,10 +1447,10 @@ impl KbModelPipeline {
     }
 
     pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
-    	let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("KbModelPipeline::render()"),
-		});
-      
+        let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("KbModelPipeline::render()"),
+        });
+
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
@@ -1491,7 +1496,7 @@ impl KbModelPipeline {
         render_pass.set_pipeline(&self.opaque_render_pipeline);
 
         // Uniform info
-        let color_fix = {
+        let fragment_texture_fix = {
             #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
@@ -1505,6 +1510,7 @@ impl KbModelPipeline {
         let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
         let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
 
+        // Iterate over actors and add their uniform info to their corresponding KbModels
         let model_len = models.len();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
@@ -1513,29 +1519,32 @@ impl KbModelPipeline {
             if model_id as usize > model_len {
                 continue;
             }
-            let model = &mut models[model_id as usize];
 
+            let model = &mut models[model_id as usize];
+            let (uniform, uniform_buffer) = model.alloc_uniform_info();
             let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
 
-            let (uniform, uniform_buffer) = model.alloc_uniform_info();
             uniform.inv_world = world_matrix.invert().unwrap().into();
             uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
             uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
             uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
-            uniform.time[1] = color_fix;
-            //     let uniform = &mut model.uniforms[model.frame_instance as usize];
+            uniform.time[1] = fragment_texture_fix;
             device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[*uniform]));
         }
 
+        // Iterate over KbModels and render them setting the uniform info from above
         let model_iter = models.iter_mut();
         for model in model_iter {
+            render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
             let mut i = 0;
             while i < model.get_uniform_info_count() {
+                let uniform_bind_group = &model.get_uniform_bind_group(i);
+                render_pass.set_bind_group(1, uniform_bind_group, &[]);
                 render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
-                render_pass.set_bind_group(1, &model.uniform_bind_groups[i as usize], &[]);
-                render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+
                 i = i + 1;
             }
         }
