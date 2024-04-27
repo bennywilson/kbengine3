@@ -5,7 +5,7 @@ use cgmath::SquareMatrix;
 use image::GenericImageView;
 use std::result::Result::Ok;
 use std::sync::Arc;
-use wgpu::{BindGroupLayoutEntry, BindingType, Device, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
+use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
 use std::collections::HashMap;
 
@@ -115,7 +115,7 @@ pub struct KbTexture {
 }
 
 impl KbTexture {
-    pub fn new_depth_texture(device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> Result<Self> {
+    pub fn new_depth_texture(device: &Device, surface_config: &SurfaceConfiguration) -> Result<Self> {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
@@ -154,7 +154,7 @@ impl KbTexture {
         })
     }
 
-    pub fn new_render_texture(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) ->Result<Self> {        
+    pub fn new_render_texture(device: &Device, surface_config: &wgpu::SurfaceConfiguration) ->Result<Self> {        
         let texture = device.create_texture(
             &wgpu::TextureDescriptor {
                 label: Some("Render Target"),
@@ -189,8 +189,8 @@ impl KbTexture {
     }
 
     pub fn from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         bytes: &[u8], 
         label: &str
     ) -> Result<Self> {
@@ -199,8 +199,8 @@ impl KbTexture {
     }
 
     pub fn from_image(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img: &image::DynamicImage,
         label: Option<&str>
     ) -> Result<Self> {
@@ -283,8 +283,8 @@ pub struct KbDeviceResources<'a> {
     pub surface: wgpu::Surface<'a>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Device,
+    pub queue: Queue,
 
     pub instance_buffer: wgpu::Buffer,
     pub brush: TextBrush<FontRef<'a>>,
@@ -323,7 +323,7 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("Requesting Device");
 		let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
+            &DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
                 // WebGL doesn't support all of wgpu's features
                 required_limits: if cfg!(target_arch = "wasm32") {
@@ -986,7 +986,7 @@ impl KbPostprocessPipeline {
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbModelUniform {
     pub inv_world: [[f32; 4]; 4],
-    pub view_proj: [[f32; 4]; 4],
+    pub mvp_matrix: [[f32; 4]; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
 }
@@ -1003,15 +1003,29 @@ pub struct KbModel {
     pub uniform_buffers: Vec<wgpu::Buffer>,
     pub uniform_bind_groups: Vec<wgpu::BindGroup>,
 
-    pub frame_instance: u32,
+    next_uniform_buffer: usize,
 }
 
 impl KbModel {
+    pub fn free_uniform_infos(&mut self) {
+        self.next_uniform_buffer = 0;
+    }
+
+    pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
+        let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
+        self.next_uniform_buffer = self.next_uniform_buffer + 1;
+        ret_val
+    }
+
+    pub fn get_uniform_info_count(&self) -> usize {
+        self.next_uniform_buffer
+    }
+
     pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
         let device = &device_resources.device;
         let queue = &device_resources.queue;
 
-        let (gltf_doc, buffers, images) = gltf::import(file_name).unwrap();
+        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
 
         log!("Loading Model ==============================================================");
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
@@ -1231,7 +1245,7 @@ impl KbModel {
             textures,
             tex_bind_group,
 
-            frame_instance: 0
+            next_uniform_buffer: 0
         }
     }
 }
@@ -1427,7 +1441,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
     	let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbModelPipeline::render()"),
 		});
@@ -1473,64 +1487,50 @@ impl KbModelPipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        //device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
-       // if matches!(render_pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&self.opaque_render_pipeline);
-       // } else {
-       //     render_pass.set_pipeline(&self.transparent_render_pipeline);
-       // }
-       let model_iter = models.iter_mut();
-       for model in model_iter {
-           model.frame_instance = 0;
-       }
+        render_pass.set_pipeline(&self.opaque_render_pipeline);
 
-       let model_len = models.len();
-        let mut i = 0;
+        // Uniform info
+        let color_fix = {
+            #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
+            #[cfg(not(target_arch = "wasm32"))] { 1.0 }
+        };
+
+        let view_matrix = {
+            let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
+            let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
+            let up = cgmath::Vector3::unit_y();
+            cgmath::Matrix4::look_at_rh(eye, target, up)
+        };
+        let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
+
+        let model_len = models.len();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
-            let model_id = actor.get_model_id();
-            if model_id < 0 || model_id as usize > model_len {
+            let model_id = actor.get_model().index;
+            if model_id as usize > model_len {
                 continue;
             }
             let model = &mut models[model_id as usize];
 
-            let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
-            let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
-            let up = cgmath::Vector3::unit_y();
-            let view = cgmath::Matrix4::look_at_rh(eye, target, up);
-            let proj = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
 
-            let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
-      
-            let world = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
-
-            let uniform = &mut model.uniforms[model.frame_instance as usize];
-
-            uniform.inv_world = world.invert().unwrap().into();
-            uniform.view_proj = (proj * view * world).into();
+            let (uniform, uniform_buffer) = model.alloc_uniform_info();
+            uniform.inv_world = world_matrix.invert().unwrap().into();
+            uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
             uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
             uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                uniform.time[1] = 1.0 / 2.2;
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                uniform.time[1] = 1.0;
-            }
-
-            device_resources.queue.write_buffer(&model.uniform_buffers[model.frame_instance as usize], 0, bytemuck::cast_slice(&[*uniform]));
-            model.frame_instance = model.frame_instance + 1;
+            uniform.time[1] = color_fix;
+            //     let uniform = &mut model.uniforms[model.frame_instance as usize];
+            device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[*uniform]));
         }
 
-
-        for model in models {
+        let model_iter = models.iter_mut();
+        for model in model_iter {
             let mut i = 0;
-            while i < model.frame_instance {
+            while i < model.get_uniform_info_count() {
                 render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
                 render_pass.set_bind_group(1, &model.uniform_bind_groups[i as usize], &[]);
                 render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
@@ -1539,8 +1539,13 @@ impl KbModelPipeline {
                 i = i + 1;
             }
         }
-
+        
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
+
+        let model_iter = models.iter_mut();
+        for model in model_iter {
+            model.free_uniform_infos();
+        }
     }
 }

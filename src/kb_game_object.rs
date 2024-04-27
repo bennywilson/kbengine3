@@ -1,7 +1,7 @@
 use cgmath::Vector3;
 use instant::Instant;
 
-use crate::{game_random_f32};
+use crate::{kb_renderer::{KbModelHandle, INVALID_MODEL_HANDLE}, game_random_f32};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -11,7 +11,7 @@ pub struct KbActor {
     position: Vector3<f32>,
     scale: Vector3<f32>,
 
-    model_id: i32,
+    model_handle: KbModelHandle,
 }
 
 impl KbActor {
@@ -22,33 +22,33 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_id: -1
+                model_handle: KbModelHandle { index: INVALID_MODEL_HANDLE } 
             }
         }
     }
 
-    pub fn set_position(&mut self, position: Vector3<f32>) {
-        self.position = position;
+    pub fn set_position(&mut self, position: &Vector3<f32>) {
+        self.position = position.clone();
     }
 
     pub fn get_position(&self) -> Vector3<f32> {
         self.position
     }
 
-    pub fn set_scale(&mut self, scale: Vector3<f32>) {
-        self.scale = scale;
+    pub fn set_scale(&mut self, scale: &Vector3<f32>) {
+        self.scale = scale.clone();
     }
  
     pub fn get_scale(&self) -> Vector3<f32> {
         self.scale
     }
 
-    pub fn set_model_id(&mut self, new_id: i32) {
-        self.model_id = new_id;
+    pub fn set_model(&mut self, new_model: &KbModelHandle) {
+        self.model_handle = new_model.clone();
     }
 
-    pub fn get_model_id(&self) -> i32 {
-        self.model_id
+    pub fn get_model(&self) -> KbModelHandle {
+        self.model_handle.clone()
     }
 }
 

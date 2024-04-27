@@ -4,6 +4,13 @@ use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
 use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_resource::*, log, PERF_SCOPE};
 
+pub const INVALID_MODEL_HANDLE: u32 = u32::max_value();
+
+#[derive(Clone)]
+pub struct KbModelHandle {
+    pub index: u32,
+}
+
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
     device_resources: KbDeviceResources<'a>,
@@ -228,8 +235,13 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
-    pub fn load_model(&mut self, file_path: &str) {
+    pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+        let index = self.models.len() as u32;
         let model = KbModel::new(file_path, &mut self.device_resources);
         self.models.push(model);
+
+        KbModelHandle {
+            index
+        }
     }
 }
