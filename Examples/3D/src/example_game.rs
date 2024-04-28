@@ -7,7 +7,7 @@ use kb_engine3::kb_utils::*;
 use kb_engine3::{game_random_f32, log};
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
-pub const CAMERA_ROTATION_RATE: f32 = 50.0;
+pub const CAMERA_ROTATION_RATE: f32 = 100.0;
 
 pub struct Example3DGame {
 	actors: Vec<KbActor>,

@@ -25,8 +25,7 @@ pub struct Example2DGame {
 }
 
 impl Example2DGame {
-		fn update_enemies(&mut self) {
-
+	fn update_enemies(&mut self) {
 		if self.game_objects.len() >= self.max_game_objects {
 			return
 		}
@@ -69,7 +68,6 @@ impl Example2DGame {
 	}
 
 	fn update_projectiles(&mut self) {
-
 		let mut i = 0;
 		while i < self.game_objects.len() {
 			if matches!(self.game_objects[i].object_type, GameObjectType::Projectile) == false {
@@ -113,7 +111,6 @@ impl Example2DGame {
 }
 
 impl KbGameEngine for Example2DGame {
-
 	fn new(game_config: &KbConfig) -> Self {
 		log!("GameEngine::new() caled...");
 
@@ -133,69 +130,7 @@ impl KbGameEngine for Example2DGame {
 		}
     }
 
-	fn get_game_objects(&self) -> &Vec<GameObject> {
-		&self.game_objects
-	}
-
-	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig) {
-		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
-        self.current_frame_time = Instant::now();
-
-		// Player Movement
-        let mut move_vec:cgmath::Vector3<f32> = (0.0, 0.0, 0.0).into();
-
-        if input_manager.left_pressed() {
-            move_vec = Vector3::new(-1.0, 0.0, 0.0);
-			self.game_objects[0].direction.x = -1.0;
-        }
-
-        if input_manager.right_pressed() {
-           move_vec = Vector3::new(1.0, 0.0, 0.0);
-		   self.game_objects[0].direction.x = 1.0;
-		}
-
-        if input_manager.up_pressed {
-            move_vec.y = 1.0;
-        }
-
-        self.game_objects[0].set_velocity(move_vec);
-
-		self.update_enemies();
-		self.update_projectiles();
-
-		// Player Action
-		if input_manager.fire_pressed() && self.game_objects[0].start_attack() {
-			let direction = self.game_objects[0].direction;
-			let velocity = if direction.x > 0.0 { (5.0, 0.0, 0.0).into() } else { (-5.0, 0.0, 0.0).into() };
-			let new_projectile = GameObject { 
-				position: self.game_objects[0].position + direction * 0.1,
-				scale: (0.035, 0.05, 0.05).into(),
-				direction,
-				velocity,
-				object_type: GameObjectType::Projectile,
-				object_state: GameObjectState::Idle,
-				next_attack_time: 0.0,
-				texture_index: 0,
-				sprite_index: 5,
-				anim_frame: 0,
-				life_start_time: Instant::now(),
-				state_start_time: Instant::now(),
-				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
-				is_enemy: false
-			};
-
-			self.game_objects.push(new_projectile);
-		}
-
-		// Update game objects
-		let game_object_iter = self.game_objects.iter_mut();
-		for game_object in game_object_iter {
-			game_object.update(_delta_time_secs);
-		}
-	}
-
-	fn initialize_world(&mut self, _renderer: &mut KbRenderer) {
+		fn initialize_world(&mut self, _renderer: &mut KbRenderer) {
 		log!("GameEngine::initialize_world() caled...");
 
 		// Create Player
@@ -397,5 +332,67 @@ impl KbGameEngine for Example2DGame {
 			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
 		});
-    }
+	}
+
+	fn get_game_objects(&self) -> &Vec<GameObject> {
+		&self.game_objects
+	}
+
+	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &InputManager, _game_config: &KbConfig) {
+		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
+        self.current_frame_time = Instant::now();
+
+		// Player Movement
+        let mut move_vec:cgmath::Vector3<f32> = (0.0, 0.0, 0.0).into();
+
+        if input_manager.left_pressed() {
+            move_vec = Vector3::new(-1.0, 0.0, 0.0);
+			self.game_objects[0].direction.x = -1.0;
+        }
+
+        if input_manager.right_pressed() {
+           move_vec = Vector3::new(1.0, 0.0, 0.0);
+		   self.game_objects[0].direction.x = 1.0;
+		}
+
+        if input_manager.up_pressed {
+            move_vec.y = 1.0;
+        }
+
+        self.game_objects[0].set_velocity(move_vec);
+
+		self.update_enemies();
+		self.update_projectiles();
+
+		// Player Action
+		if input_manager.fire_pressed() && self.game_objects[0].start_attack() {
+			let direction = self.game_objects[0].direction;
+			let velocity = if direction.x > 0.0 { (5.0, 0.0, 0.0).into() } else { (-5.0, 0.0, 0.0).into() };
+			let new_projectile = GameObject { 
+				position: self.game_objects[0].position + direction * 0.1,
+				scale: (0.035, 0.05, 0.05).into(),
+				direction,
+				velocity,
+				object_type: GameObjectType::Projectile,
+				object_state: GameObjectState::Idle,
+				next_attack_time: 0.0,
+				texture_index: 0,
+				sprite_index: 5,
+				anim_frame: 0,
+				life_start_time: Instant::now(),
+				state_start_time: Instant::now(),
+				gravity_scale: 0.0,
+				random_val: game_random_f32!(0.0, 1000.0),
+				is_enemy: false
+			};
+
+			self.game_objects.push(new_projectile);
+		}
+
+		// Update game objects
+		let game_object_iter = self.game_objects.iter_mut();
+		for game_object in game_object_iter {
+			game_object.update(_delta_time_secs);
+		}
+	}
 }
