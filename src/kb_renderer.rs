@@ -37,15 +37,12 @@ pub struct KbRenderer<'a> {
 impl<'a> KbRenderer<'a> {
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
-        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-        
-        
+
+        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;     
         let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);
-        
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);    
         let model_pipeline = KbModelPipeline::new(&device_resources);
-  
-        
+    
         KbRenderer {
             device_resources,
             sprite_pipeline,
@@ -203,11 +200,15 @@ impl<'a> KbRenderer<'a> {
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
-          if self.models.len() > 0 {
+        if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
             self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
         }
 
+        if self.particle_map.len() > 0 {
+            PERF_SCOPE!("Particle Pass");
+            self.model_pipeline.render_particles(&mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+        }
 
         {
             PERF_SCOPE!("Postprocess pass");

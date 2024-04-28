@@ -15,9 +15,9 @@ pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: 
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct KbActorTransform {
-    position: CgVec3,
-    rotation: CgQuat,
-    scale: CgVec3,
+    pub position: CgVec3,
+    pub rotation: CgQuat,
+    pub scale: CgVec3,
 }
 
 #[allow(dead_code)]
@@ -79,23 +79,23 @@ pub struct KbParticleParams {
 
 #[allow(dead_code)]
 pub struct KbParticle {
-    position: CgVec3,
-    acceleration: CgVec3,
-    velocity: CgVec3,
-    color: CgVec4,
-    life_time: f32,
-    start_time: f32
+    pub position: CgVec3,
+    pub acceleration: CgVec3,
+    pub velocity: CgVec3,
+    pub color: CgVec4,
+    pub life_time: f32,
+    pub start_time: f32
 }
 
 #[allow(dead_code)]
 pub struct KbParticleActor {
     params: KbParticleParams,
-    model: KbModel,
-    transform: KbActorTransform,
+    pub model: KbModel,
+    pub transform: KbActorTransform,
     spawn_rate: f32,
     start_time:  Instant,
     next_spawn_time: f32,
-    particles: Vec<KbParticle>,
+    pub particles: Vec<KbParticle>,
     particle_handle: KbParticleHandle
 }
 
@@ -154,6 +154,30 @@ impl KbParticleActor {
                 true
             }
         );
+    }
+
+    pub fn set_position(&mut self, position: &CgVec3) {
+        self.transform.position = position.clone();
+    }
+
+    pub fn get_position(&self) -> CgVec3 {
+        self.transform.position
+    }
+
+    pub fn set_scale(&mut self, scale: &CgVec3) {
+        self.transform.scale = scale.clone();
+    }
+
+    pub fn get_scale(&self) -> CgVec3 {
+        self.transform.scale
+    }
+
+    pub fn set_rotation(&mut self, rotation: &CgQuat) {
+        self.transform.rotation = rotation.clone();
+    }
+
+    pub fn get_rotation(&self) -> CgQuat {
+        self.transform.rotation
     }
 }
 
