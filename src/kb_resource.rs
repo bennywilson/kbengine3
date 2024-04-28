@@ -1,6 +1,5 @@
 use ab_glyph::FontRef;
 use anyhow::*;
-use cgmath::Vector3;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
 use std::result::Result::Ok;
@@ -654,7 +653,7 @@ impl KbSpritePipeline {
         let u_scale = 1.0 / 8.0;
         let v_scale = 1.0 / 8.0;
         let extra_scale = 1.0;
-        let extra_offset: Vector3<f32> = Vector3::<f32>::new(0.0, -0.35, 0.0);
+        let extra_offset: CgVec3 = CgVec3::new(0.0, -0.35, 0.0);
 
         let game_object_iter = game_objects.iter();
         for game_object in game_object_iter {
@@ -1474,10 +1473,9 @@ impl KbModelPipeline {
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
 
-        let (view_matrix, view_dir, _) = game_camera.get_view_matrix();      
+        let (view_matrix, _, _) = game_camera.get_view_matrix();      
         let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
-        let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
-
+ 
         // Iterate over actors and add their uniform info to their corresponding KbModels
         let model_len = models.len();
         let actor_iter = actors.iter();
@@ -1490,7 +1488,7 @@ impl KbModelPipeline {
 
             let model = &mut models[model_id as usize];
             let (uniform, uniform_buffer) = model.alloc_uniform_info();
-            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
+            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_scale(actor.get_scale().x);// * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
 
             uniform.inv_world = world_matrix.invert().unwrap().into();
             uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();

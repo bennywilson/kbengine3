@@ -1,7 +1,3 @@
-use cgmath::Vector3;
-use cgmath::InnerSpace;
-use cgmath::SquareMatrix;
-
 use instant::Instant;
 
 use cgmath::Rotation3;
@@ -44,7 +40,7 @@ impl KbGameEngine for Example3DGame {
 		});
 
 		let mut game_camera = KbCamera::new();
-		game_camera.set_look_at(&CgVec3::new(0.0, 0.5, 5.0), &CG_VEC_ZERO);
+		game_camera.set_look_at(&CgVec3::new(0.0, 2.0, 5.0), &CgVec3::new(0.0, 2.0, -5.0));
 	
 		Self {
 			actors: Vec::<KbActor>::new(),
@@ -53,78 +49,41 @@ impl KbGameEngine for Example3DGame {
 		}
     }
 
-	fn get_game_objects(&self) -> &Vec<GameObject> {
-		&self.game_objects
-	}
-
-	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig) {
-		for game_object in &mut self.game_objects {
-			game_object.update(game_config.delta_time);
-		}
-		let delta_time = game_config.delta_time;
-		let (view_matrix, view_dir, right_dir) = self.game_camera.get_view_matrix();
-		let mut camera_pos = self.game_camera.get_position();
-		let mut camera_rot = self.game_camera.get_rotation();
-
-		if input_manager.up_pressed {
-			camera_pos = camera_pos + view_dir * delta_time * CAMERA_MOVE_RATE;
-		}
-
-		if input_manager.down_pressed {
-			camera_pos = camera_pos - view_dir * delta_time * CAMERA_MOVE_RATE;
-		}
-
-		if input_manager.right_pressed {
-			camera_pos = camera_pos + right_dir * delta_time * CAMERA_MOVE_RATE;
-		}
-
-		if input_manager.left_pressed {
-			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
-		}
-
-		let radians = cgmath::Rad::from(cgmath::Deg(delta_time * CAMERA_ROTATION_RATE));
-		if input_manager.left_arrow_pressed {
-			let rot_quat = CgQuat::from_angle_y(radians);
-			camera_rot = camera_rot * rot_quat;
-		}
-		if input_manager.right_arrow_pressed {
-			let rot_quat = CgQuat::from_angle_y(-radians);
-			camera_rot = camera_rot * rot_quat;
-		}
-
-		log!("Cam pos = {} {} {}", camera_pos.x, camera_pos.y, camera_pos.z);
-		self.game_camera.set_position(&camera_pos);
-		self.game_camera.set_rotation(&camera_rot);
-		renderer.set_camera(&self.game_camera);
-	}
-
 	fn initialize_world(&mut self, renderer: &mut KbRenderer) {
 		log!("GameEngine::initialize_world() caled...");
 
 		let pinky_model = renderer.load_model("game_assets/pinky.gltf");
-		let barrel_model = renderer.load_model("game_assets/ELP_Barrel.gltf");
-		let shotgun_model = renderer.load_model("game_assets/Shotgun.gltf");
+		let barrel_model = renderer.load_model("game_assets/barrel.gltf");
+		let shotgun_model = renderer.load_model("game_assets/shotgun.gltf");
+		let floor_model = renderer.load_model("game_assets/floor.gltf");
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[3.0, 0.0, 0.0].into());
-		actor.set_scale(&[0.08, 0.08, 0.08].into());
+		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[0]);
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[0.2, 0.2, 0.2].into());
+		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&barrel_model);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[1]);
 	
 		let mut actor = KbActor::new();
 		actor.set_position(&[-3.0, 0.0, 0.0].into());
-		actor.set_scale(&[3.0, 3.0, 3.0].into());
+		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[2]);
+
+		let mut actor = KbActor::new();
+		actor.set_position(&[0.0, 0.0, 0.0].into());
+		actor.set_scale(&[10.0, 19.0, 10.0].into());
+		actor.set_model(&floor_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[3]);
 
 		// Sky
 		self.game_objects.push(GameObject { 
@@ -183,4 +142,49 @@ impl KbGameEngine for Example3DGame {
 			is_enemy: false
 		});
     }
+
+	fn get_game_objects(&self) -> &Vec<GameObject> {
+		&self.game_objects
+	}
+
+	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig) {
+		for game_object in &mut self.game_objects {
+			game_object.update(game_config.delta_time);
+		}
+		let delta_time = game_config.delta_time;
+		let (_s, view_dir, right_dir) = self.game_camera.get_view_matrix();
+		let mut camera_pos = self.game_camera.get_position();
+		let mut camera_rot = self.game_camera.get_rotation();
+
+		if input_manager.up_pressed {
+			camera_pos = camera_pos + view_dir * delta_time * CAMERA_MOVE_RATE;
+		}
+
+		if input_manager.down_pressed {
+			camera_pos = camera_pos - view_dir * delta_time * CAMERA_MOVE_RATE;
+		}
+
+		if input_manager.right_pressed {
+			camera_pos = camera_pos + right_dir * delta_time * CAMERA_MOVE_RATE;
+		}
+
+		if input_manager.left_pressed {
+			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
+		}
+
+		let radians = cgmath::Rad::from(cgmath::Deg(delta_time * CAMERA_ROTATION_RATE));
+		if input_manager.left_arrow_pressed {
+			let rot_quat = CgQuat::from_angle_y(radians);
+			camera_rot = camera_rot * rot_quat;
+		}
+		if input_manager.right_arrow_pressed {
+			let rot_quat = CgQuat::from_angle_y(-radians);
+			camera_rot = camera_rot * rot_quat;
+		}
+
+		self.game_camera.set_position(&camera_pos);
+		self.game_camera.set_rotation(&camera_rot);
+		renderer.set_camera(&self.game_camera);
+	}
+
 }
