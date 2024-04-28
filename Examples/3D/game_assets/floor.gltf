@@ -56,69 +56,69 @@
 	"images":[
 		{
 			"mimeType":"image/png",
-			"name":"floor_t",
-			"uri":"floor_t.png"
+			"name":"floor_t.png",
+			"uri":"../../../source_assets/floor_t.png"
 		}
 	],
 	"accessors":[
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":4,
+			"count":404,
 			"max":[
-				6.010828018188477,
-				0,
-				6.010828018188477
+				16.457576751708984,
+				6.557476997375488,
+				18.43172836303711
 			],
 			"min":[
-				-6.010828018188477,
-				0,
-				-6.010828018188477
+				-16.351865768432617,
+				-1,
+				-15.906970977783203
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":4,
+			"count":404,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":4,
+			"count":404,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":6,
+			"count":606,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":48,
+			"byteLength":4848,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":48,
-			"byteOffset":48,
+			"byteLength":4848,
+			"byteOffset":4848,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":32,
-			"byteOffset":96,
+			"byteLength":3232,
+			"byteOffset":9696,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":12,
-			"byteOffset":128,
+			"byteLength":1212,
+			"byteOffset":12928,
 			"target":34963
 		}
 	],
@@ -130,7 +130,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":140,
+			"byteLength":14140,
 			"uri":"floor.bin"
 		}
 	]

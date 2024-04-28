@@ -58,7 +58,7 @@ impl KbGameEngine for Example3DGame {
 		let floor_model = renderer.load_model("game_assets/floor.gltf");
 
 		let mut actor = KbActor::new();
-		actor.set_position(&[3.0, 0.0, 0.0].into());
+		actor.set_position(&[3.0, 0.0, 3.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
 		self.actors.push(actor);
@@ -72,7 +72,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[1]);
 	
 		let mut actor = KbActor::new();
-		actor.set_position(&[-3.0, 0.0, 0.0].into());
+		actor.set_position(&[-4.0, 0.0, -5.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
@@ -105,7 +105,7 @@ impl KbGameEngine for Example3DGame {
 		});
 
 		// Sun
-		self.game_objects.push(GameObject { 
+	/*	self.game_objects.push(GameObject { 
 			position: (-0.5, 1.0, 1.0).into(),
 			scale: (0.15, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
@@ -140,7 +140,7 @@ impl KbGameEngine for Example3DGame {
 			gravity_scale: 0.0,
 			random_val: game_random_f32!(0.0, 1000.0),
 			is_enemy: false
-		});
+		});*/
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
