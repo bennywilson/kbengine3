@@ -63,8 +63,17 @@ pub struct KbParticleParams {
     pub min_start_pos: CgVec3,
     pub max_start_pos: CgVec3,
 
+    pub min_start_scale: CgVec3,
+    pub max_start_scale: CgVec3,
+
+    pub min_end_scale: CgVec3,
+    pub max_end_scale: CgVec3,
+
     pub min_start_velocity: CgVec3,
     pub max_start_velocity: CgVec3,
+
+    pub min_start_rotation_rate: f32,
+    pub max_start_rotation_rate: f32,
 
     pub min_start_acceleration: CgVec3,
     pub max_start_acceleration: CgVec3,
@@ -73,7 +82,7 @@ pub struct KbParticleParams {
     pub max_end_velocity: CgVec3,
 
     pub start_color_0: CgVec4,
-    pub _start_color_1: CgVec4,
+    pub start_color_1: CgVec4,
 
     pub end_color_0: CgVec4,
     pub _end_color1: CgVec4,
@@ -85,8 +94,13 @@ pub struct KbParticle {
     pub acceleration: CgVec3,
     pub velocity: CgVec3,
     pub color: CgVec4,
+    pub scale: CgVec3,
+    pub rotation: f32,
+    pub rotation_rate: f32,
+    pub start_time: f32,
+    pub start_scale: CgVec3,
+    pub end_scale: CgVec3,
     pub life_time: f32,
-    pub start_time: f32
 }
 
 #[allow(dead_code)]
@@ -132,16 +146,27 @@ impl KbParticleActor {
             let position = kb_random_vec3(params.min_start_pos, params.max_start_pos);
             let acceleration = kb_random_vec3(params.min_start_acceleration, params.max_start_acceleration);
             let velocity = kb_random_vec3(params.min_start_velocity, params.max_start_velocity);
-            let color = params.start_color_0;
+            let color = kb_random_vec4(params.start_color_0, params.start_color_1);
             let life_time = kb_random_f32(params.min_particle_life, params.max_particle_life);
+            let start_scale = kb_random_vec3(params.min_start_scale, params.max_start_scale);
+            let end_scale = kb_random_vec3(params.min_end_scale, params.max_end_scale);
+            let scale = start_scale;
+            let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_spawn_rate);
+            let rotation = 0.0;
+
             let particle = KbParticle {
-                               position,
-                               acceleration,
-                               velocity,
-                               color,
-                               life_time,
-                               start_time: elapsed_time
-                            };
+                position,
+                scale,
+                start_scale,
+                end_scale,
+                acceleration,
+                velocity,
+                rotation,
+                rotation_rate,
+                color,
+                life_time,
+                start_time: elapsed_time
+            };
             self.particles.push(particle);
         }
 
@@ -154,7 +179,13 @@ impl KbParticleActor {
                 let t = ((elapsed_time  - particle.start_time)/ particle.life_time).clamp(0.0, 1.0);
                 particle.velocity = particle.velocity + particle.acceleration * delta_time;
                 particle.position = particle.position + particle.velocity * delta_time;
+                particle.rotation = particle.rotation + particle.rotation_rate * delta_time;
+                particle.scale = particle.start_scale + (particle.end_scale - particle.start_scale) * t;
                 particle.color = self.params.start_color_0 + (self.params.end_color_0 - self.params.start_color_0) * t;
+                particle.color.x = particle.color.x.clamp(0.0, 999999.0);
+                particle.color.y = particle.color.y.clamp(0.0, 999999.0);
+                particle.color.z = particle.color.z.clamp(0.0, 999999.0);
+
                 true
             }
         );

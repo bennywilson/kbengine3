@@ -7,8 +7,6 @@ use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
 
-
-
 use crate::{kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
@@ -1014,9 +1012,8 @@ pub const MAX_PARTICLE_INSTANCES: usize = 10000;
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbModelDrawInstance {
-    pub x_axis: [f32; 4],
-    pub y_axis: [f32; 4],
-    pub z_axis: [f32; 4],
+    pub position: [f32; 4],
+    pub scale: [f32; 4],
     pub color: [f32; 4],
 }
 
@@ -1039,11 +1036,6 @@ impl KbModelDrawInstance {
                 wgpu::VertexAttribute {
                     offset: 2 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 14,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 3 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 15,
                     format: wgpu::VertexFormat::Float32x4,
                 },
             ],
@@ -1757,7 +1749,7 @@ impl KbModelPipeline {
             depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &device_resources.render_textures[1].view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -1803,9 +1795,8 @@ impl KbModelPipeline {
             let mut particle_instances = Vec::<KbModelDrawInstance>::new();
             for particle in particles {
                 let new_instance = KbModelDrawInstance {
-                    x_axis: [0.0, 0.0, 0.0, particle.position.x],
-                    y_axis: [0.0, 0.0, 0.0, particle.position.y],
-                    z_axis: [0.0, 0.0, 0.0, particle.position.z],
+                    position: [particle.position.x, particle.position.y, particle.position.z, particle.rotation],
+                    scale: [particle.scale.x, particle.scale.y, 0.0, 0.0],
                     color: particle.color.into()
                 };
                 particle_instances.push(new_instance);

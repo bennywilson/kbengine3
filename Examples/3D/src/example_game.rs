@@ -88,35 +88,43 @@ impl KbGameEngine for Example3DGame {
 		let particle_params = KbParticleParams {
 			texture_file: "smoke_t.png".to_string(),
 
-			min_particle_life: 1.0,
-			max_particle_life: 2.0,
+			min_particle_life: 3.0,
+			max_particle_life: 5.0,
 
 			_min_actor_life: 5.1,
 			_max_actor_life: 5.1,
 
-			min_start_spawn_rate: 0.01,
-			max_start_spawn_rate: 0.01,
+			min_start_spawn_rate: 0.06,
+			max_start_spawn_rate: 0.06,
 
-			min_start_pos: CgVec3::new(-1.0, -1.0, -1.0),
-			max_start_pos: CgVec3::new(1.0, 1.0, 1.0),
+			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
+			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
     
-			min_start_velocity: CgVec3::new(-10.0, 15.0, -10.0),
-			max_start_velocity: CgVec3::new(10.0, 20.0, 0.0),
+			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
+			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
 
-			min_start_acceleration: CgVec3::new(0.0, -15.0, 0.0),
-			max_start_acceleration: CgVec3::new(0.0, -15.0, 0.0),
+			min_end_scale: CgVec3::new(2.1, 2.1, 2.1),
+			max_end_scale: CgVec3::new(3.0, 3.0, 3.0),
+
+			min_start_velocity: CgVec3::new(-0.2, 1.0, -0.2),
+			max_start_velocity: CgVec3::new(0.2, 1.0, 0.2),
+
+			min_start_rotation_rate: -0.5,
+			max_start_rotation_rate: 0.5,
+
+			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
 
 			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
 			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
 
-			start_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
-			_start_color_1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			start_color_0: CgVec4::new(0.4, 0.04, 0.0, 1.0),
+			start_color_1: CgVec4::new(0.4, 0.07, 0.0, 1.0),
 
-			end_color_0: CgVec4::new(0.2, 0.2, 0.2, 0.0),
-			_end_color1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			end_color_0: CgVec4::new(-0.3, -0.3, -0.3, 0.0),
+			_end_color1: CgVec4::new(-0.3, -0.3, -0.3, 1.0),
 		};
-
-		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 0.0, 0.0));
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
 		renderer.add_particle_actor(&particle_transform, &particle_params);
 
 		// Sky

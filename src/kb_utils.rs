@@ -44,6 +44,14 @@ pub fn kb_random_vec3(min_vec: CgVec3, max_vec: CgVec3) -> CgVec3 {
 	CgVec3::new(x, y, z)
 }
 
+pub fn kb_random_vec4(min_vec: CgVec4, max_vec: CgVec4) -> CgVec4 {
+	let x = kb_random_f32(min_vec.x, max_vec.x);
+	let y = kb_random_f32(min_vec.y, max_vec.y);
+	let z = kb_random_f32(min_vec.z, max_vec.z);
+	let w = kb_random_f32(min_vec.w, max_vec.w);
+	CgVec4::new(x, y, z, w)
+}
+
 #[cfg(target_arch = "wasm32")]
 #[macro_export]
 macro_rules! PERF_SCOPE {

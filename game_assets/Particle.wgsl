@@ -16,10 +16,9 @@ struct VertexInput {
 }
 
 struct InstanceInput {
-    @location(12) x_axis: vec4<f32>,
-    @location(13) y_axis: vec4<f32>,
-    @location(14) z_axis: vec4<f32>,
-    @location(15) color: vec4<f32>
+    @location(12) position: vec4<f32>,
+    @location(13) scale: vec4<f32>,
+    @location(14) color: vec4<f32>
 }
 
 struct VertexOutput {
@@ -33,22 +32,26 @@ fn vs_main(
     model: VertexInput,
     instance: InstanceInput,
 ) -> VertexOutput {
-    var particle_origin = vec3<f32>(instance.x_axis.w, instance.y_axis.w, instance.z_axis.w);
-    var camera_pos = vec3<f32>(model_uniform.camera_pos.x, model_uniform.camera_pos.y, model_uniform.camera_pos.z);
-    var camera_to_particle = normalize(camera_pos - particle_origin);
+    var particle_origin = instance.position.xyz;
+    var camera_to_particle = normalize(model_uniform.camera_pos.xyz - particle_origin);
     var right_vec = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), camera_to_particle));
     var up_vec = cross(camera_to_particle, right_vec);
 
-    var pos: vec3<f32> = model.position.xyz;
-    right_vec = right_vec * model.position.x;
-    up_vec = up_vec * model.position.y;
-    pos = particle_origin + up_vec + right_vec;
+    var cos_theta = cos(instance.position.w);
+    var sin_theta = sin(instance.position.w);
+    var vertex_pos: vec3<f32>;
+    vertex_pos.x = model.position.x * cos_theta - model.position.y * sin_theta;
+    vertex_pos.y = model.position.x * sin_theta + model.position.y * cos_theta;
+    vertex_pos.z = 0.0;
+
+    right_vec = right_vec * vertex_pos.x * instance.scale.x;
+    up_vec = up_vec * vertex_pos.y * instance.scale.y;
+    var pos = particle_origin + up_vec + right_vec;
 
     var out: VertexOutput;
     out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
     out.tex_coords = model.tex_coords;
     out.color = instance.color;
-
     return out;
 }
 
