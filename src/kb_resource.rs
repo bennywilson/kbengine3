@@ -594,8 +594,7 @@ impl KbSpritePipeline {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
-        
+            multiview: None, 
         });
 
         log!("  Creating vertex/index buffers");
@@ -1418,6 +1417,7 @@ impl KbModel {
 pub struct KbModelPipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,
     pub transparent_render_pipeline: wgpu::RenderPipeline,
+    pub additive_render_pipeline: wgpu::RenderPipeline,
     pub uniform: KbModelUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
@@ -1574,7 +1574,7 @@ impl KbModelPipeline {
             source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/particle.wgsl").into()),
         });
         let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("KbModelPipeline_opaque_render_pipeline"),
+            label: Some("KbModelPipeline_transparent_render_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &transparent_shader,
@@ -1614,9 +1614,60 @@ impl KbModelPipeline {
             multiview: None,
         });
 
+        let additive_blend_state = wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent::OVER,
+        };
+        
+        let additive_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("KbModelPipeline_additive_render_pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &transparent_shader,
+                entry_point: "vs_main",
+                buffers: &[KbVertex::desc(), KbModelDrawInstance::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &transparent_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { 
+                    format: surface_config.format,
+                    blend: Some(additive_blend_state),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+           primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
         KbModelPipeline {
             opaque_render_pipeline,
             transparent_render_pipeline,
+            additive_render_pipeline,
             uniform,
             uniform_buffer,
             uniform_bind_group,
@@ -1730,7 +1781,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render_particles(&mut self, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, particles: &mut HashMap<KbParticleHandle, KbParticleActor>, game_config: &KbConfig) {
+    pub fn render_particles(&mut self, _blend_mode: KbParticleBlendMode, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, particles: &mut HashMap<KbParticleHandle, KbParticleActor>, game_config: &KbConfig) {
          let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render_particles()"),
         });
@@ -1769,10 +1820,18 @@ impl KbModelPipeline {
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
 
-        render_pass.set_pipeline(&self.transparent_render_pipeline);
-
+        match _blend_mode {
+            KbParticleBlendMode::AlphaBlend => { render_pass.set_pipeline(&self.transparent_render_pipeline); }
+            KbParticleBlendMode::Additive => { render_pass.set_pipeline(&self.additive_render_pipeline) }
+        };
+       
         let particle_iter = particles.iter_mut();
         for particle_val in particle_iter {
+            let blend_mode_1 = particle_val.1.params.blend_mode.clone();
+            if particle_val.1.params.blend_mode != _blend_mode {
+                continue;
+            }
+
             let position = particle_val.1.get_position();
             let scale = particle_val.1.get_scale();
             let particles = &particle_val.1.particles;

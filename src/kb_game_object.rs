@@ -5,13 +5,6 @@ use crate::{kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct KbParticleHandle {
-    pub index: u32,
-}
-
-pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
-
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct KbActorTransform {
@@ -46,10 +39,23 @@ impl KbActorTransform {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct KbParticleHandle {
+    pub index: u32,
+}
+pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum KbParticleBlendMode {
+    Additive,
+    AlphaBlend,
+}
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct KbParticleParams {
     pub texture_file: String,
+    pub blend_mode: KbParticleBlendMode,
 
     pub min_particle_life: f32,
     pub max_particle_life: f32,
@@ -105,7 +111,7 @@ pub struct KbParticle {
 
 #[allow(dead_code)]
 pub struct KbParticleActor {
-    params: KbParticleParams,
+    pub params: KbParticleParams,
     pub model: KbModel,
     pub transform: KbActorTransform,
     spawn_rate: f32,

@@ -45,7 +45,7 @@ fn vs_main(
     vertex_pos.z = 0.0;
 
     right_vec = right_vec * vertex_pos.x * instance.scale.x;
-    up_vec = up_vec * vertex_pos.y * instance.scale.y;
+    up_vec = up_vec * vertex_pos.y * instance.scale.x;  // Todo: uniform scale only
     var pos = particle_origin + up_vec + right_vec;
 
     var out: VertexOutput;

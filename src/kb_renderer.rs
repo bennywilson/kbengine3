@@ -207,7 +207,8 @@ impl<'a> KbRenderer<'a> {
 
         if self.particle_map.len() > 0 {
             PERF_SCOPE!("Particle Pass");
-            self.model_pipeline.render_particles(&mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_pipeline.render_particles(KbParticleBlendMode::AlphaBlend, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
         }
 
         {

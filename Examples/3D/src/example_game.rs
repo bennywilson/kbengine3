@@ -87,6 +87,7 @@ impl KbGameEngine for Example3DGame {
 
 		let particle_params = KbParticleParams {
 			texture_file: "smoke_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::AlphaBlend,
 
 			min_particle_life: 3.0,
 			max_particle_life: 5.0,
@@ -121,8 +122,51 @@ impl KbGameEngine for Example3DGame {
 			start_color_0: CgVec4::new(0.4, 0.04, 0.0, 1.0),
 			start_color_1: CgVec4::new(0.4, 0.07, 0.0, 1.0),
 
-			end_color_0: CgVec4::new(-0.3, -0.3, -0.3, 0.0),
-			_end_color1: CgVec4::new(-0.3, -0.3, -0.3, 1.0),
+			end_color_0: CgVec4::new(-0.1, -0.1, -0.1, 0.0),
+			_end_color1: CgVec4::new(-0.1, -0.1, -0.1, 1.0),
+		};
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
+		renderer.add_particle_actor(&particle_transform, &particle_params);
+
+		let particle_params = KbParticleParams {
+			texture_file: "ember_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::Additive,
+
+			min_particle_life: 1.5,
+			max_particle_life: 2.5,
+
+			_min_actor_life: 5.1,
+			_max_actor_life: 5.1,
+
+			min_start_spawn_rate: 0.3,
+			max_start_spawn_rate: 0.3,
+
+			min_start_pos: CgVec3::new(-0.75, -0.2, -0.75),
+			max_start_pos: CgVec3::new(0.75, 0.2, 0.75),
+    
+			min_start_scale: CgVec3::new(0.3, 0.3, 0.3),
+			max_start_scale: CgVec3::new(0.5, 0.5, 0.5),
+
+			min_end_scale: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_scale: CgVec3::new(0.05, 0.05, 0.05),
+
+			min_start_velocity: CgVec3::new(-0.2, 3.0, -0.2),
+			max_start_velocity: CgVec3::new(0.2, 3.0, 0.2),
+
+			min_start_rotation_rate: -15.5,
+			max_start_rotation_rate: 15.5,
+
+			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(2.0, 1.0, 0.2, 1.0),
+			start_color_1: CgVec4::new(2.0, 1.0, 0.2, 1.0),
+
+			end_color_0: CgVec4::new(1.0, 0.8, -0.1, 0.0),
+			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
 		renderer.add_particle_actor(&particle_transform, &particle_params);
