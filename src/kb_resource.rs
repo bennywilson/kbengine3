@@ -993,6 +993,8 @@ pub struct KbModelUniform {
 pub struct KbModel {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
+
     pub num_indices: u32,
 
     pub textures: Vec<KbTexture>,
@@ -1005,24 +1007,145 @@ pub struct KbModel {
     next_uniform_buffer: usize,
 }
 
+pub const MAX_UNIFORMS: usize = 100;
+pub const MAX_MODEL_INSTANCES: usize = 1000;
+
 impl KbModel {
+    pub fn new_particle(device_resources: &KbDeviceResources) -> Self {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
 
-    pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
-        let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
-        self.next_uniform_buffer = self.next_uniform_buffer + 1;
-        ret_val
-    }
+        let mut _vertices = Vec::<KbVertex>::new();
+        // Vertex/Index buffer
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            }
+        );
 
-    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
-        &self.uniform_bind_groups[index]
-    }
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+            }
+        );
 
-    pub fn get_uniform_info_count(&self) -> usize {
-        self.next_uniform_buffer
-    }
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (std::mem::size_of::<KbDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
 
-    pub fn free_uniform_infos(&mut self) {
-        self.next_uniform_buffer = 0;
+       let mut textures = Vec::<KbTexture>::new();
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
+
+        // todo
+        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
+        let texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
+        textures.push(texture);
+
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
+
+        // Uniform buffer
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
+
+        let uniform = KbModelUniform{ ..Default::default() };
+        let mut uniforms: Vec<KbModelUniform> = Vec::with_capacity(MAX_UNIFORMS);
+
+        let mut i = 0;
+        while i < MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+            uniforms.push(uniform);
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+            i = i + 1;
+        }
+        KbModel {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            num_indices: 6,
+            textures,
+            tex_bind_group,
+            uniforms,
+            uniform_buffers,
+            uniform_bind_groups,
+            next_uniform_buffer: 0
+        }
     }
 
     pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
@@ -1184,10 +1307,6 @@ impl KbModel {
         );
 
         // Uniform buffer
- /*
-     pub uniform_buffers: Vec<wgpu::Buffer>,
-    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
- */
         let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
         let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
         let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1236,10 +1355,19 @@ impl KbModel {
             i = i + 1;
         }
         
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (std::mem::size_of::<KbDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
 
         KbModel {
             vertex_buffer,
             index_buffer,
+            instance_buffer,
+
             num_indices,
 
             uniforms,
@@ -1252,9 +1380,25 @@ impl KbModel {
             next_uniform_buffer: 0
         }
     }
-}
 
-pub const MAX_UNIFORMS: usize = 100;
+    pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
+        let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
+        self.next_uniform_buffer = self.next_uniform_buffer + 1;
+        ret_val
+    }
+
+    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
+        &self.uniform_bind_groups[index]
+    }
+
+    pub fn get_uniform_info_count(&self) -> usize {
+        self.next_uniform_buffer
+    }
+
+    pub fn free_uniform_infos(&mut self) {
+        self.next_uniform_buffer = 0;
+    }
+}
 
 pub struct KbModelPipeline {
     pub opaque_render_pipeline: wgpu::RenderPipeline,

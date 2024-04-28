@@ -4,7 +4,7 @@ use cgmath::Rotation3;
 
 use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::*, kb_renderer::KbRenderer};
 use kb_engine3::kb_utils::*;
-use kb_engine3::{game_random_f32, log};
+use kb_engine3::log;
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 100.0;
@@ -35,7 +35,7 @@ impl KbGameEngine for Example3DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: true
 		});
 
@@ -85,6 +85,38 @@ impl KbGameEngine for Example3DGame {
 		self.actors.push(actor);
 		renderer.add_or_update_actor(&self.actors[3]);
 
+		let particle_params = KbParticleParams {
+			min_particle_life: 0.1,
+			max_particle_life: 0.1,
+
+			_min_actor_life: 5.1,
+			_max_actor_life: 5.1,
+
+			min_start_spawn_rate: 0.0,
+			max_start_spawn_rate: 0.0,
+
+			min_start_pos: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_pos: CgVec3::new(0.0, 0.0, 0.0),
+    
+			min_start_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			min_start_acceleration: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, 0.0, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			_start_color_1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+
+			end_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			_end_color1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+		};
+
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 0.0, 0.0));
+		renderer.add_particle_actor(&particle_transform, &particle_params);
+
 		// Sky
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, 0.0).into(),
@@ -100,47 +132,9 @@ impl KbGameEngine for Example3DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
-
-		// Sun
-	/*	self.game_objects.push(GameObject { 
-			position: (-0.5, 1.0, 1.0).into(),
-			scale: (0.15, 0.15, 0.15).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Skybox,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 27,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});
-
-		// Hills
-		self.game_objects.push(GameObject { 
-			position: (0.0, 0.75, 2.0).into(),
-			scale: (2.0, 1.6, 0.15).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 21,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
-			is_enemy: false
-		});*/
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {

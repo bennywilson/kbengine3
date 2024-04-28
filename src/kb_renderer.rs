@@ -4,12 +4,12 @@ use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
 use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
-pub const INVALID_MODEL_HANDLE: u32 = u32::max_value();
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct KbModelHandle {
     pub index: u32,
 }
+
+pub const INVALID_MODEL_HANDLE: KbModelHandle = KbModelHandle{ index: u32::max_value() };
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
@@ -19,7 +19,12 @@ pub struct KbRenderer<'a> {
     model_pipeline: KbModelPipeline,
 
     actor_map: HashMap::<u32, KbActor>,
+    
+    particle_map: HashMap<KbParticleHandle, KbParticleActor>,
+    next_particle_id: KbParticleHandle,
+
     models: Vec<KbModel>,
+    next_model_id: KbModelHandle,
 
     game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
@@ -48,7 +53,11 @@ impl<'a> KbRenderer<'a> {
             postprocess_pipeline,
 
             actor_map: HashMap::<u32, KbActor>::new(),
+            particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
+            next_particle_id: INVALID_PARTICLE_HANDLE,
+
             models: Vec::<KbModel>::new(),
+            next_model_id: INVALID_MODEL_HANDLE,
 
             game_camera: KbCamera::new(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -171,6 +180,7 @@ impl<'a> KbRenderer<'a> {
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {
 
+        self.update_particles(game_config);
         PERF_SCOPE!("render_frame()");
 
         let (final_tex, final_view) = self.begin_frame();
@@ -236,17 +246,36 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
+    pub fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
+        self.next_particle_id = match self.next_particle_id {
+            INVALID_PARTICLE_HANDLE => { KbParticleHandle { index: 0 } }
+            _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
+        };
+
+        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources);
+        self.particle_map.insert(self.next_particle_id.clone(), particle);
+    }
+
     pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
-        let index = self.models.len() as u32;
+        self.next_model_id = match self.next_model_id {
+            INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
+            _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
+        };
+        
         let model = KbModel::new(file_path, &mut self.device_resources);
         self.models.push(model);
 
-        KbModelHandle {
-            index
-        }
+        self.next_model_id.clone()
     }
 
     pub fn set_camera(&mut self, camera: &KbCamera) {
         self.game_camera = camera.clone();
+    }
+
+    pub fn update_particles(&mut self, game_config: &KbConfig) {
+        let particle_iter = self.particle_map.iter_mut();
+        for particle in particle_iter {
+            particle.1.tick(game_config);
+        }
     }
 }
