@@ -149,8 +149,10 @@ impl KbParticleActor {
             if elapsed_time > particle.start_time + particle.life_time {
                 false
             } else {
+                let t = ((elapsed_time  - particle.start_time)/ particle.life_time).clamp(0.0, 1.0);
                 particle.velocity = particle.velocity + particle.acceleration * delta_time;
                 particle.position = particle.position + particle.velocity * delta_time;
+                particle.color = self.params.start_color_0 + (self.params.end_color_0 - self.params.start_color_0) * t;
                 true
             }
         );

@@ -110,7 +110,7 @@ impl KbGameEngine for Example3DGame {
 			start_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
 			_start_color_1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
 
-			end_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			end_color_0: CgVec4::new(0.2, 0.2, 0.2, 0.0),
 			_end_color1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
 		};
 

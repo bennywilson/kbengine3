@@ -1015,6 +1015,7 @@ pub struct KbModelDrawInstance {
     pub x_axis: [f32; 4],
     pub y_axis: [f32; 4],
     pub z_axis: [f32; 4],
+    pub color: [f32; 4],
 }
 
 impl KbModelDrawInstance {
@@ -1036,6 +1037,11 @@ impl KbModelDrawInstance {
                 wgpu::VertexAttribute {
                     offset: 2 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 14,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 3 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 15,
                     format: wgpu::VertexFormat::Float32x4,
                 },
             ],
@@ -1604,7 +1610,7 @@ impl KbModelPipeline {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -1619,7 +1625,7 @@ impl KbModelPipeline {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
+                depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
@@ -1811,6 +1817,7 @@ impl KbModelPipeline {
                     x_axis: [0.0, 0.0, 0.0, particle.position.x],
                     y_axis: [0.0, 0.0, 0.0, particle.position.y],
                     z_axis: [0.0, 0.0, 0.0, particle.position.z],
+                    color: particle.color.into()
                 };
                 particle_instances.push(new_instance);
             }

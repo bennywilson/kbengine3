@@ -16,7 +16,8 @@ struct VertexInput {
 struct InstanceInput {
     @location(12) x_axis: vec4<f32>,
     @location(13) y_axis: vec4<f32>,
-    @location(14) z_axis: vec4<f32>
+    @location(14) z_axis: vec4<f32>,
+    @location(15) color: vec4<f32>
 }
 
 struct VertexOutput {
@@ -25,7 +26,8 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>,
     @location(2) inv_light_1: vec3<f32>,
     @location(3) inv_light_2: vec3<f32>,
-    @location(4) inv_light_3: vec3<f32>
+    @location(4) inv_light_3: vec3<f32>,
+    @location(5) color: vec4<f32>
 }
 
 @vertex
@@ -36,6 +38,7 @@ fn vs_main(
     var out: VertexOutput;
 
     out.tex_coords = model.tex_coords;
+    out.color = instance.color;
 
     var pos: vec3<f32> = model.position.xyz + vec3<f32>(instance.x_axis.w, instance.y_axis.w, instance.z_axis.w);
     out.normal = model.normal;
@@ -87,6 +90,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     outColor.y = 0.0;
     outColor.z = 1.0;
     outColor.w = 1.0;
-
+    outColor = in.color;
     return outColor;
 }
