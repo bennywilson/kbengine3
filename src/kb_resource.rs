@@ -1050,7 +1050,7 @@ impl KbModelDrawInstance {
 }
 
 impl KbModel {
-    pub fn new_particle(device_resources: &KbDeviceResources) -> Self {
+    pub fn new_particle(texture_file: &str, device_resources: &KbDeviceResources) -> Self {
         let device = &device_resources.device;
         let queue = &device_resources.queue;
 
@@ -1103,10 +1103,15 @@ impl KbModel {
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
-        // todo
-        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
-        textures.push(texture);
+        match std::env::current_dir() {
+            Ok(dir) => {
+                let file_path = format!("{}\\game_assets\\{}", dir.display(), texture_file);
+                let file_bytes = load_bytes!(&file_path);
+                let texture = KbTexture::from_bytes(&device, &queue, file_bytes, texture_file).unwrap();
+                textures.push(texture);
+            }
+            _ => { /* todo use default texture*/ }
+        };
 
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -1191,28 +1196,21 @@ impl KbModel {
         let device = &device_resources.device;
         let queue = &device_resources.queue;
 
-        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
-
-        log!("Loading Model ==============================================================");
-        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+  
+        log!("Loading Model {file_name}");
+        
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
-
         let mut textures = Vec::<KbTexture>::new();
 
-        log!("gltf texture len = {}", gltf_doc.textures().len());
-
-
-        log!("cwd = {}",  std::env::current_dir().unwrap().display());
-
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
         for gltf_texture in gltf_doc.textures() {
             log!("  Hitting that iteration");
 
             match gltf_texture.source().source() {
 
-                gltf::image::Source::View { view: _, mime_type: _ } => {
-                    log!("      Arm 0 ");
-                }
+                gltf::image::Source::View { view: _, mime_type: _ } => { }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
@@ -1258,20 +1256,6 @@ impl KbModel {
                     }
                 }
 
-                /*
-                    let mut joints = Vec::new();
-                    if let Some(gltf::mesh::util::ReadJoints::U8(gltf::accessor::Iter::Standard(iter))) = r.read_joints(0){
-                        for v in iter{
-                            joints.push(v);
-                        }
-                    }
-                    let mut weights = Vec::new();
-                    if let Some(gltf::mesh::util::ReadWeights::F32(gltf::accessor::Iter::Standard(iter))) = r.read_weights(0){
-                        for v in iter{
-                            weights.push(v);
-                        }
-                    }
-                */
                 let mut i = 0;
                 while i < positions.len() {
                     let vertex = KbVertex {
@@ -1285,8 +1269,6 @@ impl KbModel {
             }
         }
 
-        log!("Index length = {}", indices.len());
-
         let num_indices = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(
@@ -1297,7 +1279,6 @@ impl KbModel {
             }
         );
 
-        
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
@@ -1327,7 +1308,7 @@ impl KbModel {
             ],
             label: Some("KbModel_texture_bind_group_layout"),
         });
-      
+
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,

@@ -49,6 +49,8 @@ impl KbActorTransform {
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct KbParticleParams {
+    pub texture_file: String,
+
     pub min_particle_life: f32,
     pub max_particle_life: f32,
     
@@ -101,7 +103,7 @@ pub struct KbParticleActor {
 
 impl KbParticleActor {
     pub fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources) -> Self {
-        let model = KbModel::new_particle(&device_resources);
+        let model = KbModel::new_particle(&params.texture_file, &device_resources);
         let spawn_rate = kb_random_f32(params.min_start_spawn_rate, params.max_start_spawn_rate);
         let params = (*params).clone();
         let start_time = instant::Instant::now();

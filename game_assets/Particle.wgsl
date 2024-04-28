@@ -68,28 +68,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec4<f32>;
     var uv : vec2<f32>; 
     uv = in.tex_coords;
-    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
-
-    var normal = normalize(in.normal);
-    var dot: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = dot * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = dot * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = dot * vec3<f32>(0.0, 0.0, 0.0);
-
-    light_1 = light_1 * 0.9 + 0.1;
-    light_2 = light_2 * 0.9 + 0.1;
-    light_3 = light_3 * 0.9 + 0.1;
-
-    var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
-
-    outColor.x = 0.0;
-    outColor.y = 0.0;
-    outColor.z = 1.0;
-    outColor.w = 1.0;
-    outColor = in.color;
+    var albedo: vec4<f32> = textureSample(t_diffuse, s_diffuse, uv);
+    outColor = albedo * in.color;
     return outColor;
 }

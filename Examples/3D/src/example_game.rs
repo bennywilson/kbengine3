@@ -86,6 +86,8 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[3]);
 
 		let particle_params = KbParticleParams {
+			texture_file: "smoke_t.png".to_string(),
+
 			min_particle_life: 1.0,
 			max_particle_life: 2.0,
 
@@ -95,8 +97,8 @@ impl KbGameEngine for Example3DGame {
 			min_start_spawn_rate: 0.01,
 			max_start_spawn_rate: 0.01,
 
-			min_start_pos: CgVec3::new(0.0, 0.0, 0.0),
-			max_start_pos: CgVec3::new(0.0, 0.0, 0.0),
+			min_start_pos: CgVec3::new(-1.0, -1.0, -1.0),
+			max_start_pos: CgVec3::new(1.0, 1.0, 1.0),
     
 			min_start_velocity: CgVec3::new(-10.0, 15.0, -10.0),
 			max_start_velocity: CgVec3::new(10.0, 20.0, 0.0),
