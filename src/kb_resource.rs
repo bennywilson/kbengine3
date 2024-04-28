@@ -2,15 +2,12 @@ use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
-use std::result::Result::Ok;
-use std::sync::Arc;
+use load_file::load_bytes;
+use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
-use std::collections::HashMap;
 
-use load_file::load_bytes;
-
-use crate::{kb_config::KbConfig, kb_game_object::{KbActor, KbCamera, GameObject}, kb_utils::*, log, PERF_SCOPE};
+use crate::{kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -23,7 +20,7 @@ pub struct KbVertex {
 impl KbVertex {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<KbVertex>() as wgpu::BufferAddress,
+            array_stride: size_of::<KbVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -32,12 +29,12 @@ impl KbVertex {
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 }
@@ -60,17 +57,16 @@ pub const INDICES: &[u16] = &[
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct KbDrawInstance {
+pub struct KbSpriteDrawInstance {
     pub pos_scale: [f32; 4],
     pub uv_scale_bias: [f32; 4],
     pub per_instance_data: [f32; 4],
 }
 
-impl KbDrawInstance {
+impl KbSpriteDrawInstance {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<KbDrawInstance>() as wgpu::BufferAddress,
+            array_stride: size_of::<KbSpriteDrawInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -79,12 +75,12 @@ impl KbDrawInstance {
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    offset: 2 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
@@ -187,24 +183,13 @@ impl KbTexture {
         })
     }
 
-    pub fn from_bytes(
-        device: &Device,
-        queue: &Queue,
-        bytes: &[u8], 
-        label: &str
-    ) -> Result<Self> {
+    pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label))
     }
 
-    pub fn from_image(
-        device: &Device,
-        queue: &Queue,
-        img: &image::DynamicImage,
-        label: Option<&str>
-    ) -> Result<Self> {
+    pub fn from_image(device: &Device, queue: &Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self> {
         let dimensions = img.dimensions();
-
         let size = wgpu::Extent3d {
             width: dimensions.0,
             height: dimensions.1,
@@ -345,7 +330,7 @@ impl<'a> KbDeviceResources<'a> {
             &wgpu::BufferDescriptor {
                 label: Some("instance_buffer"),
                 mapped_at_creation: false,
-                size: (std::mem::size_of::<KbDrawInstance>() * max_instances as usize) as u64,
+                size: (size_of::<KbSpriteDrawInstance>() * max_instances as usize) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
             });
        
@@ -358,7 +343,7 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("Creating Font");
 
-        let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
 	    KbDeviceResources {
@@ -375,8 +360,8 @@ impl<'a> KbDeviceResources<'a> {
 }
 
 pub struct KbSpritePipeline {
-    pub opaque_render_pipeline: wgpu::RenderPipeline,
-    pub transparent_render_pipeline: wgpu::RenderPipeline,
+    pub opaque_pipeline: wgpu::RenderPipeline,
+    pub alpha_blend_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
@@ -427,10 +412,10 @@ impl KbSpritePipeline {
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
        
-        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/SpriteSheet.png");
         let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
         let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
 
         let tex_bind_group = device.create_bind_group(
@@ -462,7 +447,7 @@ impl KbSpritePipeline {
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("BasicSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/BasicSprite.wgsl").into()),
         });
         
         // Uniform buffer
@@ -514,13 +499,13 @@ impl KbSpritePipeline {
             push_constant_ranges: &[],
         });
 
-        let opaque_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -557,16 +542,16 @@ impl KbSpritePipeline {
 
         let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("CloudSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/CloudSprite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/CloudSprite.wgsl").into()),
         });
 
-        let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &transparent_shader,
                 entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &transparent_shader,
@@ -598,8 +583,7 @@ impl KbSpritePipeline {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
-        
+            multiview: None, 
         });
 
         log!("  Creating vertex/index buffers");
@@ -625,13 +609,13 @@ impl KbSpritePipeline {
         &wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             mapped_at_creation: false,
-            size: (std::mem::size_of::<KbDrawInstance>() * game_config.max_render_instances as usize) as u64,
+            size: (size_of::<KbSpriteDrawInstance>() * game_config.max_render_instances as usize) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
         });
 
         KbSpritePipeline {
-            opaque_render_pipeline,
-            transparent_render_pipeline,
+            opaque_pipeline,
+            alpha_blend_pipeline,
             vertex_buffer,
             index_buffer,
             instance_buffer,
@@ -647,7 +631,7 @@ impl KbSpritePipeline {
 			label: Some("KbSpritePipeline::render()"),
 		});
 
-        let mut frame_instances = Vec::<KbDrawInstance>::new();
+        let mut frame_instances = Vec::<KbSpriteDrawInstance>::new();
 
         // Create instances
         let u_scale = 1.0 / 8.0;
@@ -667,14 +651,15 @@ impl KbSpritePipeline {
                 u_offset = u_offset + u_scale;
             }
 
-            let new_instance = KbDrawInstance {
+            let new_instance = KbSpriteDrawInstance {
                 pos_scale: [game_object_position.x, game_object_position.y, game_object.scale.x * extra_scale, game_object.scale.y * extra_scale],
                 uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
                 per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
             };
             frame_instances.push(new_instance);
         }
-        
+        device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
+      
         let color_attachment = {
             if should_clear {
                 Some(wgpu::RenderPassColorAttachment {
@@ -718,12 +703,11 @@ impl KbSpritePipeline {
             timestamp_writes: None,
         });
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(frame_instances.as_slice()));
 
         if matches!(render_pass_type, KbRenderPassType::Opaque) {
-            render_pass.set_pipeline(&self.opaque_render_pipeline);
+            render_pass.set_pipeline(&self.opaque_pipeline);
         } else {
-            render_pass.set_pipeline(&self.transparent_render_pipeline);
+            render_pass.set_pipeline(&self.alpha_blend_pipeline);
         }
 
         self.uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
@@ -770,7 +754,7 @@ impl KbPostprocessPipeline {
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/postprocess_uber.wgsl").into()),
         });
         
         let postprocess_uniform = PostProcessUniform {
@@ -857,7 +841,7 @@ impl KbPostprocessPipeline {
             vertex: wgpu::VertexState {
                 module: &postprocess_shader,
                 entry_point: "vs_main",
-                buffers: &[KbVertex::desc(), KbDrawInstance::desc()],
+                buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &postprocess_shader,
@@ -885,7 +869,7 @@ impl KbPostprocessPipeline {
             },
             multiview: None,
         });
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
         let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -986,71 +970,222 @@ impl KbPostprocessPipeline {
 pub struct KbModelUniform {
     pub inv_world: [[f32; 4]; 4],
     pub mvp_matrix: [[f32; 4]; 4],
+    pub camera_pos:[f32; 4],
+    pub camera_dir:[f32; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
+}
+pub const MAX_UNIFORMS: usize = 100;
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct KbModelDrawInstance {
+    pub position: [f32; 4],
+    pub scale: [f32; 4],
+    pub color: [f32; 4],
+}
+pub const MAX_MODEL_INSTANCES: usize = 1000;
+pub const MAX_PARTICLE_INSTANCES: usize = 1000;
+
+impl KbModelDrawInstance {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<KbModelDrawInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 12,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 13,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 2 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 14,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
 }
 
 pub struct KbModel {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
     pub num_indices: u32,
 
     pub textures: Vec<KbTexture>,
     pub tex_bind_group: wgpu::BindGroup,
 
-    uniforms: Vec<KbModelUniform>,
     uniform_buffers: Vec<wgpu::Buffer>,
     uniform_bind_groups: Vec<wgpu::BindGroup>,
-
     next_uniform_buffer: usize,
 }
 
 impl KbModel {
-
-    pub fn alloc_uniform_info(&mut self) -> (&mut KbModelUniform, &mut wgpu::Buffer) {
-        let ret_val = (&mut self.uniforms[self.next_uniform_buffer], &mut self.uniform_buffers[self.next_uniform_buffer]);
-        self.next_uniform_buffer = self.next_uniform_buffer + 1;
-        ret_val
-    }
-
-    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
-        &self.uniform_bind_groups[index]
-    }
-
-    pub fn get_uniform_info_count(&self) -> usize {
-        self.next_uniform_buffer
-    }
-
-    pub fn free_uniform_infos(&mut self) {
-        self.next_uniform_buffer = 0;
-    }
-
-    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+    pub fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources) -> Self {
         let device = &device_resources.device;
         let queue = &device_resources.queue;
 
-        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("KbModel_particle_vertex_buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX
+            }
+        );
 
-        log!("Loading Model ==============================================================");
-        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
-        let mut indices = Vec::<u16>::new();
-        let mut vertices = Vec::<KbVertex>::new();
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("KbModel_particle_iertex_buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX
+            }
+        );
+
+        let instance_buffer = device.create_buffer(
+            &wgpu::BufferDescriptor {
+                label: Some("KbModel_particle_instance_buffer"),
+                mapped_at_creation: false,
+                size: (size_of::<KbModelDrawInstance>() * MAX_PARTICLE_INSTANCES as usize) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            }
+        );
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
 
         let mut textures = Vec::<KbTexture>::new();
+        match std::env::current_dir() {
+            Ok(dir) => {
+                let file_path = format!("{}\\game_assets\\{}", dir.display(), texture_file_path);
+                let file_bytes = load_bytes!(&file_path);
+                let texture = KbTexture::from_bytes(&device, &queue, file_bytes, texture_file_path).unwrap();
+                textures.push(texture);
+            }
+            _ => { /* todo use default texture*/ }
+        };
 
-        log!("gltf texture len = {}", gltf_doc.textures().len());
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
 
+        // Uniform buffer
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
 
-        log!("cwd = {}",  std::env::current_dir().unwrap().display());
+        let empty_uniform = KbModelUniform{ ..Default::default() };
+        //let mut uniforms: Vec<KbModelUniform> = Vec::with_capacity(MAX_UNIFORMS);
 
+        for _ in  0..MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[empty_uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+          //  uniforms.push(empty_uniform);
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+        }
+
+        KbModel {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            num_indices: 6,
+            textures,
+            tex_bind_group,
+            //uniforms,
+            uniform_buffers,
+            uniform_bind_groups,
+            next_uniform_buffer: 0
+        }
+    }
+
+    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+        log!("Loading Model {file_name}");
+
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        
+        let mut indices = Vec::<u16>::new();
+        let mut vertices = Vec::<KbVertex>::new();
+        let mut textures = Vec::<KbTexture>::new();
+
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+        let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
         for gltf_texture in gltf_doc.textures() {
             log!("  Hitting that iteration");
 
             match gltf_texture.source().source() {
 
-                gltf::image::Source::View { view: _, mime_type: _ } => {
-                    log!("      Arm 0 ");
-                }
+                gltf::image::Source::View { view: _, mime_type: _ } => { }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
@@ -1096,20 +1231,6 @@ impl KbModel {
                     }
                 }
 
-                /*
-                    let mut joints = Vec::new();
-                    if let Some(gltf::mesh::util::ReadJoints::U8(gltf::accessor::Iter::Standard(iter))) = r.read_joints(0){
-                        for v in iter{
-                            joints.push(v);
-                        }
-                    }
-                    let mut weights = Vec::new();
-                    if let Some(gltf::mesh::util::ReadWeights::F32(gltf::accessor::Iter::Standard(iter))) = r.read_weights(0){
-                        for v in iter{
-                            weights.push(v);
-                        }
-                    }
-                */
                 let mut i = 0;
                 while i < positions.len() {
                     let vertex = KbVertex {
@@ -1123,8 +1244,6 @@ impl KbModel {
             }
         }
 
-        log!("Index length = {}", indices.len());
-
         let num_indices = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(
@@ -1135,7 +1254,6 @@ impl KbModel {
             }
         );
 
-        
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
@@ -1165,7 +1283,7 @@ impl KbModel {
             ],
             label: Some("KbModel_texture_bind_group_layout"),
         });
-      
+
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
@@ -1184,10 +1302,6 @@ impl KbModel {
         );
 
         // Uniform buffer
- /*
-     pub uniform_buffers: Vec<wgpu::Buffer>,
-    pub uniform_bind_groups: Vec<wgpu::BindGroup>,
- */
         let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
         let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
         let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1207,10 +1321,8 @@ impl KbModel {
         });
 
         let uniform = KbModelUniform{ ..Default::default() };
-        let mut uniforms: Vec<KbModelUniform> = Vec::with_capacity(MAX_UNIFORMS);
 
-        let mut i = 0;
-        while i < MAX_UNIFORMS {
+        for _ in 0..MAX_UNIFORMS {
             let uniform_buffer = device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("kbModelPipeline_uniform_buffer"),
@@ -1230,98 +1342,69 @@ impl KbModel {
                 label: Some("KbModelPipeline_uniform_bind_group"),
             });
 
-            uniforms.push(uniform);
             uniform_buffers.push(uniform_buffer);
             uniform_bind_groups.push(uniform_bind_group);
-            i = i + 1;
         }
         
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (size_of::<KbModelDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
 
         KbModel {
             vertex_buffer,
             index_buffer,
+            instance_buffer,
             num_indices,
-
-            uniforms,
             uniform_bind_groups,
             uniform_buffers,
-
             textures,
             tex_bind_group,
-
             next_uniform_buffer: 0
         }
     }
+
+    pub fn alloc_uniform_buffer(&mut self) -> &mut wgpu::Buffer {
+        let ret_val = &mut self.uniform_buffers[self.next_uniform_buffer];
+        self.next_uniform_buffer = self.next_uniform_buffer + 1;
+        ret_val
+    }
+
+    pub fn get_uniform_bind_group(&self, index: usize) -> &wgpu::BindGroup {
+        &self.uniform_bind_groups[index]
+    }
+
+    pub fn get_uniform_info_count(&self) -> usize {
+        self.next_uniform_buffer
+    }
+
+    // Call after submitting the KbModel's draw calls for the frame
+    pub fn free_uniform_buffers(&mut self) {
+        self.next_uniform_buffer = 0;
+    }
 }
 
-pub const MAX_UNIFORMS: usize = 100;
-
 pub struct KbModelPipeline {
-    pub opaque_render_pipeline: wgpu::RenderPipeline,
+    pub opaque_pipeline: wgpu::RenderPipeline,
+    pub alpha_blend_pipeline: wgpu::RenderPipeline,
+    pub additive_pipeline: wgpu::RenderPipeline,
     pub uniform: KbModelUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    pub tex_bind_group: wgpu::BindGroup,
 }
 
 impl KbModelPipeline {
     pub fn new(device_resources: &KbDeviceResources) -> Self {
-        let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        let surface_config = &device_resources.surface_config;
-
         log!("Creating KbModelPipeline...");
 
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("KbModelPipeline_texture_bind_group_layout"),
-        });
+        let device = &device_resources.device;
+        let surface_config = &device_resources.surface_config;
+
+        log!("  Uniform data");
        
-        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
-        let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
-
-        let tex_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
-                    },
-                ],
-                label: Some("KbModelPipeline: tex_bind_group"),
-            }
-        );
-
-        log!("  Creating shader");
-
-        // Create shader
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/Model.wgsl").into()),
-        });
-        
         // Uniform buffer
         let uniform = KbModelUniform{ ..Default::default() };
         let uniform_buffer = device.create_buffer_init(
@@ -1359,25 +1442,51 @@ impl KbModelPipeline {
             label: Some("KbModelPipeline_uniform_bind_group"),
         });
 
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModelPipeline_texture_bind_group_layout"),
+        });
+
         log!("  Creating pipeline");
 
-        // Render pipeline
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("KbModelPipeline_render_pipeline_layout"),
             bind_group_layouts: &[&texture_bind_group_layout, &uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let opaque_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("KbModelPipeline_opaque_render_pipeline"),
+        let opaque_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Model.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/Model.wgsl").into()),
+        });
+
+        let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("KbModelPipeline_opaque_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &opaque_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &opaque_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
@@ -1409,109 +1518,200 @@ impl KbModelPipeline {
             multiview: None,
         });
 
+        let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Model.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/particle.wgsl").into()),
+        });
+        let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("KbModelPipeline_alpha_blend_pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &particle_shader,
+                entry_point: "vs_main",
+                buffers: &[KbVertex::desc(), KbModelDrawInstance::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &particle_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { 
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        let additive_blend_state = wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent::OVER,
+        };
+
+        let additive_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("KbModelPipeline_additive_pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &particle_shader,
+                entry_point: "vs_main",
+                buffers: &[KbVertex::desc(), KbModelDrawInstance::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &particle_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { 
+                    format: surface_config.format,
+                    blend: Some(additive_blend_state),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+           primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
         KbModelPipeline {
-            opaque_render_pipeline,
+            opaque_pipeline,
+            alpha_blend_pipeline,
+            additive_pipeline,
             uniform,
             uniform_buffer,
             uniform_bind_group,
-            tex_bind_group,
         }
     }
 
-    pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
 
-        let color_attachment = {
+        let (color_attachment, depth_attachment) = {
             if should_clear {
-                Some(wgpu::RenderPassColorAttachment {
+                (wgpu::RenderPassColorAttachment {
                     view: &device_resources.render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.12,
-                            g: 0.01,
-                            b: 0.35,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.12, g: 0.01, b: 0.35, a: 1.0, }),
                         store: wgpu::StoreOp::Store,
                     },
+                }, wgpu::RenderPassDepthStencilAttachment {
+                    view: &device_resources.render_textures[1].view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 })
             } else {
-                Some(wgpu::RenderPassColorAttachment {
+                (wgpu::RenderPassColorAttachment {
                     view: &device_resources.render_textures[0].view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                }, wgpu::RenderPassDepthStencilAttachment {
+                    view: &device_resources.render_textures[1].view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 })
             }
         };
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[color_attachment],
-            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &device_resources.render_textures[1].view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            label: Some("KbModelPipeline_render_pass"),
+            color_attachments: &[Some(color_attachment)],
+            depth_stencil_attachment:  Some(depth_attachment),
             occlusion_query_set: None,
             timestamp_writes: None,
         });
+        render_pass.set_pipeline(&self.opaque_pipeline);
 
-        render_pass.set_pipeline(&self.opaque_render_pipeline);
-
-        // Uniform info
+        let (view_matrix, _, _) = game_camera.calculate_view_matrix();      
+        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
         let fragment_texture_fix = {
             #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
-
-        let (view_matrix, _, _) = game_camera.get_view_matrix();      
-        let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
-        let model_len = models.len();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
             let model_id = actor.get_model().index;
-            if model_id as usize > model_len {
+            if model_id as usize > models.len() {
                 continue;
             }
-
             let model = &mut models[model_id as usize];
-            let (uniform, uniform_buffer) = model.alloc_uniform_info();
-            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_scale(actor.get_scale().x);// * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
 
-            uniform.inv_world = world_matrix.invert().unwrap().into();
-            uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
-            uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
-            uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
-            uniform.time[1] = fragment_texture_fix;
-            device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[*uniform]));
+            let uniform_buffer = model.alloc_uniform_buffer();
+            let mut uniform_data = KbModelUniform { ..Default::default() };
+            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_scale(actor.get_scale().x);
+            uniform_data.inv_world = world_matrix.invert().unwrap().into();
+            uniform_data.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
+            uniform_data.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];
+            uniform_data.time[0] = game_config.start_time.elapsed().as_secs_f32();
+            uniform_data.time[1] = fragment_texture_fix;
+            device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform_data]));
         }
 
-        // Iterate over KbModels and render them setting the uniform info from above
+        // Render KbModels now that uniforms are set
         let model_iter = models.iter_mut();
         for model in model_iter {
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            let mut i = 0;
-            while i < model.get_uniform_info_count() {
-                let uniform_bind_group = &model.get_uniform_bind_group(i);
+            for _ in 0..model.get_uniform_info_count() {
+                let uniform_bind_group = &model.get_uniform_bind_group(0);
                 render_pass.set_bind_group(1, uniform_bind_group, &[]);
                 render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
                 render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
-
-                i = i + 1;
             }
         }
         
@@ -1520,7 +1720,101 @@ impl KbModelPipeline {
 
         let model_iter = models.iter_mut();
         for model in model_iter {
-            model.free_uniform_infos();
+            model.free_uniform_buffers();
         }
+    }
+
+    pub fn render_particles(&mut self, _blend_mode: KbParticleBlendMode, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, particles: &mut HashMap<KbParticleHandle, KbParticleActor>, game_config: &KbConfig) {
+         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("KbModelPipeline::render_particles()"),
+        });
+
+        // Create instances
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[ Some(wgpu::RenderPassColorAttachment {
+                    view: &device_resources.render_textures[0].view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &device_resources.render_textures[1].view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+       
+        let (view_matrix, view_dir, _) = game_camera.calculate_view_matrix();
+        let view_pos = game_camera.get_position();
+        let view_pos = [view_pos.x, view_pos.y, view_pos.z, 1.0];
+        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 1000000.0);
+        let view_proj_matrix = proj_matrix * view_matrix;
+        let fragment_texture_fix = {
+            #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
+            #[cfg(not(target_arch = "wasm32"))] { 1.0 }
+        };
+
+        match _blend_mode {
+            KbParticleBlendMode::AlphaBlend => { render_pass.set_pipeline(&self.alpha_blend_pipeline); }
+            KbParticleBlendMode::Additive => { render_pass.set_pipeline(&self.additive_pipeline) }
+        };
+       
+        let particle_iter = particles.iter_mut();
+        for mut particle_val in particle_iter {
+            let particle_actor = &mut particle_val.1;
+            if particle_actor.params.blend_mode != _blend_mode {
+                continue;
+            }
+
+            let position = particle_actor.get_position();
+            let scale = particle_actor.get_scale();
+            let model = &mut particle_val.1.model;
+
+            // Uniform data
+            model.free_uniform_buffers();
+            let uniform_buffer = model.alloc_uniform_buffer();
+
+            let world_matrix = cgmath::Matrix4::from_translation(position) * cgmath::Matrix4::from_scale(scale.x);
+            let mut uniform = KbModelUniform { ..Default::default() };
+            uniform.inv_world = world_matrix.invert().unwrap().into();
+            uniform.mvp_matrix = (view_proj_matrix * world_matrix).into();
+            uniform.camera_pos = view_pos;
+            uniform.camera_dir = [view_dir.x, view_dir.y, view_dir.z, 0.0];
+            uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];
+            uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
+            uniform.time[1] = fragment_texture_fix;
+            device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
+
+            // Instances
+            let particles = &particle_val.1.particles;
+            let mut particle_instances = Vec::<KbModelDrawInstance>::new();
+            for particle in particles {
+                let new_instance = KbModelDrawInstance {
+                    position: [particle.position.x, particle.position.y, particle.position.z, particle.rotation],
+                    scale: [particle.scale.x, particle.scale.y, 0.0, 0.0],
+                    color: particle.color.into()
+                };
+                particle_instances.push(new_instance);
+            }
+            device_resources.queue.write_buffer(&model.instance_buffer, 0, bytemuck::cast_slice(particle_instances.as_slice())); 
+
+            render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(1, model.instance_buffer.slice(..));
+            let uniform_bind_group = &model.get_uniform_bind_group(0);
+            render_pass.set_bind_group(1, uniform_bind_group, &[]);
+            render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
+            render_pass.draw_indexed(0..model.num_indices, 0, 0..particle_instances.len() as u32);
+        }
+        drop(render_pass);
+        device_resources.queue.submit(std::iter::once(command_encoder.finish()));
     }
 }

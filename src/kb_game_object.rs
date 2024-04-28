@@ -1,9 +1,226 @@
 use instant::Instant;
 use cgmath::InnerSpace;
 
-use crate::{kb_renderer::{KbModelHandle, INVALID_MODEL_HANDLE}, kb_utils::*, game_random_f32};
+use crate::{kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
+
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct KbActorTransform {
+    pub position: CgVec3,
+    pub rotation: CgQuat,
+    pub scale: CgVec3,
+}
+
+#[allow(dead_code)]
+impl KbActorTransform {
+    pub fn new(position: CgVec3, rotation: CgQuat, scale: CgVec3) -> KbActorTransform {
+        KbActorTransform {
+            position,
+            rotation,
+            scale,
+        }
+    }
+    pub fn from_position(position: CgVec3) -> KbActorTransform {
+        KbActorTransform {
+            position,
+            rotation: CG_QUAT_IDENT,
+            scale: CG_VEC3_ONE,
+        }
+    }
+
+    pub fn from_position_scale(position: CgVec3) -> KbActorTransform {
+        KbActorTransform {
+            position,
+            rotation: CG_QUAT_IDENT,
+            scale: CG_VEC3_ONE,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct KbParticleHandle {
+    pub index: u32,
+}
+pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum KbParticleBlendMode {
+    Additive,
+    AlphaBlend,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct KbParticleParams {
+    pub texture_file: String,
+    pub blend_mode: KbParticleBlendMode,
+
+    pub min_particle_life: f32,
+    pub max_particle_life: f32,
+    
+    pub _min_actor_life: f32,
+    pub _max_actor_life: f32,
+
+    pub min_start_spawn_rate: f32,
+    pub max_start_spawn_rate: f32,
+
+    pub min_start_pos: CgVec3,
+    pub max_start_pos: CgVec3,
+
+    pub min_start_scale: CgVec3,
+    pub max_start_scale: CgVec3,
+
+    pub min_end_scale: CgVec3,
+    pub max_end_scale: CgVec3,
+
+    pub min_start_velocity: CgVec3,
+    pub max_start_velocity: CgVec3,
+
+    pub min_start_rotation_rate: f32,
+    pub max_start_rotation_rate: f32,
+
+    pub min_start_acceleration: CgVec3,
+    pub max_start_acceleration: CgVec3,
+
+    pub min_end_velocity: CgVec3,
+    pub max_end_velocity: CgVec3,
+
+    pub start_color_0: CgVec4,
+    pub start_color_1: CgVec4,
+
+    pub end_color_0: CgVec4,
+    pub _end_color1: CgVec4,
+}
+
+#[allow(dead_code)]
+pub struct KbParticle {
+    pub position: CgVec3,
+    pub acceleration: CgVec3,
+    pub velocity: CgVec3,
+    pub color: CgVec4,
+    pub scale: CgVec3,
+    pub rotation: f32,
+    pub rotation_rate: f32,
+    pub start_time: f32,
+    pub start_scale: CgVec3,
+    pub end_scale: CgVec3,
+    pub life_time: f32,
+}
+
+#[allow(dead_code)]
+pub struct KbParticleActor {
+    pub params: KbParticleParams,
+    pub model: KbModel,
+    pub transform: KbActorTransform,
+    spawn_rate: f32,
+    start_time:  Instant,
+    next_spawn_time: f32,
+    pub particles: Vec<KbParticle>,
+    particle_handle: KbParticleHandle
+}
+
+impl KbParticleActor {
+    pub fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources) -> Self {
+        let model = KbModel::new_particle(&params.texture_file, &device_resources);
+        let spawn_rate = kb_random_f32(params.min_start_spawn_rate, params.max_start_spawn_rate);
+        let params = (*params).clone();
+        let start_time = instant::Instant::now();
+        let next_spawn_time = spawn_rate + start_time.elapsed().as_secs_f32();
+        let particles = Vec::<KbParticle>::new();
+        let transform = (*transform).clone();
+
+        KbParticleActor {
+            params: params,
+            model,
+            transform: transform,
+            spawn_rate,
+            start_time,
+            next_spawn_time,
+            particles,
+            particle_handle: particle_handle.clone()
+        }
+    }
+
+    pub fn tick(&mut self, game_config: &KbConfig) {
+        let elapsed_time = self.start_time.elapsed().as_secs_f32();
+        if elapsed_time > self.next_spawn_time {
+            let params = &self.params;
+            self.next_spawn_time = elapsed_time + self.spawn_rate;
+
+            let position = kb_random_vec3(params.min_start_pos, params.max_start_pos);
+            let acceleration = kb_random_vec3(params.min_start_acceleration, params.max_start_acceleration);
+            let velocity = kb_random_vec3(params.min_start_velocity, params.max_start_velocity);
+            let color = kb_random_vec4(params.start_color_0, params.start_color_1);
+            let life_time = kb_random_f32(params.min_particle_life, params.max_particle_life);
+            let start_scale = kb_random_vec3(params.min_start_scale, params.max_start_scale);
+            let end_scale = kb_random_vec3(params.min_end_scale, params.max_end_scale);
+            let scale = start_scale;
+            let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_spawn_rate);
+            let rotation = 0.0;
+
+            let particle = KbParticle {
+                position,
+                scale,
+                start_scale,
+                end_scale,
+                acceleration,
+                velocity,
+                rotation,
+                rotation_rate,
+                color,
+                life_time,
+                start_time: elapsed_time
+            };
+            self.particles.push(particle);
+        }
+
+        let delta_time = game_config.delta_time;
+
+        self.particles.retain_mut(|particle|
+            if elapsed_time > particle.start_time + particle.life_time {
+                false
+            } else {
+                let t = ((elapsed_time  - particle.start_time)/ particle.life_time).clamp(0.0, 1.0);
+                particle.velocity = particle.velocity + particle.acceleration * delta_time;
+                particle.position = particle.position + particle.velocity * delta_time;
+                particle.rotation = particle.rotation + particle.rotation_rate * delta_time;
+                particle.scale = particle.start_scale + (particle.end_scale - particle.start_scale) * t;
+                particle.color = self.params.start_color_0 + (self.params.end_color_0 - self.params.start_color_0) * t;
+                particle.color.x = particle.color.x.clamp(0.0, 999999.0);
+                particle.color.y = particle.color.y.clamp(0.0, 999999.0);
+                particle.color.z = particle.color.z.clamp(0.0, 999999.0);
+
+                true
+            }
+        );
+    }
+
+    pub fn set_position(&mut self, position: &CgVec3) {
+        self.transform.position = position.clone();
+    }
+
+    pub fn get_position(&self) -> CgVec3 {
+        self.transform.position
+    }
+
+    pub fn set_scale(&mut self, scale: &CgVec3) {
+        self.transform.scale = scale.clone();
+    }
+
+    pub fn get_scale(&self) -> CgVec3 {
+        self.transform.scale
+    }
+
+    pub fn set_rotation(&mut self, rotation: &CgQuat) {
+        self.transform.rotation = rotation.clone();
+    }
+
+    pub fn get_rotation(&self) -> CgQuat {
+        self.transform.rotation
+    }
+}
 
 #[derive(Clone)]
 pub struct KbActor {
@@ -22,7 +239,7 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_handle: KbModelHandle { index: INVALID_MODEL_HANDLE } 
+                model_handle: INVALID_MODEL_HANDLE 
             }
         }
     }
@@ -61,14 +278,14 @@ pub struct KbCamera {
 impl KbCamera {
     pub fn new() -> Self {
         KbCamera {
-            position: CG_VEC_ZERO,
+            position: CG_VEC3_ZERO,
             rotation: CG_QUAT_IDENT
         }
     }
 
     pub fn set_look_at(&mut self, new_pos: &CgVec3, target_pos: &CgVec3) {
         self.set_position(new_pos);
-        self.set_rotation(&cgmath::Matrix3::look_to_rh((new_pos - target_pos).normalize(), CG_VEC_UP).into());
+        self.set_rotation(&cgmath::Matrix3::look_to_rh((new_pos - target_pos).normalize(), CG_VEC3_UP).into());
     }
 
     pub fn set_position(&mut self, new_pos: &CgVec3) {
@@ -87,7 +304,7 @@ impl KbCamera {
         self.rotation.clone()
     }
 
-    pub fn get_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
+    pub fn calculate_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
         let cam_pos = self.get_position();
         let eye: CgPoint = CgPoint::new(cam_pos.x, cam_pos.y, cam_pos.z);
         let view_mat = cgmath::Matrix4::from(self.get_rotation());
@@ -157,7 +374,7 @@ impl GameObject {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 3.1,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
         }
     }

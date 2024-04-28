@@ -9,9 +9,10 @@ To run the examples, open a command prompt:
     To run 2D demo #2, cd to kbEngine3\Examples\2D\ and enter: cargo run
     To run 3D demo #3 cd to kbEngine3\Examples\3D\ and enter: cargo run
 
-To generate and test a WASM build, run the following commands and then navigate to 127.0.0.1:8000 in a web browser:
+To generate and test a WASM build, cd to kbEngine3\Examples\2D\, run the following commands and then navigate to 127.0.0.1:8000 in a web browser:
     cargo build --target wasm32-unknown-unknown --release
     wasm-bindgen --target web --out-dir target/wasm32-unknown-unknown/release target/wasm32-unknown-unknown/release/kb_engine_2D_demo.wasm
+    cp index.html target/wasm32-unknown-unknown/release
     python3 -m http.server -d target/wasm32-unknown-unknown/release
 
 Note:

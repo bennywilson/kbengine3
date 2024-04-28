@@ -1,8 +1,8 @@
 use cgmath::{InnerSpace, Vector3};
 use instant::Instant;
 
-use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectState, GameObjectType}, kb_renderer::KbRenderer};
-use kb_engine3::{game_random_f32, game_random_u32, log};
+use kb_engine3::{log, kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectState, GameObjectType}, kb_renderer::KbRenderer};
+use kb_engine3::kb_utils::*;
 
 const SKY_Z:f32 = 0.0;
 const SUN_Z:f32 = 15.0;
@@ -39,12 +39,12 @@ impl Example2DGame {
 			let mut start_x = 2.0;
 			let mut vel_x = -self.enemy_speed;
 
-			let randnum = game_random_u32!(1, 2);
+			let randnum = kb_random_u32(1, 2);
 		    if randnum == 2 {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos:f32  = game_random_f32!(0.0, 0.75);
+			let y_pos: f32 = kb_random_f32(0.0, 0.75);
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -61,7 +61,7 @@ impl Example2DGame {
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
+				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: true
 			});
 		}
@@ -148,7 +148,7 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 3.1,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 	
@@ -167,7 +167,7 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -186,7 +186,7 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 
@@ -194,11 +194,11 @@ impl KbGameEngine for Example2DGame {
 		let mut i = 0;
 		while i < 10 {
 
-			let rand_x = game_random_f32!(-2.0, 2.0);
-			let rand_y = game_random_f32!(0.8, 1.1);
-			let scale_x = game_random_f32!(0.17, 0.3);
-			let scale_y = game_random_f32!(0.13, 0.17);
-			let x_speed = game_random_f32!(0.03, 0.05);
+			let rand_x = kb_random_f32(-2.0, 2.0);
+			let rand_y = kb_random_f32(0.8, 1.1);
+			let scale_x = kb_random_f32(0.17, 0.3);
+			let scale_y = kb_random_f32(0.13, 0.17);
+			let x_speed = kb_random_f32(0.03, 0.05);
 
 			// Cloud
 			self.game_objects.push(GameObject { 
@@ -210,12 +210,12 @@ impl KbGameEngine for Example2DGame {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: 18 + game_random_u32!(0, 1) as i32,
+				sprite_index: 18 + kb_random_u32(0, 1) as i32,
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
+				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			});
 
@@ -245,14 +245,14 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 
 		let mut x = -1.9;
 		while x < 1.9 {
-			let building_width = game_random_f32!(0.12, 0.20);
-			let building_height = game_random_f32!(0.25, 0.5);
+			let building_width = kb_random_f32(0.12, 0.20);
+			let building_height = kb_random_f32(0.25, 0.5);
 			self.game_objects.push(GameObject { 
 				position: (x, building_height, BUILDING_Z - (building_height * 3.0)).into(),
 				scale: (building_width, building_height, 1.0).into(),
@@ -262,22 +262,22 @@ impl KbGameEngine for Example2DGame {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: game_random_u32!(32, 39) as i32,
+				sprite_index: kb_random_u32(32, 39) as i32,
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
+				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			});
-			x = x + game_random_f32!(0.2, 0.3);
+			x = x + kb_random_f32(0.2, 0.3);
 		}
 
 		// Trees
 		let mut x = -1.9;
 		while x < 1.9 {
-			let tree_width = game_random_f32!(0.08, 0.15);
-			let tree_height = game_random_f32!(0.16, 0.2);
+			let tree_width = kb_random_f32(0.08, 0.15);
+			let tree_height = kb_random_f32(0.16, 0.2);
 			self.game_objects.push(GameObject { 
 				position: (x, tree_height, BUILDING_Z + 1.0).into(),
 				scale: (tree_width, tree_height, 1.0).into(),
@@ -287,15 +287,15 @@ impl KbGameEngine for Example2DGame {
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: game_random_u32!(23, 24) as i32,
+				sprite_index: kb_random_u32(23, 24) as i32,
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
+				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			});
-			x = x + game_random_f32!(0.12, 0.19);
+			x = x + kb_random_f32(0.12, 0.19);
 		}
 		// Roads
 		self.game_objects.push(GameObject { 
@@ -312,7 +312,7 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
@@ -329,7 +329,7 @@ impl KbGameEngine for Example2DGame {
 			life_start_time: Instant::now(),
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
-			random_val: game_random_f32!(0.0, 1000.0),
+			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
 	}
@@ -382,7 +382,7 @@ impl KbGameEngine for Example2DGame {
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
 				gravity_scale: 0.0,
-				random_val: game_random_f32!(0.0, 1000.0),
+				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			};
 

@@ -1,6 +1,8 @@
 struct ModelUniform {
     inv_world: mat4x4<f32>,
     view_proj: mat4x4<f32>,
+    camera_pos: vec4<f32>,
+    camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>
 };

@@ -4,12 +4,12 @@ use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
 use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
-pub const INVALID_MODEL_HANDLE: u32 = u32::max_value();
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct KbModelHandle {
     pub index: u32,
 }
+
+pub const INVALID_MODEL_HANDLE: KbModelHandle = KbModelHandle{ index: u32::max_value() };
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
@@ -19,7 +19,12 @@ pub struct KbRenderer<'a> {
     model_pipeline: KbModelPipeline,
 
     actor_map: HashMap::<u32, KbActor>,
+    
+    particle_map: HashMap<KbParticleHandle, KbParticleActor>,
+    next_particle_id: KbParticleHandle,
+
     models: Vec<KbModel>,
+    next_model_id: KbModelHandle,
 
     game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
@@ -32,15 +37,12 @@ pub struct KbRenderer<'a> {
 impl<'a> KbRenderer<'a> {
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
-        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-        
-        
+
+        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;     
         let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);
-        
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);    
         let model_pipeline = KbModelPipeline::new(&device_resources);
-  
-        
+    
         KbRenderer {
             device_resources,
             sprite_pipeline,
@@ -48,7 +50,11 @@ impl<'a> KbRenderer<'a> {
             postprocess_pipeline,
 
             actor_map: HashMap::<u32, KbActor>::new(),
+            particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
+            next_particle_id: INVALID_PARTICLE_HANDLE,
+
             models: Vec::<KbModel>::new(),
+            next_model_id: INVALID_MODEL_HANDLE,
 
             game_camera: KbCamera::new(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -171,6 +177,7 @@ impl<'a> KbRenderer<'a> {
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {
 
+        self.update_particles(game_config);
         PERF_SCOPE!("render_frame()");
 
         let (final_tex, final_view) = self.begin_frame();
@@ -193,11 +200,16 @@ impl<'a> KbRenderer<'a> {
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
-          if self.models.len() > 0 {
+        if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
         }
 
+        if self.particle_map.len() > 0 {
+            PERF_SCOPE!("Particle Pass");
+            self.model_pipeline.render_particles(KbParticleBlendMode::AlphaBlend, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+        }
 
         {
             PERF_SCOPE!("Postprocess pass");
@@ -236,17 +248,36 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
+    pub fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
+        self.next_particle_id = match self.next_particle_id {
+            INVALID_PARTICLE_HANDLE => { KbParticleHandle { index: 0 } }
+            _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
+        };
+
+        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources);
+        self.particle_map.insert(self.next_particle_id.clone(), particle);
+    }
+
     pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
-        let index = self.models.len() as u32;
+        self.next_model_id = match self.next_model_id {
+            INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
+            _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
+        };
+        
         let model = KbModel::new(file_path, &mut self.device_resources);
         self.models.push(model);
 
-        KbModelHandle {
-            index
-        }
+        self.next_model_id.clone()
     }
 
     pub fn set_camera(&mut self, camera: &KbCamera) {
         self.game_camera = camera.clone();
+    }
+
+    pub fn update_particles(&mut self, game_config: &KbConfig) {
+        let particle_iter = self.particle_map.iter_mut();
+        for particle in particle_iter {
+            particle.1.tick(game_config);
+        }
     }
 }
