@@ -148,7 +148,7 @@ impl KbGameEngine for Example3DGame {
 			game_object.update(game_config.delta_time);
 		}
 		let delta_time = game_config.delta_time;
-		let (_s, view_dir, right_dir) = self.game_camera.get_view_matrix();
+		let (_s, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 		let mut camera_pos = self.game_camera.get_position();
 		let mut camera_rot = self.game_camera.get_rotation();
 

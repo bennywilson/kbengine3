@@ -1,6 +1,8 @@
 struct ModelUniform {
     inv_world: mat4x4<f32>,
     view_proj: mat4x4<f32>,
+    camera_pos: vec4<f32>,
+    camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>
 };
@@ -23,10 +25,6 @@ struct InstanceInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) inv_light_1: vec3<f32>,
-    @location(3) inv_light_2: vec3<f32>,
-    @location(4) inv_light_3: vec3<f32>,
     @location(5) color: vec4<f32>
 }
 
@@ -35,21 +33,21 @@ fn vs_main(
     model: VertexInput,
     instance: InstanceInput,
 ) -> VertexOutput {
-    var out: VertexOutput;
+    var particle_origin = vec3<f32>(instance.x_axis.w, instance.y_axis.w, instance.z_axis.w);
+    var camera_pos = vec3<f32>(model_uniform.camera_pos.x, model_uniform.camera_pos.y, model_uniform.camera_pos.z);
+    var camera_to_particle = normalize(camera_pos - particle_origin);
+    var right_vec = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), camera_to_particle));
+    var up_vec = cross(camera_to_particle, right_vec);
 
+    var pos: vec3<f32> = model.position.xyz;
+    right_vec = right_vec * model.position.x;
+    up_vec = up_vec * model.position.y;
+    pos = particle_origin + up_vec + right_vec;
+
+    var out: VertexOutput;
+    out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
     out.tex_coords = model.tex_coords;
     out.color = instance.color;
-
-    var pos: vec3<f32> = model.position.xyz + vec3<f32>(instance.x_axis.w, instance.y_axis.w, instance.z_axis.w);
-    out.normal = model.normal;
-
-    out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
-    out.inv_light_1 = (model_uniform.inv_world * vec4<f32>(1.0, 1.0, 1.0, 0.0)).xyz;
-    out.inv_light_2 = (model_uniform.inv_world * vec4<f32>(-1.0, 1.0, 1.0, 0.0)).xyz;
-    out.inv_light_3 = (model_uniform.inv_world * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
-
-//out.clip_position.z = 0.5;
-//out.clip_position.w = 0.5;
 
     return out;
 }

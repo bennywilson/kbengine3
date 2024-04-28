@@ -984,6 +984,8 @@ impl KbPostprocessPipeline {
 pub struct KbModelUniform {
     pub inv_world: [[f32; 4]; 4],
     pub mvp_matrix: [[f32; 4]; 4],
+    pub camera_pos:[f32; 4],
+    pub camera_dir:[f32; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
 }
@@ -1080,7 +1082,7 @@ impl KbModel {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
         });
 
-       let mut textures = Vec::<KbTexture>::new();
+        let mut textures = Vec::<KbTexture>::new();
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -1178,6 +1180,7 @@ impl KbModel {
             uniform_bind_groups.push(uniform_bind_group);
             i = i + 1;
         }
+
         KbModel {
             vertex_buffer,
             index_buffer,
@@ -1684,8 +1687,8 @@ impl KbModelPipeline {
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
 
-        let (view_matrix, _, _) = game_camera.get_view_matrix();      
-        let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
+        let (view_matrix, _, _) = game_camera.calculate_view_matrix();      
+        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
         let model_len = models.len();
@@ -1740,8 +1743,6 @@ impl KbModelPipeline {
             label: Some("KbModelPipeline::render_particles()"),
         });
 
-        let (view_matrix, _, _) = game_camera.get_view_matrix();      
-        let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
         // Create instances
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -1765,13 +1766,18 @@ impl KbModelPipeline {
             timestamp_writes: None,
         });
        
-        render_pass.set_pipeline(&self.transparent_render_pipeline);
-
-         // Uniform info
+        let (view_matrix, view_dir, _) = game_camera.calculate_view_matrix();
+        let view_dir = [view_dir.x, view_dir.y, view_dir.z, 0.0];
+        let view_pos = game_camera.get_position();
+        let view_pos = [view_pos.x, view_pos.y, view_pos.z, 1.0];
+        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 1000000.0);
+        let view_proj_matrix = proj_matrix * view_matrix;
         let fragment_texture_fix = {
             #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
+
+        render_pass.set_pipeline(&self.transparent_render_pipeline);
 
         let particle_iter = particles.iter_mut();
         for particle_val in particle_iter {
@@ -1785,7 +1791,9 @@ impl KbModelPipeline {
             let (uniform, uniform_buffer) = model.alloc_uniform_info();
             let world_matrix = cgmath::Matrix4::from_translation(position) * cgmath::Matrix4::from_scale(scale.x);// * cgmath::Matrix4::from_angle_y(radians) * cgmath::Matrix4::from_scale(actor.get_scale().x);
             uniform.inv_world = world_matrix.invert().unwrap().into();
-            uniform.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
+            uniform.mvp_matrix = (view_proj_matrix * world_matrix).into();
+            uniform.camera_pos = view_pos;
+            uniform.camera_dir = view_dir;
             uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];//[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
             uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
             uniform.time[1] = fragment_texture_fix;

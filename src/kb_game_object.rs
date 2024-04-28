@@ -267,7 +267,7 @@ impl KbCamera {
         self.rotation.clone()
     }
 
-    pub fn get_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
+    pub fn calculate_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
         let cam_pos = self.get_position();
         let eye: CgPoint = CgPoint::new(cam_pos.x, cam_pos.y, cam_pos.z);
         let view_mat = cgmath::Matrix4::from(self.get_rotation());
