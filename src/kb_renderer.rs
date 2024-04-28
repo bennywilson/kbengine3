@@ -2,7 +2,7 @@ use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_game_object::{GameObject, GameObjectType, KbActor}, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
 pub const INVALID_MODEL_HANDLE: u32 = u32::max_value();
 
@@ -19,9 +19,9 @@ pub struct KbRenderer<'a> {
     model_pipeline: KbModelPipeline,
 
     actor_map: HashMap::<u32, KbActor>,
-
     models: Vec<KbModel>,
 
+    game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
     frame_times: Vec<f32>,
     frame_timer: Instant,
@@ -50,6 +50,7 @@ impl<'a> KbRenderer<'a> {
             actor_map: HashMap::<u32, KbActor>::new(),
             models: Vec::<KbModel>::new(),
 
+            game_camera: KbCamera::new(),
             postprocess_mode: KbPostProcessMode::Passthrough,
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
@@ -194,7 +195,7 @@ impl<'a> KbRenderer<'a> {
 
           if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
         }
 
 
@@ -243,5 +244,9 @@ impl<'a> KbRenderer<'a> {
         KbModelHandle {
             index
         }
+    }
+
+    pub fn set_camera(&mut self, camera: &KbCamera) {
+        self.game_camera = camera.clone();
     }
 }

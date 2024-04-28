@@ -51,7 +51,7 @@ impl KbGameEngine for EmptyGame {
 		&self.game_objects
 	}
 
-	fn tick_frame(&mut self, _game_renderer: &mut KbRenderer, _input_manager: &InputManager) {
+	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, _input_manager: &InputManager) {
 		// Add game update logic here
 	}
 }

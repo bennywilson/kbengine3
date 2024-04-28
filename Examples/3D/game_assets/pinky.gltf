@@ -19,18 +19,7 @@
 	"nodes":[
 		{
 			"mesh":0,
-			"name":"Pinky.001",
-			"rotation":[
-				0.4999999403953552,
-				0.5000001788139343,
-				0.5000000596046448,
-				0.4999998211860657
-			],
-			"translation":[
-				0,
-				0,
-				95.46137237548828
-			]
+			"name":"Pinky.001"
 		}
 	],
 	"materials":[
@@ -83,43 +72,43 @@
 	"images":[
 		{
 			"mimeType":"image/png",
-			"name":"Pinky_Base_T",
-			"uri":"Pinky_Base_T.png"
+			"name":"pinky_t",
+			"uri":"pinky_t.png"
 		}
 	],
 	"accessors":[
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":14616,
+			"count":14645,
 			"max":[
-				78.81914520263672,
-				63.79058074951172,
-				61.882694244384766
+				3.7448067665100098,
+				11.476036071777344,
+				5.734550476074219
 			],
 			"min":[
-				-79.88418579101562,
-				-95.86445617675781,
-				-66.09091186523438
+				-5.371424198150635,
+				0.102956123650074,
+				-5.5707244873046875
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":14616,
+			"count":14645,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":14616,
+			"count":14645,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5126,
-			"count":14616,
+			"count":14645,
 			"type":"VEC2"
 		},
 		{
@@ -132,32 +121,32 @@
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":175392,
+			"byteLength":175740,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":175392,
-			"byteOffset":175392,
+			"byteLength":175740,
+			"byteOffset":175740,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":116928,
-			"byteOffset":350784,
+			"byteLength":117160,
+			"byteOffset":351480,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":116928,
-			"byteOffset":467712,
+			"byteLength":117160,
+			"byteOffset":468640,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":162270,
-			"byteOffset":584640,
+			"byteOffset":585800,
 			"target":34963
 		}
 	],
@@ -169,8 +158,8 @@
 	],
 	"buffers":[
 		{
-			"byteLength":746912,
-			"uri":"Pinky.bin"
+			"byteLength":748072,
+			"uri":"pinky.bin"
 		}
 	]
 }
