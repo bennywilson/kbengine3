@@ -14,6 +14,8 @@ pub struct KbConfig {
 
 	// Dynamic
 	pub start_time: instant::Instant,
+	pub delta_time: f32,
+	pub last_frame_time: f32,
 	pub postprocess_mode: KbPostProcessMode,
 }
 
@@ -94,7 +96,15 @@ impl KbConfig {
 			_vsync,
 
 			start_time: instant::Instant::now(),
+			delta_time: 0.0,
+			last_frame_time: 0.0,
 			postprocess_mode: KbPostProcessMode::Passthrough,
         }
     }
+
+	pub fn update_frame_times(&mut self) {
+		let elapsed_time = self.start_time.elapsed().as_secs_f32();
+		self.delta_time = elapsed_time - self.last_frame_time;
+		self.last_frame_time = elapsed_time;
+	}
 }

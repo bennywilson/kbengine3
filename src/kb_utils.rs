@@ -63,3 +63,15 @@ macro_rules! PERF_SCOPE {
 		tracy_full::zone!($label);
 	}
 }
+
+pub type CgVec3 = cgmath::Vector3<f32>;
+pub const CG_VEC_ZERO: CgVec3 = CgVec3::new(0.0, 0.0, 0.0);
+pub const CG_VEC_UP: CgVec3 = CgVec3::new(0.0, 1.0, 0.0);
+
+pub type CgPoint = cgmath::Point3<f32>;
+pub const CG_POINT_ZERO: CgPoint = CgPoint::new(0.0, 0.0, 0.0);
+
+pub type CgQuat = cgmath::Quaternion<f32>;
+pub const CG_QUAT_IDENT: CgQuat = CgQuat::new(0.0, 0.0, 0.0, 1.0);
+
+pub type CgMat = cgmath::Matrix4<f32>;

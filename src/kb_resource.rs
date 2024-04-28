@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use load_file::load_bytes;
 
-use crate::{kb_config::KbConfig, kb_game_object::{KbActor, GameObject}, log, PERF_SCOPE};
+use crate::{kb_config::KbConfig, kb_game_object::{KbActor, KbCamera, GameObject}, kb_utils::*, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -1359,34 +1359,7 @@ impl KbModelPipeline {
             ],
             label: Some("KbModelPipeline_uniform_bind_group"),
         });
-        /*
-                let local_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(entity_uniform_size),
-                    },
-                    count: None,
-                }],
-                label: None,
-            });
-        let entity_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &local_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &entity_uniform_buf,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(entity_uniform_size),
-                }),
-            }],
-            label: None,
-        });
-        */
+
         log!("  Creating pipeline");
 
         // Render pipeline
@@ -1446,7 +1419,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, _render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
@@ -1501,12 +1474,7 @@ impl KbModelPipeline {
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
 
-        let view_matrix = {
-            let eye: cgmath::Point3<f32> = (0.0, 0.5, 150.0).into();
-            let target: cgmath::Point3<f32> = (0.0, 0.0, -100.0).into();
-            let up = cgmath::Vector3::unit_y();
-            cgmath::Matrix4::look_at_rh(eye, target, up)
-        };
+        let (view_matrix, view_dir, _) = game_camera.get_view_matrix();      
         let proj_matrix = cgmath::perspective(cgmath::Deg(75.0), 1920.0 / 1080.0, 0.1, 1000000.0);
         let radians = cgmath::Rad::from(cgmath::Deg(game_config.start_time.elapsed().as_secs_f32() * 35.0));
 

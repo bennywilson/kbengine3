@@ -3,6 +3,10 @@ use winit::*;
 
 #[derive(Debug, Default)]
 pub struct InputManager {
+    pub left_arrow_pressed: bool,
+    pub right_arrow_pressed: bool,
+    pub up_arrow_pressed: bool,
+    pub down_arrow_pressed:bool,
     pub left_pressed: bool,
     pub right_pressed: bool,
     pub up_pressed: bool,
@@ -59,6 +63,23 @@ impl InputManager {
                 self.four_pressed = pressed;
                 true
             }
+            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowUp) => {
+                self.up_arrow_pressed = pressed;
+                true
+            }
+            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowDown) => {
+                self.down_arrow_pressed = pressed;
+                true
+            }
+            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowLeft) => {
+                self.left_arrow_pressed = pressed;
+                true
+            }
+            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowRight) => {
+                self.right_arrow_pressed = pressed;
+                true
+            }
+
             _ => false
         }
     }

@@ -137,7 +137,7 @@ impl KbGameEngine for Example2DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame(&mut self, _game_renderer: &mut KbRenderer, input_manager: &InputManager) {
+	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig) {
 		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
         self.current_frame_time = Instant::now();
 

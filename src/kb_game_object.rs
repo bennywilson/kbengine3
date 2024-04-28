@@ -1,15 +1,15 @@
-use cgmath::Vector3;
 use instant::Instant;
+use cgmath::InnerSpace;
 
-use crate::{kb_renderer::{KbModelHandle, INVALID_MODEL_HANDLE}, game_random_f32};
+use crate::{kb_renderer::{KbModelHandle, INVALID_MODEL_HANDLE}, kb_utils::*, game_random_f32};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
 #[derive(Clone)]
 pub struct KbActor {
     pub id: u32,
-    position: Vector3<f32>,
-    scale: Vector3<f32>,
+    position: CgVec3,
+    scale: CgVec3,
 
     model_handle: KbModelHandle,
 }
@@ -27,19 +27,19 @@ impl KbActor {
         }
     }
 
-    pub fn set_position(&mut self, position: &Vector3<f32>) {
+    pub fn set_position(&mut self, position: &CgVec3) {
         self.position = position.clone();
     }
 
-    pub fn get_position(&self) -> Vector3<f32> {
+    pub fn get_position(&self) -> CgVec3 {
         self.position
     }
 
-    pub fn set_scale(&mut self, scale: &Vector3<f32>) {
+    pub fn set_scale(&mut self, scale: &CgVec3) {
         self.scale = scale.clone();
     }
  
-    pub fn get_scale(&self) -> Vector3<f32> {
+    pub fn get_scale(&self) -> CgVec3 {
         self.scale
     }
 
@@ -49,6 +49,53 @@ impl KbActor {
 
     pub fn get_model(&self) -> KbModelHandle {
         self.model_handle.clone()
+    }
+}
+
+#[derive(Clone)]
+pub struct KbCamera {
+    position: CgVec3,
+    rotation: CgQuat,
+}
+
+impl KbCamera {
+    pub fn new() -> Self {
+        KbCamera {
+            position: CG_VEC_ZERO,
+            rotation: CG_QUAT_IDENT
+        }
+    }
+
+    pub fn set_look_at(&mut self, new_pos: &CgVec3, target_pos: &CgVec3) {
+        self.set_position(new_pos);
+        self.set_rotation(&cgmath::Matrix3::look_to_rh((new_pos - target_pos).normalize(), CG_VEC_UP).into());
+    }
+
+    pub fn set_position(&mut self, new_pos: &CgVec3) {
+        self.position = new_pos.clone();
+    }
+
+    pub fn get_position(&self) -> CgVec3 {
+        self.position.clone()
+    }
+
+    pub fn set_rotation(&mut self, new_rot: &CgQuat) {
+        self.rotation = new_rot.clone();
+    }
+
+    pub fn get_rotation(&self) -> CgQuat {
+        self.rotation.clone()
+    }
+
+    pub fn get_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
+        let cam_pos = self.get_position();
+        let eye: CgPoint = CgPoint::new(cam_pos.x, cam_pos.y, cam_pos.z);
+        let view_mat = cgmath::Matrix4::from(self.get_rotation());
+        let right_dir = -CgVec3::new(view_mat.x.x, view_mat.x.y, view_mat.x.z);
+        let view_dir = CgVec3::new(view_mat.z.x, view_mat.z.y, view_mat.z.z);
+        let target = eye + view_dir;
+        let up = cgmath::Vector3::unit_y();
+        (cgmath::Matrix4::look_at_rh(eye, target, up), view_dir, right_dir)
     }
 }
 
@@ -75,10 +122,10 @@ pub enum GameObjectState {
 #[allow(dead_code)] 
 #[derive(Clone)]
 pub struct GameObject {
-    pub position: Vector3<f32>,
-    pub direction: Vector3<f32>,
-    pub scale: Vector3<f32>,
-    pub velocity: Vector3<f32>,
+    pub position: CgVec3,
+    pub direction: CgVec3,
+    pub scale: CgVec3,
+    pub velocity: CgVec3,
     pub object_type: GameObjectType,
     pub object_state: GameObjectState,
     pub next_attack_time: f32,
@@ -94,7 +141,7 @@ pub struct GameObject {
 
 #[allow(dead_code)] 
 impl GameObject {
-    pub fn new(object_type: GameObjectType, sprite_index: i32, position: Vector3<f32>, direction: Vector3<f32>, scale: Vector3<f32>) -> Self {
+    pub fn new(object_type: GameObjectType, sprite_index: i32, position: CgVec3, direction: CgVec3, scale: CgVec3) -> Self {
 
         GameObject {
             position,
@@ -197,7 +244,7 @@ impl GameObject {
         self.update_movement(frame_time);
     }
 
-    pub fn set_velocity(&mut self, move_vec: Vector3<f32>) {
+    pub fn set_velocity(&mut self, move_vec: CgVec3) {
         self.velocity.x = move_vec.x;
 
         if matches!(self.object_type, GameObjectType::Character) == false {

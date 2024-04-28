@@ -40,5 +40,11 @@ pub trait KbGameEngine {
 
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 
-	fn tick_frame(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager);
+	// Do not override tick_frame().  Put custom code in tick_frame_internal()
+	fn tick_frame(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &mut KbConfig) {
+		game_config.update_frame_times();
+		self.tick_frame_internal(renderer, input_manager, game_config);
+	}
+
+	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig);
 }
