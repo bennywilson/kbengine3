@@ -183,24 +183,13 @@ impl KbTexture {
         })
     }
 
-    pub fn from_bytes(
-        device: &Device,
-        queue: &Queue,
-        bytes: &[u8], 
-        label: &str
-    ) -> Result<Self> {
+    pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label))
     }
 
-    pub fn from_image(
-        device: &Device,
-        queue: &Queue,
-        img: &image::DynamicImage,
-        label: Option<&str>
-    ) -> Result<Self> {
+    pub fn from_image(device: &Device, queue: &Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self> {
         let dimensions = img.dimensions();
-
         let size = wgpu::Extent3d {
             width: dimensions.0,
             height: dimensions.1,
