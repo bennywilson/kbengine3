@@ -24,7 +24,7 @@ struct InstanceInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
-    @location(5) color: vec4<f32>
+    @location(1) color: vec4<f32>
 }
 
 @vertex
@@ -34,8 +34,6 @@ fn vs_main(
 ) -> VertexOutput {
     var particle_origin = instance.position.xyz;
     var camera_to_particle = normalize(model_uniform.camera_pos.xyz - particle_origin);
-    var right_vec = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), camera_to_particle));
-    var up_vec = cross(camera_to_particle, right_vec);
 
     var cos_theta = cos(instance.position.w);
     var sin_theta = sin(instance.position.w);
@@ -43,6 +41,9 @@ fn vs_main(
     vertex_pos.x = model.position.x * cos_theta - model.position.y * sin_theta;
     vertex_pos.y = model.position.x * sin_theta + model.position.y * cos_theta;
     vertex_pos.z = 0.0;
+
+    var right_vec = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), camera_to_particle));
+    var up_vec = cross(camera_to_particle, right_vec);
 
     right_vec = right_vec * vertex_pos.x * instance.scale.x;
     up_vec = up_vec * vertex_pos.y * instance.scale.x;  // Todo: uniform scale only

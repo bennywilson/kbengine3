@@ -202,7 +202,7 @@ impl<'a> KbRenderer<'a> {
 
         if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {
