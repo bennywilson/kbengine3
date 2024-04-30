@@ -5,6 +5,7 @@ use winit::{
     window::WindowBuilder,
 };
 
+pub mod kb_assets;
 pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;
@@ -53,7 +54,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
     let mut input_manager = InputManager::new();
     let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
 
-    game_engine.initialize_world(&mut game_renderer);
+    game_engine.initialize_world(&mut game_renderer).await;
 
 
     #[cfg(target_arch = "wasm32")]
@@ -75,7 +76,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
+                                Err(wgpu::SurfaceError::Lost) => { let _ = game_renderer.resize(&game_config); },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -87,7 +88,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
                             if physical_size.width > 0 && physical_size.height > 0 {
                                 game_config.window_width = physical_size.width;
                                 game_config.window_height = physical_size.height;
-                                game_renderer.resize(&game_config);
+                                let _ = async {game_renderer.resize(&game_config).await};
                             }
                         }
 
@@ -134,7 +135,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => { game_renderer.resize(&game_config); },
+                                Err(wgpu::SurfaceError::Lost) => { let _ = async { game_renderer.resize(&game_config).await}; },
 		                        Err(wgpu::SurfaceError::OutOfMemory) => { control_flow.exit() }
 		                        Err(e) => { eprintln!("{:?}", e) },
                             }
@@ -146,7 +147,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
                             if physical_size.width > 0 && physical_size.height > 0 {
                                 game_config.window_width = physical_size.width;
                                 game_config.window_height = physical_size.height;
-                                game_renderer.resize(&game_config);
+                                let _ = async { game_renderer.resize(&game_config).await};
                             }
                         }
 

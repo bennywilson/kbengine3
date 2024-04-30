@@ -36,7 +36,8 @@ impl KbAssetManager {
 pub trait KbGameEngine {
 	fn new(game_config: &KbConfig) -> Self;
 
-	fn initialize_world(&mut self, renderer: &mut KbRenderer);
+	#[allow(async_fn_in_trait)]
+	async fn initialize_world<'a>(&mut self, renderer: &'a mut KbRenderer<'_>);
 
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 

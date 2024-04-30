@@ -2,7 +2,7 @@ use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct KbModelHandle {
@@ -18,8 +18,8 @@ pub struct KbRenderer<'a> {
     postprocess_pipeline: KbPostprocessPipeline,
     model_pipeline: KbModelPipeline,
 
+    asset_manager: KbAssetManager,
     actor_map: HashMap::<u32, KbActor>,
-    
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
 
@@ -38,17 +38,20 @@ impl<'a> KbRenderer<'a> {
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
 
-        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;     
-        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);    
-        let model_pipeline = KbModelPipeline::new(&device_resources);
-    
+        let mut asset_manager = KbAssetManager::new();
+
+        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
+        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &mut asset_manager, &game_config).await;
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources, &mut asset_manager).await;  
+        let model_pipeline = KbModelPipeline::new(&device_resources, &mut asset_manager).await;
+
         KbRenderer {
             device_resources,
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
 
+            asset_manager,
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
@@ -228,12 +231,12 @@ impl<'a> KbRenderer<'a> {
         Ok(())
     }
 
-    pub fn resize(&mut self, game_config: &KbConfig) {
+    pub async fn resize(&mut self, game_config: &KbConfig) {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
         self.device_resources.resize(&game_config);
-        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources);
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &mut self.asset_manager, &game_config).await;
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources, &mut self.asset_manager).await;
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {
@@ -248,23 +251,23 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
-    pub fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
+    pub async fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
         self.next_particle_id = match self.next_particle_id {
             INVALID_PARTICLE_HANDLE => { KbParticleHandle { index: 0 } }
             _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
         };
 
-        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources);
+        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager).await;
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }
 
-    pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+    pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
         self.next_model_id = match self.next_model_id {
             INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
             _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
         };
         
-        let model = KbModel::new(file_path, &mut self.device_resources);
+        let model = KbModel::new(file_path, &mut self.device_resources, &mut self.asset_manager).await;
         self.models.push(model);
 
         self.next_model_id.clone()

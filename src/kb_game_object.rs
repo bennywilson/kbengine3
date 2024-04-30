@@ -1,7 +1,7 @@
 use instant::Instant;
 use cgmath::InnerSpace;
 
-use crate::{kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -122,8 +122,8 @@ pub struct KbParticleActor {
 }
 
 impl KbParticleActor {
-    pub fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources) -> Self {
-        let model = KbModel::new_particle(&params.texture_file, &device_resources);
+    pub async fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources<'_>, mut asset_manager: &mut KbAssetManager) -> Self {
+        let model = KbModel::new_particle(&params.texture_file, &device_resources, &mut asset_manager).await;
         let spawn_rate = kb_random_f32(params.min_start_spawn_rate, params.max_start_spawn_rate);
         let params = (*params).clone();
         let start_time = instant::Instant::now();
