@@ -415,8 +415,8 @@ impl KbSpritePipeline {
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
 
-        let sprite_tex_handle = asset_manager.load_texture("../engine_assets/textures/SpriteSheet.png", &device_resources);
-        let postprocess_tex_handle = asset_manager.load_texture("../engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/SpriteSheet.png", &device_resources);
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources);
         let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(
@@ -440,11 +440,8 @@ impl KbSpritePipeline {
             }
         );
 
-        log!("  Creating shader");
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BasicSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/BasicSprite.wgsl").into()),
-        });
+        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/BasicSprite.wgsl", &device_resources);
+        let shader = asset_manager.get_shader(&shader_handle);
         
         let uniform = SpriteUniform {
             ..Default::default()
@@ -535,10 +532,8 @@ impl KbSpritePipeline {
             multiview: None,
         });
 
-        let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("CloudSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/CloudSprite.wgsl").into()),
-        });
+        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/CloudSprite.wgsl", &device_resources);
+        let transparent_shader = asset_manager.get_shader(&transparent_shader_handle);
 
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -746,10 +741,8 @@ impl KbPostprocessPipeline {
         let render_texture = &device_resources.render_textures[0];
 
         // Post Process Pipeline
-        let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/postprocess_uber.wgsl").into()),
-        });
+        let postprocesst_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources);
+        let postprocess_shader = asset_manager.get_shader(&postprocesst_shader_handle);
         
         let postprocess_uniform = PostProcessUniform {
             ..Default::default()
@@ -864,7 +857,7 @@ impl KbPostprocessPipeline {
             multiview: None,
         });
 
-        let postprocess_tex_handle = asset_manager.load_texture("../engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources);
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
