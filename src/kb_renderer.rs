@@ -2,7 +2,7 @@ use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct KbModelHandle {
@@ -18,8 +18,8 @@ pub struct KbRenderer<'a> {
     postprocess_pipeline: KbPostprocessPipeline,
     model_pipeline: KbModelPipeline,
 
+    asset_manager: KbAssetManager,
     actor_map: HashMap::<u32, KbActor>,
-    
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
 
@@ -38,17 +38,19 @@ impl<'a> KbRenderer<'a> {
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
 
+        let mut asset_manager = KbAssetManager::new();
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;     
-        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);    
-        let model_pipeline = KbModelPipeline::new(&device_resources);
-    
+        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &mut asset_manager, &game_config);
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources, &mut asset_manager);    
+        let model_pipeline = KbModelPipeline::new(&device_resources, &mut asset_manager);
+
         KbRenderer {
             device_resources,
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
 
+            asset_manager,
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
@@ -232,8 +234,8 @@ impl<'a> KbRenderer<'a> {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
         self.device_resources.resize(&game_config);
-        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources);
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &mut self.asset_manager, &game_config);
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources, &mut self.asset_manager);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {

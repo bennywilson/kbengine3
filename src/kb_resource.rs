@@ -2,12 +2,12 @@ use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
-use load_file::load_bytes;
+use load_file::*;
 use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
 
-use crate::{kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -183,6 +183,12 @@ impl KbTexture {
         })
     }
 
+    pub fn from_file(file_path: &str, device_resources: &KbDeviceResources) ->Result<Self> {
+        log!("Loading texture {}", file_path);
+		let texture_bytes = load_bytes!(file_path);
+        KbTexture::from_bytes(&device_resources.device, &device_resources.queue, texture_bytes, file_path)
+    }
+
     pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label))
@@ -287,14 +293,16 @@ impl<'a> KbDeviceResources<'a> {
         self.render_textures[1] = KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
     }
 
-     pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
-        log!("Creating instance"); 
+    pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
+        log!("KbDeviceResources::new() called...");
+        
+        log!("  Creating instance"); 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: game_config.graphics_backend,
             ..Default::default()
         });
 
-        log!("Creating surface + adapter");
+        log!("  Creating surface + adapter");
 
         let surface = instance.create_surface(window.clone()).unwrap();
         let adapter = instance.request_adapter(
@@ -305,7 +313,7 @@ impl<'a> KbDeviceResources<'a> {
             },
         ).await.unwrap();
 
-        log!("Requesting Device");
+        log!("  Requesting Device");
 		let (device, queue) = adapter.request_device(
             &DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
@@ -323,8 +331,6 @@ impl<'a> KbDeviceResources<'a> {
         let surface_config = surface.get_default_config(&adapter, game_config.window_width, game_config.window_height).unwrap();
         surface.configure(&device, &surface_config);
 
-        log!("Loading Texture");
-
         let max_instances = game_config.max_render_instances;
         let instance_buffer = device.create_buffer(
             &wgpu::BufferDescriptor {
@@ -341,11 +347,11 @@ impl<'a> KbDeviceResources<'a> {
         let depth_texture = KbTexture::new_depth_texture(&device, &surface_config).unwrap();
         render_textures.push(depth_texture);
 
-        log!("Creating Font");
-
-        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
+        log!("  Creating Font");
+        let brush = BrushBuilder::using_font_bytes(load_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
+        log!("KbDeviceResources allocated");
 	    KbDeviceResources {
             surface_config,
             surface,
@@ -372,14 +378,11 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device_resources: &KbDeviceResources, game_config: &KbConfig) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager, game_config: &KbConfig) -> Self {
         log!("Creating KbSpritePipeline...");
 
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        let surface_config = &device_resources.surface_config;
-
-        
+        let surface_config = &device_resources.surface_config;        
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -411,46 +414,38 @@ impl KbSpritePipeline {
             ],
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
-       
-        let texture_bytes = include_bytes!("../engine_assets/textures/SpriteSheet.png");
-        let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
-        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
-
+        let sprite_tex_handle = asset_manager.load_texture("../engine_assets/textures/SpriteSheet.png", &device_resources);
+        let postprocess_tex_handle = asset_manager.load_texture("../engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
+        let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&sprite_tex.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&sprite_tex.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
                     },
                 ],
                 label: Some("kbSpritePipeline: tex_bind_group"),
             }
         );
 
-        let mut textures = Vec::<KbTexture>::new();
-        textures.push(postprocess_texture);
-
         log!("  Creating shader");
-
-        // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("BasicSprite.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/BasicSprite.wgsl").into()),
         });
         
-        // Uniform buffer
         let uniform = SpriteUniform {
             ..Default::default()
         };
@@ -745,9 +740,8 @@ pub struct KbPostprocessPipeline {
 }
 
 impl KbPostprocessPipeline {
-    pub fn new(device_resources: &KbDeviceResources) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
         let surface_config = &device_resources.surface_config;
         let render_texture = &device_resources.render_textures[0];
 
@@ -869,19 +863,20 @@ impl KbPostprocessPipeline {
             },
             multiview: None,
         });
-        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
+
+        let postprocess_tex_handle = asset_manager.load_texture("../engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &postprocess_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&postprocess_tex.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -1397,7 +1392,7 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device_resources: &KbDeviceResources) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, _asset_manager: &KbAssetManager) -> Self {
         log!("Creating KbModelPipeline...");
 
         let device = &device_resources.device;
@@ -1472,9 +1467,16 @@ impl KbModelPipeline {
             push_constant_ranges: &[],
         });
 
+        let model_str = {
+            match std::path::Path::new("./engine_assets").exists() {
+                true => { log!("TRUE!!!!!!!!!!!"); load_str!("/engine_assets/shaders/Model.wgsl").into() }
+                false => { log!("FALKSE!!!!!!"); load_str!("../engine_assets/shaders/Model.wgsl").into() }
+            }
+        };
+
         let opaque_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/Model.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(model_str),
         });
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

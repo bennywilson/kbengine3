@@ -5,6 +5,7 @@ use winit::{
     window::WindowBuilder,
 };
 
+pub mod kb_assets;
 pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;
