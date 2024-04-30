@@ -57,8 +57,7 @@ impl KbGameEngine for EmptyGame {
 }
 
 fn main() {
-
-    let config_file_text = include_str!("../game_assets/game_config.txt");
+    let config_file_text = include_str!("../engine_assets/game_config.txt");
     let game_config = KbConfig::new(config_file_text);
 
 	// Pass your Game's type to run_game() which will create an instance and call functions on it

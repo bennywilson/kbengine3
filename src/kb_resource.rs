@@ -343,7 +343,7 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("Creating Font");
 
-        let brush = BrushBuilder::using_font_bytes(include_bytes!("../game_assets/Bold.ttf")).unwrap()
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
 	    KbDeviceResources {
@@ -412,10 +412,10 @@ impl KbSpritePipeline {
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
        
-        let texture_bytes = include_bytes!("../game_assets/SpriteSheet.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/SpriteSheet.png");
         let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
         let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
 
         let tex_bind_group = device.create_bind_group(
@@ -447,7 +447,7 @@ impl KbSpritePipeline {
         // Create shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("BasicSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/BasicSprite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/BasicSprite.wgsl").into()),
         });
         
         // Uniform buffer
@@ -542,7 +542,7 @@ impl KbSpritePipeline {
 
         let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("CloudSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/CloudSprite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/CloudSprite.wgsl").into()),
         });
 
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -754,7 +754,7 @@ impl KbPostprocessPipeline {
         // Post Process Pipeline
         let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/postprocess_uber.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/postprocess_uber.wgsl").into()),
         });
         
         let postprocess_uniform = PostProcessUniform {
@@ -869,7 +869,7 @@ impl KbPostprocessPipeline {
             },
             multiview: None,
         });
-        let texture_bytes = include_bytes!("../game_assets/PostProcessFilter.png");
+        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
         let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -1474,7 +1474,7 @@ impl KbModelPipeline {
 
         let opaque_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/Model.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/Model.wgsl").into()),
         });
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1520,7 +1520,7 @@ impl KbModelPipeline {
 
         let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../game_assets/particle.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/particle.wgsl").into()),
         });
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_alpha_blend_pipeline"),
