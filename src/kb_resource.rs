@@ -2,7 +2,6 @@ use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
-use load_file::*;
 use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
@@ -183,10 +182,10 @@ impl KbTexture {
         })
     }
 
-    pub fn from_file(file_path: &str, device_resources: &KbDeviceResources) ->Result<Self> {
+    pub async fn from_file(file_path: &str, device_resources: &KbDeviceResources<'_>) ->Result<Self> {
         log!("Loading texture {}", file_path);
-		let texture_bytes = load_bytes!(file_path);
-        KbTexture::from_bytes(&device_resources.device, &device_resources.queue, texture_bytes, file_path)
+		let texture_bytes = load_binary(file_path).await.unwrap();//load_bytes!(file_path);
+        KbTexture::from_bytes(&device_resources.device, &device_resources.queue, &texture_bytes, file_path)
     }
 
     pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
@@ -348,7 +347,7 @@ impl<'a> KbDeviceResources<'a> {
         render_textures.push(depth_texture);
 
         log!("  Creating Font");
-        let brush = BrushBuilder::using_font_bytes(load_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
+        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
                 .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
         log!("KbDeviceResources allocated");
@@ -378,7 +377,7 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager, game_config: &KbConfig) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager, game_config: &KbConfig) -> Self {
         log!("Creating KbSpritePipeline...");
 
         let device = &device_resources.device;
@@ -415,8 +414,8 @@ impl KbSpritePipeline {
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
 
-        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/SpriteSheet.png", &device_resources);
-        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/SpriteSheet.png", &device_resources).await;
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
         let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(
@@ -440,7 +439,7 @@ impl KbSpritePipeline {
             }
         );
 
-        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/BasicSprite.wgsl", &device_resources);
+        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/BasicSprite.wgsl", &device_resources).await;
         let shader = asset_manager.get_shader(&shader_handle);
         
         let uniform = SpriteUniform {
@@ -532,7 +531,7 @@ impl KbSpritePipeline {
             multiview: None,
         });
 
-        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/CloudSprite.wgsl", &device_resources);
+        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/CloudSprite.wgsl", &device_resources).await;
         let transparent_shader = asset_manager.get_shader(&transparent_shader_handle);
 
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -735,13 +734,13 @@ pub struct KbPostprocessPipeline {
 }
 
 impl KbPostprocessPipeline {
-    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
         let surface_config = &device_resources.surface_config;
         let render_texture = &device_resources.render_textures[0];
 
         // Post Process Pipeline
-        let postprocesst_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources);
+        let postprocesst_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources).await;
         let postprocess_shader = asset_manager.get_shader(&postprocesst_shader_handle);
         
         let postprocess_uniform = PostProcessUniform {
@@ -857,7 +856,7 @@ impl KbPostprocessPipeline {
             multiview: None,
         });
 
-        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources);
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -1016,7 +1015,7 @@ pub struct KbModel {
 }
 
 impl KbModel {
-    pub fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
+    pub async fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
 
         let vertex_buffer = device.create_buffer_init(
@@ -1067,7 +1066,7 @@ impl KbModel {
         });
 
         let mut textures = Vec::<KbTextureHandle>::new();
-        let texture_handle = asset_manager.load_texture(texture_file_path, &device_resources);
+        let texture_handle = asset_manager.load_texture(texture_file_path, &device_resources).await;
         textures.push(texture_handle);
         let texture = asset_manager.get_texture(&textures[0]);
 
@@ -1149,7 +1148,7 @@ impl KbModel {
         }
     }
 
-    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
+    pub async fn new(file_name: &str, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Loading Model {file_name}");
 
         let device = &device_resources.device;     
@@ -1169,7 +1168,7 @@ impl KbModel {
                     match std::env::current_dir() {
                         Ok(dir) => {
                             let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
-                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources);
+                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
                             textures.push(texture_handle);
                         }
                         _ => {}
@@ -1375,7 +1374,7 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Creating KbModelPipeline...");
 
         let device = &device_resources.device;
@@ -1450,7 +1449,7 @@ impl KbModelPipeline {
             push_constant_ranges: &[],
         });
 
-        let opaque_shader_handle = asset_manager.load_shader("/engine_assets/shaders/Model.wgsl", &device_resources);
+        let opaque_shader_handle = asset_manager.load_shader("/engine_assets/shaders/Model.wgsl", &device_resources).await;
         let opaque_shader = asset_manager.get_shader(&opaque_shader_handle);
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1494,7 +1493,7 @@ impl KbModelPipeline {
             multiview: None,
         });
 
-        let particle_shader_handle = asset_manager.load_shader("/engine_assets/shaders/particle.wgsl", &device_resources);
+        let particle_shader_handle = asset_manager.load_shader("/engine_assets/shaders/particle.wgsl", &device_resources).await;
         let particle_shader = asset_manager.get_shader(&particle_shader_handle);
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_alpha_blend_pipeline"),
@@ -1769,6 +1768,9 @@ impl KbModelPipeline {
 
             // Instances
             let particles = &particle_val.1.particles;
+            if particles.len() == 0 {
+                continue;
+            }
             let mut particle_instances = Vec::<KbModelDrawInstance>::new();
             for particle in particles {
                 let new_instance = KbModelDrawInstance {
