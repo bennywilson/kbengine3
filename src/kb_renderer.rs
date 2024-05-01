@@ -256,7 +256,7 @@ impl<'a> KbRenderer<'a> {
             _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
         };
 
-        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources);
+        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager);
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }
 
@@ -266,7 +266,7 @@ impl<'a> KbRenderer<'a> {
             _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
         };
         
-        let model = KbModel::new(file_path, &mut self.device_resources);
+        let model = KbModel::new(file_path, &mut self.device_resources, &mut self.asset_manager);
         self.models.push(model);
 
         self.next_model_id.clone()

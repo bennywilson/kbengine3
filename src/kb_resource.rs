@@ -1007,7 +1007,7 @@ pub struct KbModel {
     pub instance_buffer: wgpu::Buffer,
     pub num_indices: u32,
 
-    pub textures: Vec<KbTexture>,
+    pub textures: Vec<KbTextureHandle>,
     pub tex_bind_group: wgpu::BindGroup,
 
     uniform_buffers: Vec<wgpu::Buffer>,
@@ -1016,9 +1016,8 @@ pub struct KbModel {
 }
 
 impl KbModel {
-    pub fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources) -> Self {
+    pub fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -1067,16 +1066,10 @@ impl KbModel {
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
-        let mut textures = Vec::<KbTexture>::new();
-        match std::env::current_dir() {
-            Ok(dir) => {
-                let file_path = format!("{}\\game_assets\\{}", dir.display(), texture_file_path);
-                let file_bytes = load_bytes!(&file_path);
-                let texture = KbTexture::from_bytes(&device, &queue, file_bytes, texture_file_path).unwrap();
-                textures.push(texture);
-            }
-            _ => { /* todo use default texture*/ }
-        };
+        let mut textures = Vec::<KbTextureHandle>::new();
+        let texture_handle = asset_manager.load_texture(texture_file_path, &device_resources);
+        textures.push(texture_handle);
+        let texture = asset_manager.get_texture(&textures[0]);
 
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -1084,11 +1077,11 @@ impl KbModel {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
                     },
                 ],
                 label: Some("KbModel_tex_bind_group"),
@@ -1156,15 +1149,13 @@ impl KbModel {
         }
     }
 
-    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
         log!("Loading Model {file_name}");
 
-        let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        
+        let device = &device_resources.device;     
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
-        let mut textures = Vec::<KbTexture>::new();
+        let mut textures = Vec::<KbTextureHandle>::new();
 
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
         let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
@@ -1178,10 +1169,8 @@ impl KbModel {
                     match std::env::current_dir() {
                         Ok(dir) => {
                             let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
-                            log!("  Trying to load {}", file_path);
-                            let file_bytes = load_bytes!(&file_path);
-                            let new_texture = KbTexture::from_bytes(device, queue, file_bytes, uri).unwrap();
-                            textures.push(new_texture);
+                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources);
+                            textures.push(texture_handle);
                         }
                         _ => {}
                     }
@@ -1272,17 +1261,18 @@ impl KbModel {
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
+        let texture = asset_manager.get_texture(&textures[0]);
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
                     },
                 ],
                 label: Some("KbModel_tex_bind_group"),
@@ -1385,7 +1375,7 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device_resources: &KbDeviceResources, _asset_manager: &KbAssetManager) -> Self {
+    pub fn new(device_resources: &KbDeviceResources, asset_manager: &mut KbAssetManager) -> Self {
         log!("Creating KbModelPipeline...");
 
         let device = &device_resources.device;
@@ -1460,17 +1450,8 @@ impl KbModelPipeline {
             push_constant_ranges: &[],
         });
 
-        let model_str = {
-            match std::path::Path::new("./engine_assets").exists() {
-                true => { log!("TRUE!!!!!!!!!!!"); load_str!("/engine_assets/shaders/Model.wgsl").into() }
-                false => { log!("FALKSE!!!!!!"); load_str!("../engine_assets/shaders/Model.wgsl").into() }
-            }
-        };
-
-        let opaque_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(model_str),
-        });
+        let opaque_shader_handle = asset_manager.load_shader("/engine_assets/shaders/Model.wgsl", &device_resources);
+        let opaque_shader = asset_manager.get_shader(&opaque_shader_handle);
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_opaque_pipeline"),
@@ -1513,10 +1494,8 @@ impl KbModelPipeline {
             multiview: None,
         });
 
-        let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/particle.wgsl").into()),
-        });
+        let particle_shader_handle = asset_manager.load_shader("/engine_assets/shaders/particle.wgsl", &device_resources);
+        let particle_shader = asset_manager.get_shader(&particle_shader_handle);
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_alpha_blend_pipeline"),
             layout: Some(&render_pipeline_layout),

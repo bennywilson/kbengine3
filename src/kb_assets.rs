@@ -71,12 +71,22 @@ impl KbAssetManager {
 			new_handle
 		};
 
+		let mut cwd: String = "".to_string();
+		match std::env::current_dir() {
+            Ok(dir) => { cwd = format!("{}", dir.display()); }
+            _ => { /* todo use default texture*/ }
+        };
+
 		let new_texture = {
-			if file_path.contains("engine_assets") {
+			if file_path.chars().nth(1).unwrap() == ':' {
+				KbTexture::from_file(file_path, device_resource).unwrap()
+			} else if file_path.contains("engine_assets") {
 				match std::path::Path::new("./engine_assets").exists() {
 					true => { KbTexture::from_file(&format!("./{file_path}"), device_resource).unwrap() }
 					false => { KbTexture::from_file(&format!("../{file_path}"), device_resource).unwrap() }
 				}
+			} else if file_path.contains("game_assets") {
+				KbTexture::from_file(&format!("{cwd}/{file_path}"), device_resource).unwrap()
 			} else {
 				KbTexture::from_file(file_path, device_resource).unwrap()
 			}

@@ -86,7 +86,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[3]);
 
 		let particle_params = KbParticleParams {
-			texture_file: "smoke_t.png".to_string(),
+			texture_file: "/game_assets/smoke_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::AlphaBlend,
 
 			min_particle_life: 3.0,
@@ -100,7 +100,7 @@ impl KbGameEngine for Example3DGame {
 
 			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
 			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
-    
+
 			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
 			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
 
@@ -129,7 +129,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_particle_actor(&particle_transform, &particle_params);
 
 		let particle_params = KbParticleParams {
-			texture_file: "ember_t.png".to_string(),
+			texture_file: "./game_assets/ember_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::Additive,
 
 			min_particle_life: 1.5,
