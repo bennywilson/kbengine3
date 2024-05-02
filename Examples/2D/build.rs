@@ -5,7 +5,7 @@ use std::env;
 
 fn main() -> Result<()> {
     // This tells Cargo to rerun this script if something in /res/ changes.
-    println!("cargo::rerun-if-changed=../../engine_assets");
+   /* println!("cargo::rerun-if-changed=../../engine_assets");
     println!("cargo::rerun-if-changed=game_assets");
 
     println!("-----------------------------------------------");
@@ -18,6 +18,6 @@ fn main() -> Result<()> {
     paths_to_copy.push("../../engine_assets/");
     copy_items(&paths_to_copy, out_dir, &copy_options)?;
     println!("-----------------------------------------------");
-
+    */
     Ok(())
 }

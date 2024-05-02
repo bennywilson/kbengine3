@@ -1,6 +1,6 @@
 use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
-use wgpu_text::glyph_brush::{Section as TextSection, Text};
+//use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
@@ -158,10 +158,10 @@ impl<'a> KbRenderer<'a> {
                                             Graphics: {}\n",
                                             frame_rate, avg_frame_time * 1000.0, num_game_objects, 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
 
-        let section = TextSection::default().add_text(Text::new(&frame_time_string));
-        device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
-        let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
-        device_resources.brush.draw(&mut render_pass);
+        //let section = TextSection::default().add_text(Text::new(&frame_time_string));
+      //  device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
+     //   let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+     //   device_resources.brush.draw(&mut render_pass);
 
         // Frame rate update
         self.frame_count = self.frame_count + 1;
