@@ -165,6 +165,12 @@ impl KbAssetManager {
 					}
 				};
 				KbTexture::from_file(&final_file_path, device_resource).await.unwrap()
+
+				/*let current_exe = std::env::current_exe();
+				let exe_path = current_exe.as_ref().unwrap().parent().unwrap();
+				let final_file_path = format!("{}", exe_path.to_string_lossy());
+				let final_file_path = format!("{final_file_path}/{file_path}");
+				KbTexture::from_file(&final_file_path, device_resource).await.unwrap()*/
 			}
 			#[cfg(target_arch = "wasm32")]
 			{

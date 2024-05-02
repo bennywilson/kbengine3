@@ -119,8 +119,8 @@ impl<'a> KbRenderer<'a> {
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
 
-    pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32, game_config: &KbConfig) { 
-        let device_resources = &mut self.device_resources;
+    pub fn render_debug_text(&mut self, _command_encoder: &mut wgpu::CommandEncoder, _view: &wgpu::TextureView, _num_game_objects: u32, _game_config: &KbConfig) { 
+      /*  let device_resources = &mut self.device_resources;
 
         let color_attachment = {
             Some(wgpu::RenderPassColorAttachment {
@@ -175,7 +175,7 @@ impl<'a> KbRenderer<'a> {
             
             self.frame_timer = Instant::now();
             self.frame_count = 0;
-        }
+        }*/
     }
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {
