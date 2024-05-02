@@ -3,8 +3,8 @@
     "enemy_move_speed": 1.0,
     "max_instances": 2000,
 
-    "window_width": 1056,
-    "window_height": 594,
+    "window_width": 1366,
+    "window_height": 768,
 
     "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
     "graphics_back_end": "default",
@@ -15,31 +15,3 @@
     "_comment3": "Valid values for 'vsync' are true and false",
     "vsync": true
 }
-
-<script type="module">
-    import init from "../rust/kb_engine3.js";
-	var button_1 = document.getElementById("button_1");
-    var button_2 = document.getElementById("button_2");
-	button_1.addEventListener("click", function (event) {
-        button_2.disabled = true;
-        button_1.disabled = true;
-		init();
-	});
-</script>
-
-<script type="module">
-    import init from "../rust/particle_demo/kb_engine_3D_demo.js";
-	var button_1 = document.getElementById("button_1");
-    var button_2 = document.getElementById("button_2");
-	button_2.addEventListener("click", function (event) {
-        button_2.disabled = true;
-        button_1.disabled = true;
-		init();
-	});
-</script>
-
-<button id="button_1"> Click here to run 2D Rust Demo! </button>
-<button id="button_2"> Click here to run 3D Rust Demo! </button>
-<br>
-<br>
-<canvas id="target"></canvas>
