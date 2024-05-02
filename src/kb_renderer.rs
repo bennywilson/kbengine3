@@ -197,6 +197,10 @@ impl<'a> KbRenderer<'a> {
             PERF_SCOPE!("Skybox Pass (Transparent)");
             self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
+        if self.particle_map.len() > 0 {
+            PERF_SCOPE!("Particle Pass");
+            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+        }
 
         {
             PERF_SCOPE!("World Objects Pass");
@@ -252,11 +256,10 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub async fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
-        self.next_particle_id = match self.next_particle_id {
-            INVALID_PARTICLE_HANDLE => { KbParticleHandle { index: 0 } }
-            _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
+        self.next_particle_id.index = {
+            if self.next_particle_id.index == u32::MAX { 0 }
+            else { self.next_particle_id.index + 1 }
         };
-
         let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager).await;
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }

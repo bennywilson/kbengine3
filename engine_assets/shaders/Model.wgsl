@@ -63,14 +63,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
 
     var normal = normalize(in.normal);
-    var dot: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = dot * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
+    var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
+    var light_1 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
 
-    dot = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = dot * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
+    dot_prod = saturate(dot(normal, normalize(in.inv_light_2)));
+    var light_2 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
 
-    dot = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = dot * vec3<f32>(0.0, 0.0, 0.0);
+    dot_prod = saturate(dot(normal, normalize(in.inv_light_3)));
+    var light_3 = dot_prod * vec3<f32>(0.0, 0.0, 0.0);
 
     light_1 = light_1 * 0.9 + 0.1;
     light_2 = light_2 * 0.9 + 0.1;
