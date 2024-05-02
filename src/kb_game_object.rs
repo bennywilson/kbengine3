@@ -39,10 +39,13 @@ impl KbActorTransform {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Hash)]
 pub struct KbParticleHandle {
     pub index: u32,
 }
+impl PartialEq for KbParticleHandle { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
+impl Eq for KbParticleHandle{}
+
 pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -118,7 +121,7 @@ pub struct KbParticleActor {
     start_time:  Instant,
     next_spawn_time: f32,
     pub particles: Vec<KbParticle>,
-    particle_handle: KbParticleHandle
+    pub particle_handle: KbParticleHandle
 }
 
 impl KbParticleActor {

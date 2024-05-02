@@ -616,6 +616,10 @@ impl KbSpritePipeline {
     }
 
     pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) {
+        if game_objects.len() == 0 {
+            return;
+        }
+
 		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbSpritePipeline::render()"),
 		});
