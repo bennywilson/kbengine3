@@ -4,7 +4,7 @@ use cgmath::SquareMatrix;
 use image::GenericImageView;
 use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
-use wgpu_text::{BrushBuilder, TextBrush};
+//use wgpu_text::{BrushBuilder, TextBrush};
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
@@ -276,7 +276,7 @@ pub struct KbDeviceResources<'a> {
     pub queue: Queue,
 
     pub instance_buffer: wgpu::Buffer,
-    pub brush: TextBrush<FontRef<'a>>,
+    //pub brush: TextBrush<FontRef<'a>>,
     pub render_textures: Vec<KbTexture>,    // [0] is color, [1] is depth
 }
 
@@ -347,8 +347,8 @@ impl<'a> KbDeviceResources<'a> {
         render_textures.push(depth_texture);
 
         log!("  Creating Font");
-        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
-                .build(&device, surface_config.width, surface_config.height, surface_config.format);
+        //let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
+       //         .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
         log!("KbDeviceResources allocated");
 	    KbDeviceResources {
@@ -358,7 +358,7 @@ impl<'a> KbDeviceResources<'a> {
             device,
             queue,
             instance_buffer,
-            brush,
+        //    brush,
             render_textures,
         }
     }
