@@ -1441,16 +1441,8 @@ impl KbModel {
         let (gltf_doc, buffers, gltf_images) = gltf::import_slice(bytes).unwrap();
 
         for gltf_texture in gltf_doc.textures() {
-            log!("  Hitting that iteration");
-
             match gltf_texture.source().source() {
-
-                gltf::image::Source::View { view: view, mime_type: _ } => {
-
-
-                //    texture_bytes.push(view.buffer().source().);
-                    log!("How many people done doubted you, left you out to rot");
-                }
+                gltf::image::Source::View { view: _, mime_type: _ } => { }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
@@ -1458,9 +1450,7 @@ impl KbModel {
                             let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
                             textures.push(texture_handle);
                         }
-                        _ => {
-                            log!("Wondering if it's something or not");
-                        }
+                        _ => { }
                     }
                 }
             }
@@ -1892,7 +1882,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
@@ -1992,8 +1982,9 @@ impl KbModelPipeline {
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
 
-        let model_iter = models.iter_mut();
-        for model in model_iter {
+        let model_iter = model_list.iter_mut();
+        for model_handle in model_iter {
+            let model = &mut model_mappings.get_mut(&model_handle).unwrap();
             model.free_uniform_buffers();
         }
     }

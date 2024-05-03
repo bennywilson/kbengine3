@@ -23,7 +23,6 @@ pub struct KbRenderer<'a> {
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
 
-    models: Vec<KbModel>,
     next_model_id: KbModelHandle,
 
     game_camera: KbCamera,
@@ -56,7 +55,6 @@ impl<'a> KbRenderer<'a> {
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
 
-            models: Vec::<KbModel>::new(),
             next_model_id: INVALID_MODEL_HANDLE,
 
             game_camera: KbCamera::new(),
@@ -207,9 +205,9 @@ impl<'a> KbRenderer<'a> {
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
-        if self.models.len() > 0 {
+        if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(false, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(false, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {

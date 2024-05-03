@@ -126,13 +126,7 @@ impl KbGameEngine for Example3DGame {
 			end_color_0: CgVec4::new(-0.1, -0.1, -0.1, 0.0),
 			_end_color1: CgVec4::new(-0.1, -0.1, -0.1, 1.0),
 		};
-
-		#[cfg(not(target_arch = "wasm32"))]
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-
-		#[cfg(target_arch = "wasm32")]
-		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 0.0, 0.0));
-
 		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
 
 		let particle_params = KbParticleParams {
@@ -175,14 +169,9 @@ impl KbGameEngine for Example3DGame {
 			end_color_0: CgVec4::new(1.0, 0.8, -0.1, 0.0),
 			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
 		};
-
-		#[cfg(not(target_arch = "wasm32"))]
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-
-		#[cfg(target_arch = "wasm32")]
-		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 0.0, 0.0));
-
 		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
+
 		// Sky
 		self.game_objects.push(GameObject { 
 			position: (0.0, 0.0, 0.0).into(),

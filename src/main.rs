@@ -24,7 +24,7 @@ impl KbGameEngine for EmptyGame {
 		}
     }
 	
-	fn initialize_world(&mut self, _game_renderer: &mut KbRenderer)
+	async fn initialize_world(&mut self, _game_renderer: &mut KbRenderer<'_>)
 	{
 		log!("EmptyGame::initialize_world() caled...");
 

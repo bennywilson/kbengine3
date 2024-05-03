@@ -105,8 +105,8 @@ pub struct KbAssetManager {
 impl KbAssetManager {
 	pub fn new() -> Self {
 		let mut file_to_byte_buffer =  HashMap::<String, KbByteVec>:: new();
-	//	file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/smoke_t.png").to_vec());
-	//	file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/ember_t.png").to_vec());
+		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/smoke_t.png").to_vec());
+		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/ember_t.png").to_vec());
 		file_to_byte_buffer.insert("SpriteSheet.png".to_string(), include_bytes!("../engine_assets/textures/SpriteSheet.png").to_vec());
 		file_to_byte_buffer.insert("PostProcessFilter.png".to_string(), include_bytes!("../engine_assets/textures/PostProcessFilter.png").to_vec());
 		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/pinky.glb").to_vec());
@@ -297,12 +297,12 @@ impl KbAssetManager {
 			{
 				let path = Path::new(&file_path);
 				let file_name = path.file_name().unwrap().to_str().unwrap();
-				log!("Path returned {} ", file_name);
-
-				let byte_buffer = self.file_to_byte_buffer.get(file_name).unwrap();
+				log!("Path returned {} {}", file_name, self.file_to_byte_buffer.len());
+				let byte_buffer = self.file_to_byte_buffer.get(file_name).unwrap().clone();	// cloning here.
 				KbModel::from_bytes(&byte_buffer, &mut device_resource, self).await
 			}
         };
+				log!("Model loaded");
 
 		let mappings = &mut self.model_mappings;
 		match mappings.names_to_handles.get(file_path) {
