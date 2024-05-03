@@ -72,5 +72,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv = in.tex_coords;
     var albedo: vec4<f32> = textureSample(t_diffuse, s_diffuse, uv);
     outColor = albedo * in.color;
+    outColor.r = pow(outColor.r, model_uniform.time_colorpow_.y);
+    outColor.g = pow(outColor.g, model_uniform.time_colorpow_.y);
+    outColor.b = pow(outColor.b, model_uniform.time_colorpow_.y);
     return outColor;
 }
