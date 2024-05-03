@@ -123,8 +123,8 @@ impl KbGameEngine for Example3DGame {
 			start_color_0: CgVec4::new(0.4, 0.04, 0.0, 1.0),
 			start_color_1: CgVec4::new(0.4, 0.07, 0.0, 1.0),
 
-			end_color_0: CgVec4::new(-0.1, -0.1, -0.1, 0.0),
-			_end_color1: CgVec4::new(-0.1, -0.1, -0.1, 1.0),
+			end_color_0: CgVec4::new(-0.5, -0.5, -0.5, 0.0),
+			_end_color1: CgVec4::new(-0.5, -0.5, -0.5, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
 		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
