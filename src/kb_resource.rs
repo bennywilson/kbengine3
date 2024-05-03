@@ -182,7 +182,7 @@ impl KbTexture {
         })
     }
 
-    pub async fn from_file(file_path: &str, device_resources: &KbDeviceResources<'_>) ->Result<Self> {
+    pub async fn from_file(file_path: &str, device_resources: &KbDeviceResources<'_>) -> Result<Self> {
         log!("Loading texture {}", file_path);
 		let texture_bytes = load_binary(file_path).await.unwrap();//load_bytes!(file_path);
         KbTexture::from_bytes(&device_resources.device, &device_resources.queue, &texture_bytes, file_path)
@@ -191,6 +191,78 @@ impl KbTexture {
     pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label))
+    }
+
+    pub fn from_rgba(rgba: &Vec<u8>, is_rgba: bool, width: u32, height: u32, device_resources: &KbDeviceResources<'_>, label: Option<&str>) -> Result<Self> {
+        let queue = &device_resources.queue;
+        let device = &device_resources.device;
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let mut new_rgba = Vec::<u8>::new();
+        let mut i = 0;
+        while i < rgba.len() {
+            new_rgba.push(rgba[i + 0]);
+            new_rgba.push(rgba[i + 1]);
+            new_rgba.push(rgba[i + 2]);
+            if is_rgba == false {
+                new_rgba.push(255);
+                i = i + 3;
+            } else {
+                new_rgba.push(rgba[i + 3]);
+                i = i + 4;
+            }
+        }
+        let texture = device.create_texture(
+            &wgpu::TextureDescriptor {
+                label,
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            }
+        );
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &new_rgba,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(
+            &wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            }
+        );
+        
+        Ok(Self {
+            texture,
+            view,
+            sampler
+        })
     }
 
     pub fn from_image(device: &Device, queue: &Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self> {
@@ -1152,22 +1224,28 @@ impl KbModel {
         }
     }
 
-    pub async fn new(file_name: &str, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
+   pub async fn new(file_name: &str, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Loading Model {file_name}");
 
         let device = &device_resources.device;     
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
         let mut textures = Vec::<KbTextureHandle>::new();
-
+        let mut texture_bytes = Vec::<Vec<u8>>::new();
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
         let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
+        
         for gltf_texture in gltf_doc.textures() {
             log!("  Hitting that iteration");
 
             match gltf_texture.source().source() {
 
-                gltf::image::Source::View { view: _, mime_type: _ } => { }
+                gltf::image::Source::View { view: view, mime_type: _ } => {
+
+
+                //    texture_bytes.push(view.buffer().source().);
+                    log!("How many people done doubted you, left you out to rot");
+                }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
@@ -1175,7 +1253,9 @@ impl KbModel {
                             let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
                             textures.push(texture_handle);
                         }
-                        _ => {}
+                        _ => {
+                            log!("Wondering if it's something or not");
+                        }
                     }
                 }
             }
@@ -1265,6 +1345,218 @@ impl KbModel {
         });
 
         let texture = asset_manager.get_texture(&textures[0]);
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
+
+        // Uniform buffer
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
+
+        let uniform = KbModelUniform{ ..Default::default() };
+
+        for _ in 0..MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+        }
+        
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (size_of::<KbModelDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
+
+        KbModel {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            num_indices,
+            uniform_bind_groups,
+            uniform_buffers,
+            textures,
+            tex_bind_group,
+            next_uniform_buffer: 0
+        }
+    }
+
+    pub async fn from_bytes(bytes: &Vec<u8>, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
+        log!("Loading Model from bytes");
+
+        let device = &device_resources.device;     
+        let mut indices = Vec::<u16>::new();
+        let mut vertices = Vec::<KbVertex>::new();
+        let mut textures = Vec::<KbTextureHandle>::new();
+        let mut texture_bytes = Vec::<Vec<u8>>::new();
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+
+        let (gltf_doc, buffers, gltf_images) = gltf::import_slice(bytes).unwrap();
+
+        for gltf_texture in gltf_doc.textures() {
+            log!("  Hitting that iteration");
+
+            match gltf_texture.source().source() {
+
+                gltf::image::Source::View { view: view, mime_type: _ } => {
+
+
+                //    texture_bytes.push(view.buffer().source().);
+                    log!("How many people done doubted you, left you out to rot");
+                }
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    match std::env::current_dir() {
+                        Ok(dir) => {
+                            let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
+                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
+                            textures.push(texture_handle);
+                        }
+                        _ => {
+                            log!("Wondering if it's something or not");
+                        }
+                    }
+                }
+            }
+        }
+
+        for m in gltf_doc.meshes() {
+            for p in m.primitives() {
+                let r = p.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(gltf::mesh::util::ReadIndices::U16(gltf::accessor::Iter::Standard(iter))) = r.read_indices(){
+                    for v in iter {
+                        indices.push(v);
+                    }
+                }
+
+                let mut positions = Vec::new();
+                if let Some(iter) = r.read_positions(){
+                    for v in iter{
+                        positions.push(v);
+                    }
+                }
+
+                let mut uvs = Vec::new();
+                if let Some(gltf::mesh::util::ReadTexCoords::F32(gltf::accessor::Iter::Standard(iter))) = r.read_tex_coords(0){
+                    for v in iter{
+                        uvs.push(v);
+                    }
+                }
+
+                let mut normals = Vec::new();
+                if let Some(iter) = r.read_normals(){
+                    for v in iter{
+                        normals.push(v);
+                    }
+                }
+
+                let mut i = 0;
+                while i < positions.len() {
+                    let vertex = KbVertex {
+                        position: positions[i],
+                        tex_coords: uvs[i],
+                        normal: normals[i]
+                    };
+                    vertices.push(vertex);
+                    i = i + 1;
+                }
+            }
+        }
+
+        let num_indices = indices.len() as u32;
+
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("KbModel_vertex_buffer"),
+                contents: bytemuck::cast_slice(vertices.as_slice()),
+                usage: wgpu::BufferUsages::VERTEX
+            }
+        );
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&indices.as_slice()),
+                usage: wgpu::BufferUsages::INDEX
+            }
+        );
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
+
+        let texture = { 
+            if textures.len() > 0 { asset_manager.get_texture(&textures[0]) }
+            else { 
+                let image = &gltf_images[0];
+             //   image.
+                &KbTexture::from_rgba(&gltf_images[0].pixels, image.format == gltf::image::Format::R8G8B8A8, image.width, image.height, &device_resources, Some("gltf tex")).unwrap()
+            }
+        };
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
@@ -1600,7 +1892,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
@@ -1658,14 +1950,17 @@ impl KbModelPipeline {
         };
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
+        let mut model_list = Vec::<KbModelFileHandle>::new();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
-            let model_id = actor.get_model().index;
-            if model_id as usize > models.len() {
+            let model_handle = actor.get_model();
+            let mut model = asset_manager.get_model(&model_handle).unwrap();
+            model_list.push(model_handle);
+           /* if model_id as usize > models.len() {
                 continue;
             }
-            let model = &mut models[model_id as usize];
+            let model = &mut models[model_id as usize];*/
 
             let uniform_buffer = model.alloc_uniform_buffer();
             let mut uniform_data = KbModelUniform { ..Default::default() };
@@ -1679,8 +1974,10 @@ impl KbModelPipeline {
         }
 
         // Render KbModels now that uniforms are set
-        let model_iter = models.iter_mut();
-        for model in model_iter {
+        let model_mappings = asset_manager.get_model_mappigns();
+        let model_iter = model_list.iter_mut();
+        for model_handle in model_iter {
+            let model = &model_mappings[&model_handle];
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 

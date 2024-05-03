@@ -53,10 +53,10 @@ impl KbGameEngine for Example3DGame {
 		log!("GameEngine::initialize_world() caled...");
 
 
-	/*		let pinky_model = renderer.load_model("game_assets/pinky.gltf").await;
-			let barrel_model = renderer.load_model("game_assets/barrel.gltf").await;
-			let shotgun_model = renderer.load_model("game_assets/shotgun.gltf").await;
-			let floor_model = renderer.load_model("game_assets/floor.gltf").await;
+			let pinky_model = renderer.load_model("game_assets/pinky.glb").await;
+			let barrel_model = renderer.load_model("game_assets/barrel.glb").await;
+			let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
+			let floor_model = renderer.load_model("game_assets/floor.glb").await;
 
 			let mut actor = KbActor::new();
 			actor.set_position(&[3.0, 0.0, 3.0].into());
@@ -85,7 +85,6 @@ impl KbGameEngine for Example3DGame {
 			actor.set_model(&floor_model);
 			self.actors.push(actor);
 			renderer.add_or_update_actor(&self.actors[3]);
-		*/
 
 		let particle_params = KbParticleParams {
 			texture_file: "/game_assets/smoke_t.png".to_string(),

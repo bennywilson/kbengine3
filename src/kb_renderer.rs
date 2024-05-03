@@ -209,7 +209,7 @@ impl<'a> KbRenderer<'a> {
 
         if self.models.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(false, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.models, &self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {
@@ -264,16 +264,14 @@ impl<'a> KbRenderer<'a> {
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }
 
-    pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+    pub async fn load_model(&mut self, file_path: &str) -> KbModelFileHandle {
         self.next_model_id = match self.next_model_id {
             INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
             _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
         };
         
-        let model = KbModel::new(file_path, &mut self.device_resources, &mut self.asset_manager).await;
-        self.models.push(model);
-
-        self.next_model_id.clone()
+        let model_handle = self.asset_manager.load_model(file_path, &mut self.device_resources).await;
+        model_handle
     }
 
     pub fn set_camera(&mut self, camera: &KbCamera) {
