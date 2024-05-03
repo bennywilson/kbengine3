@@ -4,7 +4,7 @@ use anyhow::*;
 
 fn main() -> Result<()> {
     // This tells Cargo to rerun this script if something in /res/ changes.
-   /* println!("cargo::rerun-if-changed=../../engine_assets");
+  /*  println!("cargo::rerun-if-changed=../../engine_assets");
     println!("cargo::rerun-if-changed=game_assets");
     println!("cargo::rerun-if-changed=build.rs");
 

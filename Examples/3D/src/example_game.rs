@@ -49,44 +49,45 @@ impl KbGameEngine for Example3DGame {
 		}
     }
 
-	fn initialize_world(&mut self, renderer: &mut KbRenderer) {
+	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>) {
 		log!("GameEngine::initialize_world() caled...");
 
-		let pinky_model = renderer.load_model("game_assets/pinky.gltf");
-		let barrel_model = renderer.load_model("game_assets/barrel.gltf");
-		let shotgun_model = renderer.load_model("game_assets/shotgun.gltf");
-		let floor_model = renderer.load_model("game_assets/floor.gltf");
 
-		let mut actor = KbActor::new();
-		actor.set_position(&[3.0, 0.0, 3.0].into());
-		actor.set_scale(&[1.0, 1.0, 1.0].into());
-		actor.set_model(&pinky_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[0]);
+			let pinky_model = renderer.load_model("game_assets/pinky.glb").await;
+			let barrel_model = renderer.load_model("game_assets/barrel.glb").await;
+			let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
+			let floor_model = renderer.load_model("game_assets/floor.glb").await;
 
-		let mut actor = KbActor::new();
-		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[1.0, 1.0, 1.0].into());
-		actor.set_model(&barrel_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[1]);
+			let mut actor = KbActor::new();
+			actor.set_position(&[3.0, 0.0, 3.0].into());
+			actor.set_scale(&[1.0, 1.0, 1.0].into());
+			actor.set_model(&pinky_model);
+			self.actors.push(actor);
+			renderer.add_or_update_actor(&self.actors[0]);
+
+			let mut actor = KbActor::new();
+			actor.set_position(&[0.0, 0.0, 0.0].into());
+			actor.set_scale(&[1.0, 1.0, 1.0].into());
+			actor.set_model(&barrel_model);
+			self.actors.push(actor);
+			renderer.add_or_update_actor(&self.actors[1]);
 	
-		let mut actor = KbActor::new();
-		actor.set_position(&[-4.0, 0.0, -5.0].into());
-		actor.set_scale(&[2.0, 2.0, 2.0].into());
-		actor.set_model(&shotgun_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[2]);
+			let mut actor = KbActor::new();
+			actor.set_position(&[-4.0, 0.0, -5.0].into());
+			actor.set_scale(&[2.0, 2.0, 2.0].into());
+			actor.set_model(&shotgun_model);
+			self.actors.push(actor);
+			renderer.add_or_update_actor(&self.actors[2]);
 
-		let mut actor = KbActor::new();
-		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[10.0, 19.0, 10.0].into());
-		actor.set_model(&floor_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[3]);
+			let mut actor = KbActor::new();
+			actor.set_position(&[0.0, 0.0, 0.0].into());
+			actor.set_scale(&[10.0, 19.0, 10.0].into());
+			actor.set_model(&floor_model);
+			self.actors.push(actor);
+			renderer.add_or_update_actor(&self.actors[3]);
 
 		let particle_params = KbParticleParams {
-			texture_file: "smoke_t.png".to_string(),
+			texture_file: "/game_assets/smoke_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::AlphaBlend,
 
 			min_particle_life: 3.0,
@@ -100,7 +101,7 @@ impl KbGameEngine for Example3DGame {
 
 			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
 			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
-    
+
 			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
 			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
 
@@ -126,10 +127,10 @@ impl KbGameEngine for Example3DGame {
 			_end_color1: CgVec4::new(-0.1, -0.1, -0.1, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		renderer.add_particle_actor(&particle_transform, &particle_params);
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
 
 		let particle_params = KbParticleParams {
-			texture_file: "ember_t.png".to_string(),
+			texture_file: "./game_assets/ember_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::Additive,
 
 			min_particle_life: 1.5,
@@ -169,7 +170,7 @@ impl KbGameEngine for Example3DGame {
 			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		renderer.add_particle_actor(&particle_transform, &particle_params);
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
 
 		// Sky
 		self.game_objects.push(GameObject { 

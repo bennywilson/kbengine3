@@ -1,8 +1,8 @@
 use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
-use wgpu_text::glyph_brush::{Section as TextSection, Text};
+//use wgpu_text::glyph_brush::{Section as TextSection, Text};
 
-use crate::{kb_config::KbConfig, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct KbModelHandle {
@@ -18,12 +18,11 @@ pub struct KbRenderer<'a> {
     postprocess_pipeline: KbPostprocessPipeline,
     model_pipeline: KbModelPipeline,
 
+    asset_manager: KbAssetManager,
     actor_map: HashMap::<u32, KbActor>,
-    
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
 
-    models: Vec<KbModel>,
     next_model_id: KbModelHandle,
 
     game_camera: KbCamera,
@@ -38,22 +37,24 @@ impl<'a> KbRenderer<'a> {
     pub async fn new(window: Arc<winit::window::Window>, game_config: &KbConfig) -> Self {
         log!("GameRenderer::new() called...");
 
-        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;     
-        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &game_config);
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources);    
-        let model_pipeline = KbModelPipeline::new(&device_resources);
-    
+        let mut asset_manager = KbAssetManager::new();
+
+        let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
+        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &mut asset_manager, &game_config).await;
+        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources, &mut asset_manager).await;  
+        let model_pipeline = KbModelPipeline::new(&device_resources, &mut asset_manager).await;
+
         KbRenderer {
             device_resources,
             sprite_pipeline,
             model_pipeline,
             postprocess_pipeline,
 
+            asset_manager,
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
 
-            models: Vec::<KbModel>::new(),
             next_model_id: INVALID_MODEL_HANDLE,
 
             game_camera: KbCamera::new(),
@@ -116,8 +117,8 @@ impl<'a> KbRenderer<'a> {
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
 
-    pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, num_game_objects: u32, game_config: &KbConfig) { 
-        let device_resources = &mut self.device_resources;
+    pub fn render_debug_text(&mut self, _command_encoder: &mut wgpu::CommandEncoder, _view: &wgpu::TextureView, _num_game_objects: u32, _game_config: &KbConfig) { 
+      /*  let device_resources = &mut self.device_resources;
 
         let color_attachment = {
             Some(wgpu::RenderPassColorAttachment {
@@ -155,10 +156,10 @@ impl<'a> KbRenderer<'a> {
                                             Graphics: {}\n",
                                             frame_rate, avg_frame_time * 1000.0, num_game_objects, 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
 
-        let section = TextSection::default().add_text(Text::new(&frame_time_string));
-        device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
-        let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
-        device_resources.brush.draw(&mut render_pass);
+        //let section = TextSection::default().add_text(Text::new(&frame_time_string));
+      //  device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
+     //   let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+     //   device_resources.brush.draw(&mut render_pass);
 
         // Frame rate update
         self.frame_count = self.frame_count + 1;
@@ -172,7 +173,7 @@ impl<'a> KbRenderer<'a> {
             
             self.frame_timer = Instant::now();
             self.frame_count = 0;
-        }
+        }*/
     }
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {
@@ -194,15 +195,19 @@ impl<'a> KbRenderer<'a> {
             PERF_SCOPE!("Skybox Pass (Transparent)");
             self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
+        if self.particle_map.len() > 0 {
+            PERF_SCOPE!("Particle Pass");
+            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+        }
 
         {
             PERF_SCOPE!("World Objects Pass");
             self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
-        if self.models.len() > 0 {
+        if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(false, &mut self.device_resources, &self.game_camera, &mut self.models, &self.actor_map, game_config);
+            self.model_pipeline.render(false, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {
@@ -228,12 +233,12 @@ impl<'a> KbRenderer<'a> {
         Ok(())
     }
 
-    pub fn resize(&mut self, game_config: &KbConfig) {
+    pub async fn resize(&mut self, game_config: &KbConfig) {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
         self.device_resources.resize(&game_config);
-        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &game_config);
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources);
+        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &mut self.asset_manager, &game_config).await;
+        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources, &mut self.asset_manager).await;
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {
@@ -248,26 +253,23 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
-    pub fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
-        self.next_particle_id = match self.next_particle_id {
-            INVALID_PARTICLE_HANDLE => { KbParticleHandle { index: 0 } }
-            _ => { KbParticleHandle{ index: self.next_model_id.index + 1 } }
+    pub async fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
+        self.next_particle_id.index = {
+            if self.next_particle_id.index == u32::MAX { 0 }
+            else { self.next_particle_id.index + 1 }
         };
-
-        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources);
+        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager).await;
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }
 
-    pub fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+    pub async fn load_model(&mut self, file_path: &str) -> KbModelFileHandle {
         self.next_model_id = match self.next_model_id {
             INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
             _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
         };
         
-        let model = KbModel::new(file_path, &mut self.device_resources);
-        self.models.push(model);
-
-        self.next_model_id.clone()
+        let model_handle = self.asset_manager.load_model(file_path, &mut self.device_resources).await;
+        model_handle
     }
 
     pub fn set_camera(&mut self, camera: &KbCamera) {

@@ -1,7 +1,7 @@
 use instant::Instant;
 use cgmath::InnerSpace;
 
-use crate::{kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -39,10 +39,13 @@ impl KbActorTransform {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Hash)]
 pub struct KbParticleHandle {
     pub index: u32,
 }
+impl PartialEq for KbParticleHandle { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
+impl Eq for KbParticleHandle{}
+
 pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -118,12 +121,12 @@ pub struct KbParticleActor {
     start_time:  Instant,
     next_spawn_time: f32,
     pub particles: Vec<KbParticle>,
-    particle_handle: KbParticleHandle
+    pub particle_handle: KbParticleHandle
 }
 
 impl KbParticleActor {
-    pub fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources) -> Self {
-        let model = KbModel::new_particle(&params.texture_file, &device_resources);
+    pub async fn new(transform: &KbActorTransform, particle_handle: &KbParticleHandle, params: &KbParticleParams, device_resources: &KbDeviceResources<'_>, mut asset_manager: &mut KbAssetManager) -> Self {
+        let model = KbModel::new_particle(&params.texture_file, &device_resources, &mut asset_manager).await;
         let spawn_rate = kb_random_f32(params.min_start_spawn_rate, params.max_start_spawn_rate);
         let params = (*params).clone();
         let start_time = instant::Instant::now();
@@ -228,7 +231,7 @@ pub struct KbActor {
     position: CgVec3,
     scale: CgVec3,
 
-    model_handle: KbModelHandle,
+    model_handle: KbModelFileHandle,
 }
 
 impl KbActor {
@@ -239,7 +242,7 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_handle: INVALID_MODEL_HANDLE 
+                model_handle: KbModelFileHandle::make_invalid()
             }
         }
     }
@@ -260,11 +263,11 @@ impl KbActor {
         self.scale
     }
 
-    pub fn set_model(&mut self, new_model: &KbModelHandle) {
+    pub fn set_model(&mut self, new_model: &KbModelFileHandle) {
         self.model_handle = new_model.clone();
     }
 
-    pub fn get_model(&self) -> KbModelHandle {
+    pub fn get_model(&self) -> KbModelFileHandle {
         self.model_handle.clone()
     }
 }

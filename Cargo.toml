@@ -7,6 +7,7 @@ edition = "2021"
 ab_glyph = "0.2.24"
 anyhow = "1.0"
 bytemuck = { version = "1.12", features = [ "derive" ] }
+cfg-if = "1.0.0"
 cgmath = "0.18"
 env_logger = "0.10"
 getrandom = { version = "0.2", features = ["js"] }
@@ -17,7 +18,7 @@ load_file = "1.0.1"
 log = "0.4"
 pollster = "0.3"
 winit = "0.29.15"
-wgpu_text = "0.8.7"
+#wgpu_text = "0.8.7"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
 
@@ -32,8 +33,13 @@ tracy_full = {version = "1.7.1", features = ["enable"]}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log = { version = "0.2.0", features = [] }
+reqwest = { version = "0.11" }
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
 wgpu = { version = "0.19.3", features = ["webgl"] }
-web-sys =  { version = "0.3.69", features = [] }
-
+web-sys = { version = "0.3.69", features = [
+    "Document",
+    "Window",
+    "Element",
+    "Location",
+]}

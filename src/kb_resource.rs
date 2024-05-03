@@ -1,13 +1,11 @@
-use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
-use load_file::load_bytes;
 use std::{collections::HashMap, mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerBindingType, SurfaceConfiguration, ShaderStages, TextureSampleType, TextureViewDimension, Queue, util::DeviceExt};
-use wgpu_text::{BrushBuilder, TextBrush};
+//use wgpu_text::{BrushBuilder, TextBrush};
 
-use crate::{kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -183,9 +181,87 @@ impl KbTexture {
         })
     }
 
+    pub async fn from_file(file_path: &str, device_resources: &KbDeviceResources<'_>) -> Result<Self> {
+        log!("Loading texture {}", file_path);
+		let texture_bytes = load_binary(file_path).await.unwrap();//load_bytes!(file_path);
+        KbTexture::from_bytes(&device_resources.device, &device_resources.queue, &texture_bytes, file_path)
+    }
+
     pub fn from_bytes(device: &Device, queue: &Queue, bytes: &[u8], label: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label))
+    }
+
+    pub fn from_rgba(rgba: &Vec<u8>, is_rgba: bool, width: u32, height: u32, device_resources: &KbDeviceResources<'_>, label: Option<&str>) -> Result<Self> {
+        let queue = &device_resources.queue;
+        let device = &device_resources.device;
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let mut new_rgba = Vec::<u8>::new();
+        let mut i = 0;
+        while i < rgba.len() {
+            new_rgba.push(rgba[i + 0]);
+            new_rgba.push(rgba[i + 1]);
+            new_rgba.push(rgba[i + 2]);
+            if is_rgba == false {
+                new_rgba.push(255);
+                i = i + 3;
+            } else {
+                new_rgba.push(rgba[i + 3]);
+                i = i + 4;
+            }
+        }
+        let texture = device.create_texture(
+            &wgpu::TextureDescriptor {
+                label,
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            }
+        );
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &new_rgba,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(
+            &wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            }
+        );
+        
+        Ok(Self {
+            texture,
+            view,
+            sampler
+        })
     }
 
     pub fn from_image(device: &Device, queue: &Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self> {
@@ -271,7 +347,7 @@ pub struct KbDeviceResources<'a> {
     pub queue: Queue,
 
     pub instance_buffer: wgpu::Buffer,
-    pub brush: TextBrush<FontRef<'a>>,
+    //pub brush: TextBrush<FontRef<'a>>,
     pub render_textures: Vec<KbTexture>,    // [0] is color, [1] is depth
 }
 
@@ -287,14 +363,16 @@ impl<'a> KbDeviceResources<'a> {
         self.render_textures[1] = KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
     }
 
-     pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
-        log!("Creating instance"); 
+    pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
+        log!("KbDeviceResources::new() called...");
+        
+        log!("  Creating instance"); 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: game_config.graphics_backend,
             ..Default::default()
         });
 
-        log!("Creating surface + adapter");
+        log!("  Creating surface + adapter");
 
         let surface = instance.create_surface(window.clone()).unwrap();
         let adapter = instance.request_adapter(
@@ -305,7 +383,7 @@ impl<'a> KbDeviceResources<'a> {
             },
         ).await.unwrap();
 
-        log!("Requesting Device");
+        log!("  Requesting Device");
 		let (device, queue) = adapter.request_device(
             &DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
@@ -323,8 +401,6 @@ impl<'a> KbDeviceResources<'a> {
         let surface_config = surface.get_default_config(&adapter, game_config.window_width, game_config.window_height).unwrap();
         surface.configure(&device, &surface_config);
 
-        log!("Loading Texture");
-
         let max_instances = game_config.max_render_instances;
         let instance_buffer = device.create_buffer(
             &wgpu::BufferDescriptor {
@@ -341,11 +417,11 @@ impl<'a> KbDeviceResources<'a> {
         let depth_texture = KbTexture::new_depth_texture(&device, &surface_config).unwrap();
         render_textures.push(depth_texture);
 
-        log!("Creating Font");
+        log!("  Creating Font");
+        //let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
+       //         .build(&device, surface_config.width, surface_config.height, surface_config.format);
 
-        let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()
-                .build(&device, surface_config.width, surface_config.height, surface_config.format);
-
+        log!("KbDeviceResources allocated");
 	    KbDeviceResources {
             surface_config,
             surface,
@@ -353,7 +429,7 @@ impl<'a> KbDeviceResources<'a> {
             device,
             queue,
             instance_buffer,
-            brush,
+        //    brush,
             render_textures,
         }
     }
@@ -372,14 +448,11 @@ pub struct KbSpritePipeline {
 }
 
 impl KbSpritePipeline {
-    pub fn new(device_resources: &KbDeviceResources, game_config: &KbConfig) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager, game_config: &KbConfig) -> Self {
         log!("Creating KbSpritePipeline...");
 
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        let surface_config = &device_resources.surface_config;
-
-        
+        let surface_config = &device_resources.surface_config;        
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -411,46 +484,35 @@ impl KbSpritePipeline {
             ],
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
-       
-        let texture_bytes = include_bytes!("../engine_assets/textures/SpriteSheet.png");
-        let sprite_sheet_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "SpriteSheet.png").unwrap();
 
-        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
-
+        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/SpriteSheet.png", &device_resources).await;
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
+        let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
+        let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&sprite_sheet_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&sprite_tex.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sprite_sheet_texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&sprite_tex.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
                     },
                 ],
                 label: Some("kbSpritePipeline: tex_bind_group"),
             }
         );
 
-        let mut textures = Vec::<KbTexture>::new();
-        textures.push(postprocess_texture);
-
-        log!("  Creating shader");
-
-        // Create shader
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BasicSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/BasicSprite.wgsl").into()),
-        });
+        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/BasicSprite.wgsl", &device_resources).await;
+        let shader = asset_manager.get_shader(&shader_handle);
         
-        // Uniform buffer
         let uniform = SpriteUniform {
             ..Default::default()
         };
@@ -540,10 +602,8 @@ impl KbSpritePipeline {
             multiview: None,
         });
 
-        let transparent_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("CloudSprite.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/CloudSprite.wgsl").into()),
-        });
+        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/CloudSprite.wgsl", &device_resources).await;
+        let transparent_shader = asset_manager.get_shader(&transparent_shader_handle);
 
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -627,6 +687,10 @@ impl KbSpritePipeline {
     }
 
     pub fn render(&mut self, render_pass_type: KbRenderPassType, should_clear: bool, device_resources: &mut KbDeviceResources, game_config: &KbConfig, game_objects: &Vec<GameObject>) {
+        if game_objects.len() == 0 {
+            return;
+        }
+
 		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbSpritePipeline::render()"),
 		});
@@ -745,17 +809,14 @@ pub struct KbPostprocessPipeline {
 }
 
 impl KbPostprocessPipeline {
-    pub fn new(device_resources: &KbDeviceResources) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
         let surface_config = &device_resources.surface_config;
         let render_texture = &device_resources.render_textures[0];
 
         // Post Process Pipeline
-        let postprocess_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("postprocess_uber.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/postprocess_uber.wgsl").into()),
-        });
+        let postprocesst_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources).await;
+        let postprocess_shader = asset_manager.get_shader(&postprocesst_shader_handle);
         
         let postprocess_uniform = PostProcessUniform {
             ..Default::default()
@@ -869,19 +930,20 @@ impl KbPostprocessPipeline {
             },
             multiview: None,
         });
-        let texture_bytes = include_bytes!("../engine_assets/textures/PostProcessFilter.png");
-        let postprocess_texture = KbTexture::from_bytes(&device, &queue, texture_bytes, "PostProcessFilter.png").unwrap();
+
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
+        let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &postprocess_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&postprocess_texture.sampler),
+                        resource: wgpu::BindingResource::Sampler(&postprocess_tex.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -1019,7 +1081,7 @@ pub struct KbModel {
     pub instance_buffer: wgpu::Buffer,
     pub num_indices: u32,
 
-    pub textures: Vec<KbTexture>,
+    pub textures: Vec<KbTextureHandle>,
     pub tex_bind_group: wgpu::BindGroup,
 
     uniform_buffers: Vec<wgpu::Buffer>,
@@ -1028,9 +1090,8 @@ pub struct KbModel {
 }
 
 impl KbModel {
-    pub fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources) -> Self {
+    pub async fn new_particle(texture_file_path: &str, device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
-        let queue = &device_resources.queue;
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -1079,16 +1140,10 @@ impl KbModel {
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
-        let mut textures = Vec::<KbTexture>::new();
-        match std::env::current_dir() {
-            Ok(dir) => {
-                let file_path = format!("{}\\game_assets\\{}", dir.display(), texture_file_path);
-                let file_bytes = load_bytes!(&file_path);
-                let texture = KbTexture::from_bytes(&device, &queue, file_bytes, texture_file_path).unwrap();
-                textures.push(texture);
-            }
-            _ => { /* todo use default texture*/ }
-        };
+        let mut textures = Vec::<KbTextureHandle>::new();
+        let texture_handle = asset_manager.load_texture(texture_file_path, &device_resources).await;
+        textures.push(texture_handle);
+        let texture = asset_manager.get_texture(&textures[0]);
 
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -1096,11 +1151,11 @@ impl KbModel {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
                     },
                 ],
                 label: Some("KbModel_tex_bind_group"),
@@ -1168,34 +1223,29 @@ impl KbModel {
         }
     }
 
-    pub fn new(file_name: &str, device_resources: &mut KbDeviceResources) -> Self {
+   pub async fn new(file_name: &str, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Loading Model {file_name}");
 
-        let device = &device_resources.device;
-        let queue = &device_resources.queue;
-        
+        let device = &device_resources.device;     
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
-        let mut textures = Vec::<KbTexture>::new();
+        let mut textures = Vec::<KbTextureHandle>::new();
 
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
         let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
         for gltf_texture in gltf_doc.textures() {
-            log!("  Hitting that iteration");
-
             match gltf_texture.source().source() {
-
                 gltf::image::Source::View { view: _, mime_type: _ } => { }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
                             let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
-                            log!("  Trying to load {}", file_path);
-                            let file_bytes = load_bytes!(&file_path);
-                            let new_texture = KbTexture::from_bytes(device, queue, file_bytes, uri).unwrap();
-                            textures.push(new_texture);
+                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
+                            textures.push(texture_handle);
                         }
-                        _ => {}
+                        _ => {
+                            log!("Wondering if it's something or not");
+                        }
                     }
                 }
             }
@@ -1284,17 +1334,219 @@ impl KbModel {
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
+        let texture = asset_manager.get_texture(&textures[0]);
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&textures[0].view),
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&textures[0].sampler),
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    },
+                ],
+                label: Some("KbModel_tex_bind_group"),
+            }
+        );
+
+        // Uniform buffer
+        let mut uniform_buffers = Vec::<wgpu::Buffer>::new();
+        let mut uniform_bind_groups = Vec::<wgpu::BindGroup>::new();
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group_layout"),
+        });
+
+        let uniform = KbModelUniform{ ..Default::default() };
+
+        for _ in 0..MAX_UNIFORMS {
+            let uniform_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("kbModelPipeline_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                }
+            );
+
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("KbModelPipeline_uniform_bind_group"),
+            });
+
+            uniform_buffers.push(uniform_buffer);
+            uniform_bind_groups.push(uniform_bind_group);
+        }
+        
+        let instance_buffer = device.create_buffer(
+        &wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            mapped_at_creation: false,
+            size: (size_of::<KbModelDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
+
+        KbModel {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            num_indices,
+            uniform_bind_groups,
+            uniform_buffers,
+            textures,
+            tex_bind_group,
+            next_uniform_buffer: 0
+        }
+    }
+
+    pub async fn from_bytes(bytes: &Vec<u8>, device_resources: &mut KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
+        log!("Loading Model from bytes");
+
+        let device = &device_resources.device;     
+        let mut indices = Vec::<u16>::new();
+        let mut vertices = Vec::<KbVertex>::new();
+        let mut textures = Vec::<KbTextureHandle>::new();
+        // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
+
+        let (gltf_doc, buffers, gltf_images) = gltf::import_slice(bytes).unwrap();
+
+        for gltf_texture in gltf_doc.textures() {
+            match gltf_texture.source().source() {
+                gltf::image::Source::View { view: _, mime_type: _ } => { }
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    match std::env::current_dir() {
+                        Ok(dir) => {
+                            let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
+                            let texture_handle = asset_manager.load_texture(&file_path, &device_resources).await;
+                            textures.push(texture_handle);
+                        }
+                        _ => { }
+                    }
+                }
+            }
+        }
+
+        for m in gltf_doc.meshes() {
+            for p in m.primitives() {
+                let r = p.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(gltf::mesh::util::ReadIndices::U16(gltf::accessor::Iter::Standard(iter))) = r.read_indices(){
+                    for v in iter {
+                        indices.push(v);
+                    }
+                }
+
+                let mut positions = Vec::new();
+                if let Some(iter) = r.read_positions(){
+                    for v in iter{
+                        positions.push(v);
+                    }
+                }
+
+                let mut uvs = Vec::new();
+                if let Some(gltf::mesh::util::ReadTexCoords::F32(gltf::accessor::Iter::Standard(iter))) = r.read_tex_coords(0){
+                    for v in iter{
+                        uvs.push(v);
+                    }
+                }
+
+                let mut normals = Vec::new();
+                if let Some(iter) = r.read_normals(){
+                    for v in iter{
+                        normals.push(v);
+                    }
+                }
+
+                let mut i = 0;
+                while i < positions.len() {
+                    let vertex = KbVertex {
+                        position: positions[i],
+                        tex_coords: uvs[i],
+                        normal: normals[i]
+                    };
+                    vertices.push(vertex);
+                    i = i + 1;
+                }
+            }
+        }
+
+        let num_indices = indices.len() as u32;
+
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("KbModel_vertex_buffer"),
+                contents: bytemuck::cast_slice(vertices.as_slice()),
+                usage: wgpu::BufferUsages::VERTEX
+            }
+        );
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&indices.as_slice()),
+                usage: wgpu::BufferUsages::INDEX
+            }
+        );
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbModel_texture_bind_group_layout"),
+        });
+
+        let texture = { 
+            if textures.len() > 0 { asset_manager.get_texture(&textures[0]) }
+            else { 
+                let image = &gltf_images[0];
+             //   image.
+                &KbTexture::from_rgba(&gltf_images[0].pixels, image.format == gltf::image::Format::R8G8B8A8, image.width, image.height, &device_resources, Some("gltf tex")).unwrap()
+            }
+        };
+        let tex_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture.sampler),
                     },
                 ],
                 label: Some("KbModel_tex_bind_group"),
@@ -1397,7 +1649,7 @@ pub struct KbModelPipeline {
 }
 
 impl KbModelPipeline {
-    pub fn new(device_resources: &KbDeviceResources) -> Self {
+    pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Creating KbModelPipeline...");
 
         let device = &device_resources.device;
@@ -1472,10 +1724,8 @@ impl KbModelPipeline {
             push_constant_ranges: &[],
         });
 
-        let opaque_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/Model.wgsl").into()),
-        });
+        let opaque_shader_handle = asset_manager.load_shader("/engine_assets/shaders/Model.wgsl", &device_resources).await;
+        let opaque_shader = asset_manager.get_shader(&opaque_shader_handle);
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_opaque_pipeline"),
@@ -1518,10 +1768,8 @@ impl KbModelPipeline {
             multiview: None,
         });
 
-        let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Model.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../engine_assets/shaders/particle.wgsl").into()),
-        });
+        let particle_shader_handle = asset_manager.load_shader("/engine_assets/shaders/particle.wgsl", &device_resources).await;
+        let particle_shader = asset_manager.get_shader(&particle_shader_handle);
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelPipeline_alpha_blend_pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -1623,7 +1871,7 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, models: &mut Vec<KbModel>, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
@@ -1681,14 +1929,13 @@ impl KbModelPipeline {
         };
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
+        let mut models_to_render = Vec::<KbModelFileHandle>::new();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
-            let model_id = actor.get_model().index;
-            if model_id as usize > models.len() {
-                continue;
-            }
-            let model = &mut models[model_id as usize];
+            let model_handle = actor.get_model();
+            let model = asset_manager.get_model(&model_handle).unwrap();
+            models_to_render.push(model_handle);
 
             let uniform_buffer = model.alloc_uniform_buffer();
             let mut uniform_data = KbModelUniform { ..Default::default() };
@@ -1702,8 +1949,10 @@ impl KbModelPipeline {
         }
 
         // Render KbModels now that uniforms are set
-        let model_iter = models.iter_mut();
-        for model in model_iter {
+        let model_mappings = asset_manager.get_model_mappigns();
+        let model_iter = models_to_render.iter_mut();
+        for model_handle in model_iter {
+            let model = &model_mappings[&model_handle];
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -1718,8 +1967,9 @@ impl KbModelPipeline {
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
 
-        let model_iter = models.iter_mut();
-        for model in model_iter {
+        let model_iter = models_to_render.iter_mut();
+        for model_handle in model_iter {
+            let model = &mut model_mappings.get_mut(&model_handle).unwrap();
             model.free_uniform_buffers();
         }
     }
@@ -1795,6 +2045,9 @@ impl KbModelPipeline {
 
             // Instances
             let particles = &particle_val.1.particles;
+            if particles.len() == 0 {
+                continue;
+            }
             let mut particle_instances = Vec::<KbModelDrawInstance>::new();
             for particle in particles {
                 let new_instance = KbModelDrawInstance {
