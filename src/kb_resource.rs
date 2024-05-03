@@ -1,4 +1,3 @@
-use ab_glyph::FontRef;
 use anyhow::*;
 use cgmath::SquareMatrix;
 use image::GenericImageView;
@@ -1231,21 +1230,12 @@ impl KbModel {
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
         let mut textures = Vec::<KbTextureHandle>::new();
-        let mut texture_bytes = Vec::<Vec<u8>>::new();
+
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
         let (gltf_doc, buffers, _) = gltf::import(file_name).unwrap();
-        
         for gltf_texture in gltf_doc.textures() {
-            log!("  Hitting that iteration");
-
             match gltf_texture.source().source() {
-
-                gltf::image::Source::View { view: view, mime_type: _ } => {
-
-
-                //    texture_bytes.push(view.buffer().source().);
-                    log!("How many people done doubted you, left you out to rot");
-                }
+                gltf::image::Source::View { view: _, mime_type: _ } => { }
                 gltf::image::Source::Uri { uri, mime_type: _ } => {
                     match std::env::current_dir() {
                         Ok(dir) => {
@@ -1435,7 +1425,6 @@ impl KbModel {
         let mut indices = Vec::<u16>::new();
         let mut vertices = Vec::<KbVertex>::new();
         let mut textures = Vec::<KbTextureHandle>::new();
-        let mut texture_bytes = Vec::<Vec<u8>>::new();
         // https://stackoverflow.com/questions/75846989/how-to-load-gltf-files-with-gltf-rs-crate
 
         let (gltf_doc, buffers, gltf_images) = gltf::import_slice(bytes).unwrap();
@@ -1940,17 +1929,13 @@ impl KbModelPipeline {
         };
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
-        let mut model_list = Vec::<KbModelFileHandle>::new();
+        let mut models_to_render = Vec::<KbModelFileHandle>::new();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;
             let model_handle = actor.get_model();
-            let mut model = asset_manager.get_model(&model_handle).unwrap();
-            model_list.push(model_handle);
-           /* if model_id as usize > models.len() {
-                continue;
-            }
-            let model = &mut models[model_id as usize];*/
+            let model = asset_manager.get_model(&model_handle).unwrap();
+            models_to_render.push(model_handle);
 
             let uniform_buffer = model.alloc_uniform_buffer();
             let mut uniform_data = KbModelUniform { ..Default::default() };
@@ -1965,7 +1950,7 @@ impl KbModelPipeline {
 
         // Render KbModels now that uniforms are set
         let model_mappings = asset_manager.get_model_mappigns();
-        let model_iter = model_list.iter_mut();
+        let model_iter = models_to_render.iter_mut();
         for model_handle in model_iter {
             let model = &model_mappings[&model_handle];
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
@@ -1982,7 +1967,7 @@ impl KbModelPipeline {
         drop(render_pass);
         device_resources.queue.submit(std::iter::once(command_encoder.finish()));
 
-        let model_iter = model_list.iter_mut();
+        let model_iter = models_to_render.iter_mut();
         for model_handle in model_iter {
             let model = &mut model_mappings.get_mut(&model_handle).unwrap();
             model.free_uniform_buffers();

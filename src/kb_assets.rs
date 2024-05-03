@@ -55,6 +55,8 @@ macro_rules! make_kb_handle {
 	($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
 		#[derive(Clone, Hash)]
 		pub struct $handle_type { index: u32 }
+
+		#[allow(dead_code)]
 		impl $handle_type {
 			fn is_valid(&self) -> bool {
 				self.index != u32::MAX 
@@ -66,6 +68,7 @@ macro_rules! make_kb_handle {
 		impl PartialEq for $handle_type { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
 		impl Eq for $handle_type{}
 
+		#[allow(dead_code)]
 		pub struct $mapping_type {
 			names_to_handles: HashMap<String, $handle_type>,
 			handles_to_assets: HashMap<$handle_type, $asset_type>,
@@ -147,16 +150,16 @@ impl KbAssetManager {
 			mappings.next_handle.index = mappings.next_handle.index + 1;
 			new_handle
 		};
-
-		let mut cwd: String = "".to_string();
-		match std::env::current_dir() {
-            Ok(dir) => { cwd = format!("{}", dir.display()); }
-            _ => { /* todo use default texture*/ }
-        };
 		
 		let new_texture = {
 			#[cfg(not(target_arch = "wasm32"))]
 			{
+				let mut cwd: String = "".to_string();
+				match std::env::current_dir() {
+					Ok(dir) => { cwd = format!("{}", dir.display()); }
+					_ => { /* todo use default texture*/ }
+				};
+
 				let final_file_path = {
 					if file_path.chars().nth(1).unwrap() == ':' {
 						file_path.to_string()
@@ -265,16 +268,16 @@ impl KbAssetManager {
 		&self.shader_mappings.handles_to_assets[shader_handle]
 	}
 
-	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelFileHandle {
-		let mut cwd: String = "".to_string();
-		match std::env::current_dir() {
-            Ok(dir) => { cwd = format!("{}", dir.display()); }
-            _ => { /* todo use default texture*/ }
-        };
-		
+	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelFileHandle {		
 		let new_model = {
 			#[cfg(not(target_arch = "wasm32"))]
 			{
+				let mut cwd: String = "".to_string();
+				match std::env::current_dir() {
+					Ok(dir) => { cwd = format!("{}", dir.display()); }
+					_ => { /* todo use default texture*/ }
+				};
+
 				let final_file_path = {
 					if file_path.chars().nth(1).unwrap() == ':' {
 						file_path.to_string()

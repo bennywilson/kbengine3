@@ -1,6 +1,6 @@
 use anyhow::*;
-use fs_extra::copy_items;
-use fs_extra::dir::CopyOptions;
+//use fs_extra::copy_items;
+//use fs_extra::dir::CopyOptions;
 
 fn main() -> Result<()> {
     // This tells Cargo to rerun this script if something in /res/ changes.
