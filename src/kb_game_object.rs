@@ -1,7 +1,7 @@
 use instant::Instant;
 use cgmath::InnerSpace;
 
-use crate::{kb_assets::*, kb_config::KbConfig, kb_renderer::*, kb_utils::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -231,7 +231,7 @@ pub struct KbActor {
     position: CgVec3,
     scale: CgVec3,
 
-    model_handle: KbModelHandle,
+    model_handle: KbModelFileHandle,
 }
 
 impl KbActor {
@@ -242,7 +242,7 @@ impl KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_handle: INVALID_MODEL_HANDLE 
+                model_handle: KbModelFileHandle::make_invalid()
             }
         }
     }
@@ -263,11 +263,11 @@ impl KbActor {
         self.scale
     }
 
-    pub fn set_model(&mut self, new_model: &KbModelHandle) {
+    pub fn set_model(&mut self, new_model: &KbModelFileHandle) {
         self.model_handle = new_model.clone();
     }
 
-    pub fn get_model(&self) -> KbModelHandle {
+    pub fn get_model(&self) -> KbModelFileHandle {
         self.model_handle.clone()
     }
 }
