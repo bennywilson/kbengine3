@@ -74,7 +74,6 @@ pub const CG_VEC3_UP: CgVec3 = CgVec3::new(0.0, 1.0, 0.0);
 pub type CgVec4 = cgmath::Vector4<f32>;
 pub const CG_VEC4_ZERO: CgVec4 = CgVec4::new(0.0, 0.0, 0.0, 0.0);
 
-
 pub type CgPoint = cgmath::Point3<f32>;
 pub const CG_POINT_ZERO: CgPoint = CgPoint::new(0.0, 0.0, 0.0);
 
@@ -86,3 +85,7 @@ pub const CG_MAT3_IDENT: CgMat3 = CgMat3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
 
 pub type CgMat4 = cgmath::Matrix4<f32>;
 pub const CG_MAT4_IDENT: CgMat4 = CgMat4::new(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+
+pub fn cgmat4_to_cgmat3(mat4: &CgMat4) -> CgMat3 {
+	CgMat3::new(mat4.x.x, mat4.x.y, mat4.x.z, mat4.y.x, mat4.y.y, mat4.y.z, mat4.z.x, mat4.z.y, mat4.z.z)
+}

@@ -1929,7 +1929,7 @@ impl KbModelPipeline {
         };
  
         // Iterate over actors and add their uniform info to their corresponding KbModels
-        let mut models_to_render = Vec::<KbModelFileHandle>::new();
+        let mut models_to_render = Vec::<KbModelHandle>::new();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
             let actor = actor_key_value.1;

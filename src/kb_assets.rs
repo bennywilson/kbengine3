@@ -93,7 +93,7 @@ make_kb_handle!(KbTexture, KbTextureHandle, KbTextureAssetMappings);
 make_kb_handle!(ShaderModule, KbShaderHandle, KbShaderAssetMappings);
 type KbByteVec = Vec<u8>;
 make_kb_handle!(KbByteVec, KbByteFileHandle, KbByteMappings);
-make_kb_handle!(KbModel, KbModelFileHandle, KbModelMappings);
+make_kb_handle!(KbModel, KbModelHandle, KbModelMappings);
 
 #[allow(dead_code)]
 pub struct KbAssetManager {
@@ -269,7 +269,7 @@ impl KbAssetManager {
 		&self.shader_mappings.handles_to_assets[shader_handle]
 	}
 
-	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelFileHandle {		
+	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelHandle {		
 		let new_model = {
 			#[cfg(not(target_arch = "wasm32"))]
 			{
@@ -329,11 +329,11 @@ impl KbAssetManager {
 		new_handle.clone()
 	}
 
-	pub fn get_model(&mut self, model_handle: &KbModelFileHandle) -> Option<&mut KbModel> {
+	pub fn get_model(&mut self, model_handle: &KbModelHandle) -> Option<&mut KbModel> {
 		self.model_mappings.handles_to_assets.get_mut(model_handle)
 	}
 
-	pub fn get_model_mappigns(&mut self) -> &mut HashMap<KbModelFileHandle, KbModel>  {
+	pub fn get_model_mappigns(&mut self) -> &mut HashMap<KbModelHandle, KbModel>  {
 		&mut self.model_mappings.handles_to_assets
 	}
 }

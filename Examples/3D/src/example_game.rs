@@ -1,12 +1,15 @@
- use cgmath::{InnerSpace, SquareMatrix};
+use cgmath::{InnerSpace, SquareMatrix};
 use instant::Instant;
 
 use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_utils::*, log};
+
+use crate::game_actors::*;
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 100.0;
 
 pub struct Example3DGame {
+	player: Option<GamePlayer>,
 	actors: Vec<KbActor>,
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
@@ -41,7 +44,8 @@ impl KbGameEngine for Example3DGame {
 		Self {
 			actors: Vec::<KbActor>::new(),
 			game_objects,
-			game_camera
+			game_camera,
+			player: None,
 		}
     }
 
@@ -53,40 +57,37 @@ impl KbGameEngine for Example3DGame {
 		let floor_model = renderer.load_model("game_assets/floor.glb").await;
 		let hands_model = renderer.load_model("game_assets/fp_hands.glb").await;
 		
-		let mut actor = KbActor::new();
-		actor.set_position(&[5.0, 1.0, 3.0].into());
-		actor.set_scale(&[1.0, 1.0, 1.2].into());
-		actor.set_model(&hands_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[0]);
+		let mut player = GamePlayer::new(&hands_model).await;
+		renderer.add_or_update_actor(&player.get_actor());
+		self.player = Some(player);
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[3.0, 0.0, 3.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
 		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[1]);
+		renderer.add_or_update_actor(&self.actors[0]);
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[0.0, 0.0, 0.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&barrel_model);
 		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[2]);
+		renderer.add_or_update_actor(&self.actors[1]);
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[-4.0, 0.0, -5.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[3]);
+		renderer.add_or_update_actor(&self.actors[2]);
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[0.0, 0.0, 0.0].into());
 		actor.set_scale(&[10.0, 19.0, 10.0].into());
 		actor.set_model(&floor_model);
 		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[4]);
+		renderer.add_or_update_actor(&self.actors[3]);
 
 		let particle_params = KbParticleParams {
 			texture_file: "/game_assets/smoke_t.png".to_string(),
@@ -198,7 +199,7 @@ impl KbGameEngine for Example3DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &InputManager, game_config: &KbConfig) {
+	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &KbInputManager, game_config: &KbConfig) {
 		for game_object in &mut self.game_objects {
 			game_object.update(game_config.delta_time);
 		}
@@ -241,22 +242,10 @@ impl KbGameEngine for Example3DGame {
 
 		self.game_camera.set_position(&camera_pos);
 		self.game_camera.set_rotation(&camera_rot);
-		let (view_matrix, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
-		let up_dir = view_dir.cross(right_dir).normalize();
-		let gun_pos = camera_pos + (view_dir * 1.0) + (up_dir * 1.0) + (right_dir * 0.5);
-		let view3 = CgMat3::new(view_matrix.x.x, view_matrix.x.y, view_matrix.x.z, view_matrix.y.x, view_matrix.y.y, view_matrix.y.z, view_matrix.z.x, view_matrix.z.y, view_matrix.z.z);
-		let view3 = view3.invert().unwrap();
-
-		
-        let gun_fix_rad = cgmath::Rad::from(cgmath::Deg(90.0));
-		let gun_fix_mat3 = CgMat3::from_angle_y(gun_fix_rad);
-		let gun_rot: CgQuat = cgmath::Quaternion::from(view3 * gun_fix_mat3); 
-		self.actors[0].set_position(&gun_pos);
-		self.actors[0].set_rotation(&gun_rot);
-
-		renderer.add_or_update_actor(&self.actors[0]);
-
 		renderer.set_camera(&self.game_camera);
-	}
 
+		let player = &mut self.player.as_mut().unwrap();
+		player.tick(&input_manager, &self.game_camera, &game_config);
+		renderer.add_or_update_actor(&player.get_actor());
+	}
 }

@@ -2,7 +2,7 @@
 use winit::*;
 
 #[derive(Debug, Default)]
-pub struct InputManager {
+pub struct KbInputManager {
     pub left_arrow_pressed: bool,
     pub right_arrow_pressed: bool,
     pub up_arrow_pressed: bool,
@@ -16,10 +16,11 @@ pub struct InputManager {
     pub two_pressed: bool,
     pub three_pressed: bool,
     pub four_pressed: bool,
+    pub space_pressed: bool,
 }
 
 #[allow(dead_code)] 
-impl InputManager {
+impl KbInputManager {
     pub fn new() -> Self {
         Default::default()
     }
@@ -79,7 +80,6 @@ impl InputManager {
                 self.right_arrow_pressed = pressed;
                 true
             }
-
             _ => false
         }
     }

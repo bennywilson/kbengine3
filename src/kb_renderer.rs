@@ -4,13 +4,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct KbModelHandle {
-    pub index: u32,
-}
-
-pub const INVALID_MODEL_HANDLE: KbModelHandle = KbModelHandle{ index: u32::max_value() };
-
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
     device_resources: KbDeviceResources<'a>,
@@ -22,8 +15,6 @@ pub struct KbRenderer<'a> {
     actor_map: HashMap::<u32, KbActor>,
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
-
-    next_model_id: KbModelHandle,
 
     game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
@@ -54,8 +45,6 @@ impl<'a> KbRenderer<'a> {
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
-
-            next_model_id: INVALID_MODEL_HANDLE,
 
             game_camera: KbCamera::new(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -262,12 +251,7 @@ impl<'a> KbRenderer<'a> {
         self.particle_map.insert(self.next_particle_id.clone(), particle);
     }
 
-    pub async fn load_model(&mut self, file_path: &str) -> KbModelFileHandle {
-        self.next_model_id = match self.next_model_id {
-            INVALID_MODEL_HANDLE => { KbModelHandle { index: 0 } }
-            _ => { KbModelHandle{ index: self.next_model_id.index + 1 } }
-        };
-        
+    pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
         let model_handle = self.asset_manager.load_model(file_path, &mut self.device_resources).await;
         model_handle
     }

@@ -16,7 +16,7 @@ pub mod kb_utils;
 
 use crate::kb_config::KbConfig;
 use crate::kb_engine::KbGameEngine;
-use crate::kb_input::InputManager;
+use crate::kb_input::KbInputManager;
 use crate::kb_renderer::KbRenderer;
 use crate::kb_resource::KbPostProcessMode;
 
@@ -51,7 +51,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
     let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(game_config.window_width, game_config.window_height));
 
     let mut game_engine = T::new(&game_config);
-    let mut input_manager = InputManager::new();
+    let mut input_manager = KbInputManager::new();
     let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
 
     game_engine.initialize_world(&mut game_renderer).await;

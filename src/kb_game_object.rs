@@ -232,7 +232,7 @@ pub struct KbActor {
     rotation: CgQuat,
     scale: CgVec3,
 
-    model_handle: KbModelFileHandle,
+    model_handle: KbModelHandle,
 }
 
 impl KbActor {
@@ -244,7 +244,7 @@ impl KbActor {
                 position: (0.0, 0.0, 0.0).into(),
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_handle: KbModelFileHandle::make_invalid()
+                model_handle: KbModelHandle::make_invalid()
             }
         }
     }
@@ -273,11 +273,11 @@ impl KbActor {
         self.scale
     }
 
-    pub fn set_model(&mut self, new_model: &KbModelFileHandle) {
+    pub fn set_model(&mut self, new_model: &KbModelHandle) {
         self.model_handle = new_model.clone();
     }
 
-    pub fn get_model(&self) -> KbModelFileHandle {
+    pub fn get_model(&self) -> KbModelHandle {
         self.model_handle.clone()
     }
 }
