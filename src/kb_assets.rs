@@ -93,7 +93,7 @@ make_kb_handle!(KbTexture, KbTextureHandle, KbTextureAssetMappings);
 make_kb_handle!(ShaderModule, KbShaderHandle, KbShaderAssetMappings);
 type KbByteVec = Vec<u8>;
 make_kb_handle!(KbByteVec, KbByteFileHandle, KbByteMappings);
-make_kb_handle!(KbModel, KbModelFileHandle, KbModelMappings);
+make_kb_handle!(KbModel, KbModelHandle, KbModelMappings);
 
 #[allow(dead_code)]
 pub struct KbAssetManager {
@@ -108,21 +108,27 @@ pub struct KbAssetManager {
 impl KbAssetManager {
 	pub fn new() -> Self {
 		let mut file_to_byte_buffer =  HashMap::<String, KbByteVec>:: new();
-		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/smoke_t.png").to_vec());
-		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/ember_t.png").to_vec());
-		file_to_byte_buffer.insert("SpriteSheet.png".to_string(), include_bytes!("../engine_assets/textures/SpriteSheet.png").to_vec());
 		file_to_byte_buffer.insert("PostProcessFilter.png".to_string(), include_bytes!("../engine_assets/textures/PostProcessFilter.png").to_vec());
-		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/pinky.glb").to_vec());
-		file_to_byte_buffer.insert("barrel.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/barrel.glb").to_vec());
-		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/shotgun.glb").to_vec());
-		file_to_byte_buffer.insert("floor.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/floor.glb").to_vec());
+		file_to_byte_buffer.insert("SpriteSheet.png".to_string(), include_bytes!("../engine_assets/textures/SpriteSheet.png").to_vec());
+		
+		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec());
+		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec());
+
+		file_to_byte_buffer.insert("barrel.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/barrel.glb").to_vec());
+		file_to_byte_buffer.insert("floor.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/floor.glb").to_vec());
+		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());
+		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec());
+		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/shotgun.glb").to_vec());
 
 		let mut file_to_string_buffer =  HashMap::<String, String>:: new();
 		file_to_string_buffer.insert("BasicSprite.wgsl".to_string(), include_str!("../engine_assets/shaders/BasicSprite.wgsl").to_string());
-		file_to_string_buffer.insert("Model.wgsl".to_string(), include_str!("../engine_assets/shaders/Model.wgsl").to_string());
 		file_to_string_buffer.insert("CloudSprite.wgsl".to_string(), include_str!("../engine_assets/shaders/CloudSprite.wgsl").to_string());
+		file_to_string_buffer.insert("Model.wgsl".to_string(), include_str!("../engine_assets/shaders/Model.wgsl").to_string());
 		file_to_string_buffer.insert("particle.wgsl".to_string(), include_str!("../engine_assets/shaders/Particle.wgsl").to_string());
 		file_to_string_buffer.insert("postprocess_uber.wgsl".to_string(), include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string());
+		
+		file_to_string_buffer.insert("first_person.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string());
+		file_to_string_buffer.insert("first_person_outline.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person_outline.wgsl").to_string());
 
 		KbAssetManager {
 			texture_mappings: KbTextureAssetMappings::new(),
@@ -268,7 +274,7 @@ impl KbAssetManager {
 		&self.shader_mappings.handles_to_assets[shader_handle]
 	}
 
-	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelFileHandle {		
+	pub async fn load_model(&mut self, file_path: &str, mut device_resource: &mut KbDeviceResources<'_>) -> KbModelHandle {		
 		let new_model = {
 			#[cfg(not(target_arch = "wasm32"))]
 			{
@@ -328,11 +334,11 @@ impl KbAssetManager {
 		new_handle.clone()
 	}
 
-	pub fn get_model(&mut self, model_handle: &KbModelFileHandle) -> Option<&mut KbModel> {
+	pub fn get_model(&mut self, model_handle: &KbModelHandle) -> Option<&mut KbModel> {
 		self.model_mappings.handles_to_assets.get_mut(model_handle)
 	}
 
-	pub fn get_model_mappigns(&mut self) -> &mut HashMap<KbModelFileHandle, KbModel>  {
+	pub fn get_model_mappigns(&mut self) -> &mut HashMap<KbModelHandle, KbModel>  {
 		&mut self.model_mappings.handles_to_assets
 	}
 }
