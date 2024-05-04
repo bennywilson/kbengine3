@@ -196,13 +196,18 @@ impl<'a> KbRenderer<'a> {
 
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(false, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            self.model_pipeline.render(&KbRenderGroup::World, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {
             PERF_SCOPE!("Particle Pass");
             self.model_pipeline.render_particles(KbParticleBlendMode::AlphaBlend, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
             self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+        }
+
+        if self.actor_map.len() > 0 {
+            PERF_SCOPE!("Model Pass");
+            self.model_pipeline.render(&KbRenderGroup::Foreground, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
         }
 
         {

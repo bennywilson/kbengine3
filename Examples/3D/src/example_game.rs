@@ -56,9 +56,12 @@ impl KbGameEngine for Example3DGame {
 		let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
 		let floor_model = renderer.load_model("game_assets/floor.glb").await;
 		let hands_model = renderer.load_model("game_assets/fp_hands.glb").await;
+		let hands_outline_model = renderer.load_model("game_assets/fp_hands_outline.glb").await;
 		
-		let mut player = GamePlayer::new(&hands_model).await;
-		renderer.add_or_update_actor(&player.get_actor());
+		let mut player = GamePlayer::new(&hands_model, &hands_outline_model).await;
+		let (hands, hands_outline) = player.get_actors();
+		renderer.add_or_update_actor(&hands);
+		renderer.add_or_update_actor(&hands_outline);
 		self.player = Some(player);
 
 		let mut actor = KbActor::new();
@@ -246,6 +249,9 @@ impl KbGameEngine for Example3DGame {
 
 		let player = &mut self.player.as_mut().unwrap();
 		player.tick(&input_manager, &self.game_camera, &game_config);
-		renderer.add_or_update_actor(&player.get_actor());
+
+		let (hands, hands_outline) = player.get_actors();
+		renderer.add_or_update_actor(&hands);
+		renderer.add_or_update_actor(&hands_outline);
 	}
 }

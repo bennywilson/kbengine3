@@ -7,6 +7,12 @@ use wgpu::{BindGroupLayoutEntry, BindingType, Device, DeviceDescriptor, SamplerB
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_utils::*, log, PERF_SCOPE};
 
+#[derive(Clone, Eq, PartialEq)]
+pub enum KbRenderGroup {
+    World,
+    Foreground
+}
+
 #[repr(C)]  // Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbVertex {
@@ -1871,45 +1877,48 @@ impl KbModelPipeline {
         }
     }
 
-    pub fn render(&mut self, should_clear: bool, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
+    pub fn render(&mut self, render_group: &KbRenderGroup, device_resources: &mut KbDeviceResources, asset_manager: &mut KbAssetManager, game_camera: &KbCamera, actors: &HashMap<u32, KbActor>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelPipeline::render()"),
         });
 
         let (color_attachment, depth_attachment) = {
-            if should_clear {
-                (wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
+            let (color_ops, depth_ops) = {
+                if *render_group == KbRenderGroup::World {
+                    (wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.12, g: 0.01, b: 0.35, a: 1.0, }),
                         store: wgpu::StoreOp::Store,
-                    },
-                }, wgpu::RenderPassDepthStencilAttachment {
-                    view: &device_resources.render_textures[1].view,
-                    depth_ops: Some(wgpu::Operations {
+                    }, wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                })
-            } else {
-                (wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
+                    })
+                } else if *render_group == KbRenderGroup::Foreground {
+                    (wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
-                    },
-                }, wgpu::RenderPassDepthStencilAttachment {
-                    view: &device_resources.render_textures[1].view,
-                    depth_ops: Some(wgpu::Operations {
+                    }, wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                })
-            }
+                    })
+                } else {
+                    (wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }, wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    })
+                }
+            };
+            (wgpu::RenderPassColorAttachment {
+                   view: &device_resources.render_textures[0].view,
+                   resolve_target: None,
+                   ops: color_ops,
+            }, wgpu::RenderPassDepthStencilAttachment {
+                   view: &device_resources.render_textures[1].view,
+                   depth_ops: Some(depth_ops),
+                   stencil_ops: None,
+            })
         };
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1921,8 +1930,9 @@ impl KbModelPipeline {
         });
         render_pass.set_pipeline(&self.opaque_pipeline);
 
-        let (view_matrix, _, _) = game_camera.calculate_view_matrix();      
-        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
+        let (view_matrix, _, _) = game_camera.calculate_view_matrix();
+        let fov = if *render_group == KbRenderGroup::World { game_config.fov } else { game_config.foreground_fov };
+        let proj_matrix = cgmath::perspective(cgmath::Deg(fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
         let fragment_texture_fix = {
             #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
@@ -1932,6 +1942,9 @@ impl KbModelPipeline {
         let mut models_to_render = Vec::<KbModelHandle>::new();
         let actor_iter = actors.iter();
         for actor_key_value in actor_iter {
+            if actor_key_value.1.get_render_group() != *render_group {
+                continue;
+            }
             let actor = actor_key_value.1;
             let model_handle = actor.get_model();
             let model = asset_manager.get_model(&model_handle).unwrap();

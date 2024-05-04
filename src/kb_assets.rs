@@ -117,6 +117,7 @@ impl KbAssetManager {
 		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/shotgun.glb").to_vec());
 		file_to_byte_buffer.insert("floor.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/floor.glb").to_vec());
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/fp_hands.glb").to_vec());
+		file_to_byte_buffer.insert("fp_hands_outline.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/fp_hands.glb").to_vec());
 
 		let mut file_to_string_buffer =  HashMap::<String, String>:: new();
 		file_to_string_buffer.insert("BasicSprite.wgsl".to_string(), include_str!("../engine_assets/shaders/BasicSprite.wgsl").to_string());
