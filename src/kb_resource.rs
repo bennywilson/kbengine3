@@ -1939,7 +1939,7 @@ impl KbModelPipeline {
 
             let uniform_buffer = model.alloc_uniform_buffer();
             let mut uniform_data = KbModelUniform { ..Default::default() };
-            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from_scale(actor.get_scale().x);
+            let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from(actor.get_rotation()) * cgmath::Matrix4::from_nonuniform_scale(actor.get_scale().x, actor.get_scale().y, actor.get_scale().z);
             uniform_data.inv_world = world_matrix.invert().unwrap().into();
             uniform_data.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
             uniform_data.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];

@@ -1,10 +1,7 @@
+ use cgmath::{InnerSpace, SquareMatrix};
 use instant::Instant;
 
-use cgmath::Rotation3;
-
-use kb_engine3::{kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::*, kb_renderer::KbRenderer};
-use kb_engine3::kb_utils::*;
-use kb_engine3::log;
+use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_utils::*, log};
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 100.0;
@@ -14,7 +11,6 @@ pub struct Example3DGame {
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
 }
-
 impl Example3DGame { }
 
 impl KbGameEngine for Example3DGame {
@@ -40,7 +36,7 @@ impl KbGameEngine for Example3DGame {
 		});
 
 		let mut game_camera = KbCamera::new();
-		game_camera.set_look_at(&CgVec3::new(0.0, 2.0, 5.0), &CgVec3::new(0.0, 2.0, -5.0));
+		game_camera.set_position(&CgVec3::new(0.0, 2.0, -5.0));
 	
 		Self {
 			actors: Vec::<KbActor>::new(),
@@ -51,40 +47,46 @@ impl KbGameEngine for Example3DGame {
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>) {
 		log!("GameEngine::initialize_world() caled...");
+		let pinky_model = renderer.load_model("game_assets/pinky.glb").await;
+		let barrel_model = renderer.load_model("game_assets/barrel.glb").await;
+		let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
+		let floor_model = renderer.load_model("game_assets/floor.glb").await;
+		let hands_model = renderer.load_model("game_assets/fp_hands.glb").await;
+		
+		let mut actor = KbActor::new();
+		actor.set_position(&[5.0, 1.0, 3.0].into());
+		actor.set_scale(&[1.0, 1.0, 1.2].into());
+		actor.set_model(&hands_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[0]);
 
+		let mut actor = KbActor::new();
+		actor.set_position(&[3.0, 0.0, 3.0].into());
+		actor.set_scale(&[1.0, 1.0, 1.0].into());
+		actor.set_model(&pinky_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[1]);
 
-			let pinky_model = renderer.load_model("game_assets/pinky.glb").await;
-			let barrel_model = renderer.load_model("game_assets/barrel.glb").await;
-			let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
-			let floor_model = renderer.load_model("game_assets/floor.glb").await;
+		let mut actor = KbActor::new();
+		actor.set_position(&[0.0, 0.0, 0.0].into());
+		actor.set_scale(&[1.0, 1.0, 1.0].into());
+		actor.set_model(&barrel_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[2]);
 
-			let mut actor = KbActor::new();
-			actor.set_position(&[3.0, 0.0, 3.0].into());
-			actor.set_scale(&[1.0, 1.0, 1.0].into());
-			actor.set_model(&pinky_model);
-			self.actors.push(actor);
-			renderer.add_or_update_actor(&self.actors[0]);
+		let mut actor = KbActor::new();
+		actor.set_position(&[-4.0, 0.0, -5.0].into());
+		actor.set_scale(&[2.0, 2.0, 2.0].into());
+		actor.set_model(&shotgun_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[3]);
 
-			let mut actor = KbActor::new();
-			actor.set_position(&[0.0, 0.0, 0.0].into());
-			actor.set_scale(&[1.0, 1.0, 1.0].into());
-			actor.set_model(&barrel_model);
-			self.actors.push(actor);
-			renderer.add_or_update_actor(&self.actors[1]);
-	
-			let mut actor = KbActor::new();
-			actor.set_position(&[-4.0, 0.0, -5.0].into());
-			actor.set_scale(&[2.0, 2.0, 2.0].into());
-			actor.set_model(&shotgun_model);
-			self.actors.push(actor);
-			renderer.add_or_update_actor(&self.actors[2]);
-
-			let mut actor = KbActor::new();
-			actor.set_position(&[0.0, 0.0, 0.0].into());
-			actor.set_scale(&[10.0, 19.0, 10.0].into());
-			actor.set_model(&floor_model);
-			self.actors.push(actor);
-			renderer.add_or_update_actor(&self.actors[3]);
+		let mut actor = KbActor::new();
+		actor.set_position(&[0.0, 0.0, 0.0].into());
+		actor.set_scale(&[10.0, 19.0, 10.0].into());
+		actor.set_model(&floor_model);
+		self.actors.push(actor);
+		renderer.add_or_update_actor(&self.actors[4]);
 
 		let particle_params = KbParticleParams {
 			texture_file: "/game_assets/smoke_t.png".to_string(),
@@ -202,15 +204,16 @@ impl KbGameEngine for Example3DGame {
 		}
 		let delta_time = game_config.delta_time;
 		let (_s, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
+		let forward_dir = CgVec3::new(view_dir.x, 0.0, view_dir.z).normalize();
 		let mut camera_pos = self.game_camera.get_position();
 		let mut camera_rot = self.game_camera.get_rotation();
 
 		if input_manager.up_pressed {
-			camera_pos = camera_pos + view_dir * delta_time * CAMERA_MOVE_RATE;
+			camera_pos = camera_pos + forward_dir * delta_time * CAMERA_MOVE_RATE;
 		}
 
 		if input_manager.down_pressed {
-			camera_pos = camera_pos - view_dir * delta_time * CAMERA_MOVE_RATE;
+			camera_pos = camera_pos - forward_dir * delta_time * CAMERA_MOVE_RATE;
 		}
 
 		if input_manager.right_pressed {
@@ -221,18 +224,38 @@ impl KbGameEngine for Example3DGame {
 			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
 		}
 
-		let radians = cgmath::Rad::from(cgmath::Deg(delta_time * CAMERA_ROTATION_RATE));
+		let radians = delta_time * CAMERA_ROTATION_RATE;
 		if input_manager.left_arrow_pressed {
-			let rot_quat = CgQuat::from_angle_y(radians);
-			camera_rot = camera_rot * rot_quat;
+			camera_rot.x += radians;
 		}
 		if input_manager.right_arrow_pressed {
-			let rot_quat = CgQuat::from_angle_y(-radians);
-			camera_rot = camera_rot * rot_quat;
+			camera_rot.x -= radians;
+		}
+
+		if input_manager.up_arrow_pressed {
+			camera_rot.y -= radians;
+		}
+		if input_manager.down_arrow_pressed {
+			camera_rot.y += radians
 		}
 
 		self.game_camera.set_position(&camera_pos);
 		self.game_camera.set_rotation(&camera_rot);
+		let (view_matrix, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
+		let up_dir = view_dir.cross(right_dir).normalize();
+		let gun_pos = camera_pos + (view_dir * 1.0) + (up_dir * 1.0) + (right_dir * 0.5);
+		let view3 = CgMat3::new(view_matrix.x.x, view_matrix.x.y, view_matrix.x.z, view_matrix.y.x, view_matrix.y.y, view_matrix.y.z, view_matrix.z.x, view_matrix.z.y, view_matrix.z.z);
+		let view3 = view3.invert().unwrap();
+
+		
+        let gun_fix_rad = cgmath::Rad::from(cgmath::Deg(90.0));
+		let gun_fix_mat3 = CgMat3::from_angle_y(gun_fix_rad);
+		let gun_rot: CgQuat = cgmath::Quaternion::from(view3 * gun_fix_mat3); 
+		self.actors[0].set_position(&gun_pos);
+		self.actors[0].set_rotation(&gun_rot);
+
+		renderer.add_or_update_actor(&self.actors[0]);
+
 		renderer.set_camera(&self.game_camera);
 	}
 

@@ -1,5 +1,5 @@
 use instant::Instant;
-use cgmath::InnerSpace;
+//use cgmath::InnerSpace;
 
 use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*};
 
@@ -229,6 +229,7 @@ impl KbParticleActor {
 pub struct KbActor {
     pub id: u32,
     position: CgVec3,
+    rotation: CgQuat,
     scale: CgVec3,
 
     model_handle: KbModelFileHandle,
@@ -241,6 +242,7 @@ impl KbActor {
             KbActor {
                 id: NEXT_ACTOR_ID,
                 position: (0.0, 0.0, 0.0).into(),
+                rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
                 model_handle: KbModelFileHandle::make_invalid()
             }
@@ -253,6 +255,14 @@ impl KbActor {
 
     pub fn get_position(&self) -> CgVec3 {
         self.position
+    }
+
+     pub fn set_rotation(&mut self, rotation: &CgQuat) {
+        self.rotation = rotation.clone();
+    }
+
+    pub fn get_rotation(&self) -> CgQuat {
+        self.rotation
     }
 
     pub fn set_scale(&mut self, scale: &CgVec3) {
@@ -275,21 +285,21 @@ impl KbActor {
 #[derive(Clone)]
 pub struct KbCamera {
     position: CgVec3,
-    rotation: CgQuat,
+    rotation: CgVec3
 }
 
 impl KbCamera {
     pub fn new() -> Self {
         KbCamera {
             position: CG_VEC3_ZERO,
-            rotation: CG_QUAT_IDENT
+            rotation: CG_VEC3_ZERO
         }
     }
 
-    pub fn set_look_at(&mut self, new_pos: &CgVec3, target_pos: &CgVec3) {
+   /* pub fn set_look_at(&mut self, new_pos: &CgVec3, target_pos: &CgVec3) {
         self.set_position(new_pos);
         self.set_rotation(&cgmath::Matrix3::look_to_rh((new_pos - target_pos).normalize(), CG_VEC3_UP).into());
-    }
+    }*/
 
     pub fn set_position(&mut self, new_pos: &CgVec3) {
         self.position = new_pos.clone();
@@ -299,23 +309,38 @@ impl KbCamera {
         self.position.clone()
     }
 
+    pub fn set_rotation(&mut self, new_rot: &CgVec3) {
+        self.rotation = new_rot.clone();
+    }
+
+    pub fn get_rotation(&self) -> CgVec3 {
+        self.rotation.clone()
+    }
+    /*
     pub fn set_rotation(&mut self, new_rot: &CgQuat) {
         self.rotation = new_rot.clone();
     }
 
     pub fn get_rotation(&self) -> CgQuat {
         self.rotation.clone()
-    }
+    }*/
 
-    pub fn calculate_view_matrix(&self) -> (CgMat, CgVec3, CgVec3) {
+    pub fn calculate_view_matrix(&self) -> (CgMat4, CgVec3, CgVec3) {
         let cam_pos = self.get_position();
         let eye: CgPoint = CgPoint::new(cam_pos.x, cam_pos.y, cam_pos.z);
-        let view_mat = cgmath::Matrix4::from(self.get_rotation());
+
+        let heading_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.x));
+        let heading_mat = CgMat4::from_angle_y(heading_rad);
+
+        let pitch_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.y));
+        let pitch_mat = CgMat4::from_angle_x(pitch_rad);
+        let view_mat = heading_mat * pitch_mat;
+        //let view_mat = cgmath::Matrix4::from(self.get_rotation());
         let right_dir = -CgVec3::new(view_mat.x.x, view_mat.x.y, view_mat.x.z);
         let view_dir = CgVec3::new(view_mat.z.x, view_mat.z.y, view_mat.z.z);
         let target = eye + view_dir;
         let up = cgmath::Vector3::unit_y();
-        (cgmath::Matrix4::look_at_rh(eye, target, up), view_dir, right_dir)
+        (CgMat4::look_at_rh(eye, target, up), view_dir, right_dir)
     }
 }
 

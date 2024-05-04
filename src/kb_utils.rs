@@ -81,4 +81,8 @@ pub const CG_POINT_ZERO: CgPoint = CgPoint::new(0.0, 0.0, 0.0);
 pub type CgQuat = cgmath::Quaternion<f32>;
 pub const CG_QUAT_IDENT: CgQuat = CgQuat::new(0.0, 0.0, 0.0, 1.0);
 
-pub type CgMat = cgmath::Matrix4<f32>;
+pub type CgMat3 = cgmath::Matrix3<f32>;
+pub const CG_MAT3_IDENT: CgMat3 = CgMat3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
+
+pub type CgMat4 = cgmath::Matrix4<f32>;
+pub const CG_MAT4_IDENT: CgMat4 = CgMat4::new(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
