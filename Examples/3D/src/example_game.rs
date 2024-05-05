@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, SquareMatrix};
+use cgmath::InnerSpace;
 use instant::Instant;
 
 use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_utils::*, log};
@@ -58,7 +58,8 @@ impl KbGameEngine for Example3DGame {
 		let hands_model = renderer.load_model("game_assets/fp_hands.glb").await;
 		let hands_outline_model = renderer.load_model("game_assets/fp_hands_outline.glb").await;
 		
-		let mut player = GamePlayer::new(&hands_model, &hands_outline_model).await;
+
+		let player = GamePlayer::new(&hands_model, &hands_outline_model).await;
 		let (hands, hands_outline) = player.get_actors();
 		renderer.add_or_update_actor(&hands);
 		renderer.add_or_update_actor(&hands_outline);

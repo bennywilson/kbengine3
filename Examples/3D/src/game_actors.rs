@@ -2,35 +2,25 @@ use cgmath::{InnerSpace, SquareMatrix};
 
 use instant::Instant;
 
-use kb_engine3::{kb_assets::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*, kb_resource::*, kb_utils::*, log};
+use kb_engine3::{kb_assets::*, kb_config::*, kb_game_object::*, kb_input::*, kb_resource::*, kb_utils::*, log};
 
 #[derive(Clone, Debug)]
-enum GamePlayerState {
+pub enum GamePlayerState {
 	Idle,
 	Shooting
 }
 
 pub struct GamePlayer {
-	transform: KbActorTransform,
 	current_state: GamePlayerState,
 	current_state_time: Instant,
 
 	hands_actor: KbActor,
 	outline_actor: KbActor,
-
-	hand_model_handle: KbModelHandle,
-	hand_outline_model_handle: KbModelHandle,
 }
 
 impl GamePlayer {
 	pub async fn new(hand_handle: &KbModelHandle, hand_outline: &KbModelHandle) -> Self {
 		log!("Creating Player");
-
-		let transform = KbActorTransform {
-			position: CG_VEC3_ZERO,
-			rotation: CG_QUAT_IDENT,
-			scale: CG_VEC3_ONE
-		};
 		let current_state = GamePlayerState::Idle;
 		let current_state_time = Instant::now();
 		let mut hands_actor = KbActor::new();
@@ -46,11 +36,8 @@ impl GamePlayer {
 		outline_actor.set_render_group(&KbRenderGroup::Foreground);
 
 		GamePlayer {
-			transform,
 			current_state,
 			current_state_time,
-			hand_model_handle: hand_handle.clone(),
-			hand_outline_model_handle: hand_outline.clone(),
 			hands_actor,
 			outline_actor,
 		}
@@ -102,19 +89,22 @@ impl GamePlayer {
 	}
 }
 
+#[allow(dead_code)]
 enum GameMobState {
 	Idle,
 	Chasing,
 	Dying,
-	Dead
+	Dead	
 }
 
+#[allow(dead_code)]
 pub struct GameMob {
 	transform: KbActorTransform,
 	current_state: GameMobState,
 	current_state_time: Instant
 }
 
+#[allow(dead_code)]
 impl GameMob {
 	pub fn new() -> Self {
 		let transform = KbActorTransform {
