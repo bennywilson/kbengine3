@@ -1,8 +1,11 @@
 use instant::Instant;
 use std::{collections::HashMap, sync::Arc};
-//use wgpu_text::glyph_brush::{Section as TextSection, Text};
-
-use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE};
+use wgpu_text::glyph_brush::{Section as TextSection, Text};
+        
+use crate::{
+    kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE,
+    render_groups::{kb_model_group::*,  kb_postprocess_group::*, kb_sprite_group::* }
+};
 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
@@ -114,8 +117,8 @@ impl<'a> KbRenderer<'a> {
         (game_render_objs, skybox_render_objs, cloud_render_objs)
     }
 
-    pub fn render_debug_text(&mut self, _command_encoder: &mut wgpu::CommandEncoder, _view: &wgpu::TextureView, _num_game_objects: u32, _game_config: &KbConfig) { 
-      /*  let device_resources = &mut self.device_resources;
+    pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, _num_game_objects: u32, game_config: &KbConfig) { 
+        let device_resources = &mut self.device_resources;
 
         let color_attachment = {
             Some(wgpu::RenderPassColorAttachment {
@@ -144,19 +147,17 @@ impl<'a> KbRenderer<'a> {
 
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "Press [0] to disable postprocess.   [1] Desaturation    [2] Scan lines   [3]  Warp.\n\n\
+        let frame_time_string = format!(   "Press [1] to disable postprocess.   [2] Desaturation    [3] Scan lines   [4]  Warp.\n\n\
                                             FPS: {:.0} \n\
                                             Frame time: {:.2} ms\n\
-                                            Num Game Objects: {}\n\
-                                            Elapsed time: {:.0} secs\n\
                                             Back End: {:?}\n\
                                             Graphics: {}\n",
-                                            frame_rate, avg_frame_time * 1000.0, num_game_objects, 0.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
+                                            frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
 
-        //let section = TextSection::default().add_text(Text::new(&frame_time_string));
-      //  device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
-     //   let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
-     //   device_resources.brush.draw(&mut render_pass);
+        let section = TextSection::default().add_text(Text::new(&frame_time_string));
+        device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
+        let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
+        device_resources.brush.draw(&mut render_pass);
 
         // Frame rate update
         self.frame_count = self.frame_count + 1;
@@ -170,7 +171,7 @@ impl<'a> KbRenderer<'a> {
             
             self.frame_timer = Instant::now();
             self.frame_count = 0;
-        }*/
+        }
     }
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {

@@ -71,8 +71,6 @@ impl GamePlayer {
 		let hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
 		self.hands_actor.set_position(&hand_pos);
 
-
-
         let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0));
 		let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
 		let hand_rot: CgQuat = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_y(hand_fix_rad)); 

@@ -13,6 +13,11 @@ pub mod kb_game_object;
 pub mod kb_renderer;
 pub mod kb_resource;
 pub mod kb_utils;
+pub mod render_groups {
+    pub mod kb_sprite_group;
+    pub mod kb_model_group;
+    pub mod kb_postprocess_group;
+}
 
 use crate::kb_config::KbConfig;
 use crate::kb_engine::KbGameEngine;
