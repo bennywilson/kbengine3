@@ -1,7 +1,8 @@
 use instant::Instant;
 //use cgmath::InnerSpace;
 
-use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*,
+            render_groups::kb_model_group::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 

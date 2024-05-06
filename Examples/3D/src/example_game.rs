@@ -4,6 +4,7 @@ use instant::Instant;
 use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_resource::*, kb_utils::*, log};
 
 use crate::game_actors::*;
+use crate::game_actors::GamePlayerState;
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 100.0;
@@ -13,6 +14,7 @@ pub struct Example3DGame {
 	actors: Vec<KbActor>,
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
+	temp_shoot_count: u32,
 }
 impl Example3DGame { }
 
@@ -46,10 +48,11 @@ impl KbGameEngine for Example3DGame {
 			game_objects,
 			game_camera,
 			player: None,
+			temp_shoot_count: 0,
 		}
     }
 
-	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>) {
+	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
@@ -64,7 +67,6 @@ impl KbGameEngine for Example3DGame {
 		let mut player = GamePlayer::new(&hands_model).await;
 
 		let (hands, hands_outlines) = player.get_actors();
-
 		hands.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_render_group);
 		renderer.add_or_update_actor(&hands);
 
@@ -73,6 +75,12 @@ impl KbGameEngine for Example3DGame {
 			renderer.add_or_update_actor(&outline);
 		}
 		self.player = Some(player);
+
+		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.46, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.45, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.45, 35.0, &game_config);
 
 		// World objects
 		let mut actor = KbActor::new();
@@ -259,12 +267,27 @@ impl KbGameEngine for Example3DGame {
 		renderer.set_camera(&self.game_camera);
 
 		let player = &mut self.player.as_mut().unwrap();
-		player.tick(&input_manager, &self.game_camera, &game_config);
-
+		let (cur_state, next_state) = player.tick(&input_manager, &self.game_camera, &game_config);
 		let (hands, hands_outline) = player.get_actors();
 		renderer.add_or_update_actor(&hands);
 		for outline in hands_outline {
 			renderer.add_or_update_actor(&outline);
+		}
+		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
+			let mut color = CgVec4::new(1.0, 1.0, 1.0, 1.0);
+			if self.temp_shoot_count == 0 {
+				color = CgVec4::new(1.0, 0.0, 0.0, 1.0);
+			} else if self.temp_shoot_count == 1 {
+				color = CgVec4::new(0.0, 1.0, 1.0, 1.0);
+			} else if self.temp_shoot_count == 2 {
+				color = CgVec4::new(0.0, 0.0, 1.0, 1.0);
+			}
+			self.temp_shoot_count = (self.temp_shoot_count + 1) % 3;
+
+			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
+			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
+			let end = self.game_camera.get_position() + view_dir * 1000.0;
+			renderer.add_line(&start, &end, &color, 0.20, 1.0, &game_config);	
 		}
 	}
 }

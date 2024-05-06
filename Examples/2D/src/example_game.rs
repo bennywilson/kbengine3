@@ -130,7 +130,7 @@ impl KbGameEngine for Example2DGame {
 		}
     }
 
-	async fn initialize_world(&mut self, _renderer: &mut KbRenderer<'_>) {
+	async fn initialize_world(&mut self, _renderer: &mut KbRenderer<'_>, _game_config: &KbConfig ) {
 		log!("GameEngine::initialize_world() caled...");
 
 		// Create Player

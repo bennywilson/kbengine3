@@ -4,8 +4,10 @@ use instant::Instant;
 
 use kb_engine3::{kb_assets::*, kb_config::*, kb_game_object::*, kb_input::*, kb_resource::*, kb_utils::*, log};
 
-#[derive(Clone, Debug)]
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GamePlayerState {
+	None,
 	Idle,
 	Shooting
 }
@@ -65,17 +67,29 @@ impl GamePlayer {
 		log!("Changing state to {:?}", new_state);
 	}
 
-	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) {
+	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
+		let mut recoil_rad = cgmath::Rad::from(cgmath::Deg(0.0));
+
+		let ret_val: (GamePlayerState, GamePlayerState);
+		match self.current_state {
+			GamePlayerState::Idle => {
+				ret_val = (GamePlayerState::Idle, self.tick_idle(&input_manager));
+			}
+			GamePlayerState::Shooting => {
+				recoil_rad = cgmath::Rad::from(cgmath::Deg(5.0));
+				ret_val = (GamePlayerState::Shooting, self.tick_shooting(&game_camera));
+			}
+			_ => { panic!("GamePlayer::tick() - GamePlayerState::None is an invalid state") }
+		}
+
 		let (view_matrix, view_dir, right_dir) = game_camera.calculate_view_matrix();
 		let up_dir = view_dir.cross(right_dir).normalize();
 		let hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
 		self.hands_actor.set_position(&hand_pos);
 
-
-
         let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0));
 		let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
-		let hand_rot: CgQuat = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_y(hand_fix_rad)); 
+		let hand_rot: CgQuat = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad) * CgMat3::from_angle_y(hand_fix_rad)); 
 		self.hands_actor.set_rotation(&hand_rot);
 
 		let outline_iter = self.outline_actors.iter_mut();
@@ -83,26 +97,25 @@ impl GamePlayer {
 			outline.set_position(&hand_pos);
 			outline.set_rotation(&hand_rot);
 		}
-		match self.current_state {
-			GamePlayerState::Idle => {
-				self.tick_idle(&input_manager);
-			}
-			GamePlayerState::Shooting => {
-				self.tick_shooting(&game_camera);
-			}
-		}
-	}
-		
-	fn tick_idle(&mut self, input_manager: &KbInputManager) {
-		if self.current_state_time.elapsed().as_secs_f32() > 1.0 && input_manager.fire_pressed {
-			self.set_state(GamePlayerState::Shooting);
-		}
+
+		ret_val
 	}
 
-	fn tick_shooting(&mut self, _game_camera: &KbCamera) {
-		if self.current_state_time.elapsed().as_secs_f32() > 1.0  {
-			self.set_state(GamePlayerState::Idle);
+	// Returns a state change if any.
+	fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
+		if self.current_state_time.elapsed().as_secs_f32() > 0.1 && input_manager.fire_pressed {
+			self.set_state(GamePlayerState::Shooting);
+			return GamePlayerState::Shooting;
 		}
+		GamePlayerState::Idle
+	}
+
+	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
+		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
+			self.set_state(GamePlayerState::Idle);
+			return GamePlayerState::Idle;
+		}
+		GamePlayerState::Shooting
 	}
 }
 

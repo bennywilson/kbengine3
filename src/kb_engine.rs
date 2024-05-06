@@ -37,7 +37,7 @@ pub trait KbGameEngine {
 	fn new(game_config: &KbConfig) -> Self;
 
 	#[allow(async_fn_in_trait)]
-	async fn initialize_world<'a>(&mut self, renderer: &'a mut KbRenderer<'_>);
+	async fn initialize_world<'a>(&mut self, renderer: &'a mut KbRenderer<'_>, game_config: &KbConfig);
 
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 

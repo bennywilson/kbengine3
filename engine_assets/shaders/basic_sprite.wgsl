@@ -12,9 +12,9 @@ struct VertexInput {
 }
 
 struct InstanceInput {
-    @location(3) pos_scale: vec4<f32>,
-    @location(4) uv_scale_bias: vec4<f32>,
-    @location(5) instance_data: vec4<f32>
+    @location(10) pos_scale: vec4<f32>,
+    @location(11) uv_scale_bias: vec4<f32>,
+    @location(12) instance_data: vec4<f32>
 }
 
 struct VertexOutput {
