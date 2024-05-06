@@ -1,5 +1,7 @@
 struct ModelUniform {
+    world: mat4x4<f32>,
     inv_world: mat4x4<f32>,
+    world_view_proj: mat4x4<f32>,
     view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
@@ -50,7 +52,7 @@ fn vs_main(
     var pos = particle_origin + up_vec + right_vec;
 
     var out: VertexOutput;
-    out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
+    out.clip_position = model_uniform.world_view_proj * vec4<f32>(pos.xyz, 1.0);
     out.tex_coords = model.tex_coords;
     out.color = instance.color;
     return out;

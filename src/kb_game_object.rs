@@ -232,7 +232,9 @@ pub struct KbActor {
     rotation: CgQuat,
     scale: CgVec3,
 
-    render_group: KbRenderGroup,
+    render_group: KbRenderGroupType,
+    custom_render_group_handle: Option<usize>,
+
     model_handle: KbModelHandle,
 }
 
@@ -245,7 +247,8 @@ impl KbActor {
                 position: (0.0, 0.0, 0.0).into(),
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                render_group: KbRenderGroup::World,
+                render_group: KbRenderGroupType::World,
+                custom_render_group_handle: None,
                 model_handle: KbModelHandle::make_invalid()
             }
         }
@@ -283,12 +286,13 @@ impl KbActor {
         self.model_handle.clone()
     }
 
-    pub fn set_render_group(&mut self, new_render_group: &KbRenderGroup) {
+    pub fn set_render_group(&mut self, new_render_group: &KbRenderGroupType, custom_render_group_handle: &Option<usize>) {
         self.render_group = new_render_group.clone();
+        self.custom_render_group_handle = custom_render_group_handle.clone();
     }
 
-    pub fn get_render_group(&self) -> KbRenderGroup {
-        self.render_group.clone()
+    pub fn get_render_group(&self) -> (KbRenderGroupType, Option<usize>) {
+        (self.render_group.clone(), self.custom_render_group_handle.clone())
     }
 }
 

@@ -1,7 +1,7 @@
 use cgmath::InnerSpace;
 use instant::Instant;
 
-use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_utils::*, log};
+use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_resource::*, kb_utils::*, log};
 
 use crate::game_actors::*;
 
@@ -51,20 +51,27 @@ impl KbGameEngine for Example3DGame {
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>) {
 		log!("GameEngine::initialize_world() caled...");
-		let pinky_model = renderer.load_model("game_assets/pinky.glb").await;
-		let barrel_model = renderer.load_model("game_assets/barrel.glb").await;
-		let shotgun_model = renderer.load_model("game_assets/shotgun.glb").await;
-		let floor_model = renderer.load_model("game_assets/floor.glb").await;
-		let hands_model = renderer.load_model("game_assets/fp_hands.glb").await;
-		let hands_outline_model = renderer.load_model("game_assets/fp_hands_outline.glb").await;
-		
 
-		let player = GamePlayer::new(&hands_model, &hands_outline_model).await;
+		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
+		let barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+		let shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
+		let floor_model = renderer.load_model("game_assets/models/floor.glb").await;
+
+		// First person set up
+		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, true, "game_assets/shaders/first_person.wgsl").await);
+		let fp_outline_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, false, "game_assets/shaders/first_person_outline.wgsl").await);
+		let hands_model = renderer.load_model("game_assets/models/fp_hands.glb").await;
+		let hands_outline_model = renderer.load_model("game_assets/models/fp_hands_outline.glb").await;
+		let mut player = GamePlayer::new(&hands_model, &hands_outline_model).await;
+
 		let (hands, hands_outline) = player.get_actors();
+		hands.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_render_group);
+		hands_outline.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_outline_render_group);
 		renderer.add_or_update_actor(&hands);
 		renderer.add_or_update_actor(&hands_outline);
 		self.player = Some(player);
 
+		// World objects
 		let mut actor = KbActor::new();
 		actor.set_position(&[3.0, 0.0, 3.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
@@ -94,7 +101,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[3]);
 
 		let particle_params = KbParticleParams {
-			texture_file: "/game_assets/smoke_t.png".to_string(),
+			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::AlphaBlend,
 
 			min_particle_life: 3.0,
@@ -137,7 +144,7 @@ impl KbGameEngine for Example3DGame {
 		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
 
 		let particle_params = KbParticleParams {
-			texture_file: "./game_assets/ember_t.png".to_string(),
+			texture_file: "./game_assets/fx/ember_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::Additive,
 
 			min_particle_life: 1.5,

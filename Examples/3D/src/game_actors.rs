@@ -27,13 +27,13 @@ impl GamePlayer {
 		hands_actor.set_position(&[5.0, 1.0, 3.0].into());
 		hands_actor.set_scale(&[1.0, 1.0, 1.0].into());
 		hands_actor.set_model(&hand_handle);
-		hands_actor.set_render_group(&KbRenderGroup::Foreground);
+		hands_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
 		let mut outline_actor = KbActor::new();
 		outline_actor.set_position(&[5.0, 1.0, 3.0].into());
-		outline_actor.set_scale(&[0.99, 0.99, 0.99].into());
+		outline_actor.set_scale(&[1.0, 1.0, 1.0].into());
 		outline_actor.set_model(&hand_outline);
-		outline_actor.set_render_group(&KbRenderGroup::Foreground);
+		outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
 		GamePlayer {
 			current_state,
@@ -43,8 +43,8 @@ impl GamePlayer {
 		}
 	}
 
-	pub fn get_actors(&self) ->(&KbActor, &KbActor) {
-		(&self.hands_actor, &self.outline_actor)
+	pub fn get_actors(&mut self) ->(&mut KbActor, &mut KbActor) {
+		(&mut self.hands_actor, &mut self.outline_actor)
 	}
 	
 	pub fn set_state(&mut self, new_state: GamePlayerState) {
@@ -58,7 +58,7 @@ impl GamePlayer {
 		let up_dir = view_dir.cross(right_dir).normalize();
 		let hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
 		self.hands_actor.set_position(&hand_pos);
-		self.outline_actor.set_position(&(hand_pos + view_dir * (0.02) + right_dir * 0.000 + up_dir * 0.000));
+		self.outline_actor.set_position(&hand_pos);//^(hand_pos + view_dir * (0.02) + right_dir * 0.000 + up_dir * 0.000));
 
         let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0));
 		let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();

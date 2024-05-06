@@ -7,9 +7,12 @@ use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, 
 #[allow(dead_code)] 
 pub struct KbRenderer<'a> {
     device_resources: KbDeviceResources<'a>,
-    sprite_pipeline: KbSpritePipeline,
-    postprocess_pipeline: KbPostprocessPipeline,
-    model_pipeline: KbModelPipeline,
+    sprite_render_group: KbSpriteRenderGroup,
+    postprocess_render_group: KbPostprocessRenderGroup,
+    model_render_group: KbModelRenderGroup,
+
+    custom_world_render_groups: Vec<KbModelRenderGroup>,
+    custom_foreground_render_groups: Vec<KbModelRenderGroup>,
 
     asset_manager: KbAssetManager,
     actor_map: HashMap::<u32, KbActor>,
@@ -29,17 +32,22 @@ impl<'a> KbRenderer<'a> {
         log!("GameRenderer::new() called...");
 
         let mut asset_manager = KbAssetManager::new();
-
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-        let sprite_pipeline = KbSpritePipeline::new(&device_resources, &mut asset_manager, &game_config).await;
-        let postprocess_pipeline = KbPostprocessPipeline::new(&device_resources, &mut asset_manager).await;  
-        let model_pipeline = KbModelPipeline::new(&device_resources, &mut asset_manager).await;
+        let sprite_render_group = KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
+        let postprocess_render_group = KbPostprocessRenderGroup::new(&device_resources, &mut asset_manager).await;  
+        let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/Model.wgsl", false, &device_resources, &mut asset_manager).await;
+        
+        let custom_world_render_groups = Vec::<KbModelRenderGroup>::new();
+        let custom_foreground_render_groups = Vec::<KbModelRenderGroup>::new();
 
         KbRenderer {
             device_resources,
-            sprite_pipeline,
-            model_pipeline,
-            postprocess_pipeline,
+            sprite_render_group,
+            model_render_group,
+            postprocess_render_group,
+
+            custom_world_render_groups,
+            custom_foreground_render_groups,
 
             asset_manager,
             actor_map: HashMap::<u32, KbActor>::new(),
@@ -177,42 +185,48 @@ impl<'a> KbRenderer<'a> {
 
         {
             PERF_SCOPE!("Skybox Pass (Opaque)");
-            self.sprite_pipeline.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
+            self.sprite_render_group.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
         }
 
         {
             PERF_SCOPE!("Skybox Pass (Transparent)");
-            self.sprite_pipeline.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
+            self.sprite_render_group.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
+
         if self.particle_map.len() > 0 {
             PERF_SCOPE!("Particle Pass");
-            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
         }
 
         {
             PERF_SCOPE!("World Objects Pass");
-            self.sprite_pipeline.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
+            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
         }
 
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(&KbRenderGroup::World, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            self.model_render_group.render(&KbRenderGroupType::World, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            self.model_render_group.render(&KbRenderGroupType::WorldCustom, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
         }
 
         if self.particle_map.len() > 0 {
             PERF_SCOPE!("Particle Pass");
-            self.model_pipeline.render_particles(KbParticleBlendMode::AlphaBlend, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
-            self.model_pipeline.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_render_group.render_particles(KbParticleBlendMode::AlphaBlend, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
+            self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
         }
 
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
-            self.model_pipeline.render(&KbRenderGroup::Foreground, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            self.model_render_group.render(&KbRenderGroupType::Foreground, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            for i in 0..self.custom_foreground_render_groups.len() {
+                let render_group = &mut self.custom_foreground_render_groups[i];
+                render_group.render(&KbRenderGroupType::ForegroundCustom, Some(i), &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            }
         }
 
         {
             PERF_SCOPE!("Postprocess pass");
-            self.postprocess_pipeline.render(&final_view, &mut self.device_resources, game_config);
+            self.postprocess_render_group.render(&final_view, &mut self.device_resources, game_config);
         }
 
         {
@@ -231,8 +245,8 @@ impl<'a> KbRenderer<'a> {
         log!("Resizing window to {} x {}", game_config.window_width, game_config.window_height);
 
         self.device_resources.resize(&game_config);
-        self.sprite_pipeline = KbSpritePipeline::new(&self.device_resources, &mut self.asset_manager, &game_config).await;
-        self.postprocess_pipeline = KbPostprocessPipeline::new(&self.device_resources, &mut self.asset_manager).await;
+        self.sprite_render_group = KbSpriteRenderGroup::new(&self.device_resources, &mut self.asset_manager, &game_config).await;
+        self.postprocess_render_group = KbPostprocessRenderGroup::new(&self.device_resources, &mut self.asset_manager).await;
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {
@@ -270,5 +284,27 @@ impl<'a> KbRenderer<'a> {
         for particle in particle_iter {
             particle.1.tick(game_config);
         }
+    }
+
+    pub async fn add_custom_render_group(&mut self, render_group_type: &KbRenderGroupType, use_opaque_path: bool, shader_path: &str) -> usize {
+        let new_render_group = KbModelRenderGroup::new(shader_path, use_opaque_path, &self.device_resources, &mut self.asset_manager).await;
+        let render_group: Option<KbModelRenderGroup> = Some(new_render_group);
+        let handle = match *render_group_type {
+            KbRenderGroupType::ForegroundCustom => {
+                self.custom_foreground_render_groups.push(render_group.unwrap());
+                self.custom_foreground_render_groups.len()
+            }
+
+            KbRenderGroupType::WorldCustom => {
+                self.custom_world_render_groups.push(render_group.unwrap());
+                self.custom_world_render_groups.len()
+            }
+
+            _ => {
+                panic!("KbRenderer::add_custom_render_group() - Render type {:?} not supported", render_group_type);
+            }
+        } - 1;
+        
+        handle
     }
 }
