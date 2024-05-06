@@ -117,7 +117,6 @@ impl KbAssetManager {
 		file_to_byte_buffer.insert("barrel.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/barrel.glb").to_vec());
 		file_to_byte_buffer.insert("floor.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/floor.glb").to_vec());
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());
-		file_to_byte_buffer.insert("fp_hands_outline.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands_outline.glb").to_vec());
 		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec());
 		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/shotgun.glb").to_vec());
 
@@ -127,6 +126,9 @@ impl KbAssetManager {
 		file_to_string_buffer.insert("Model.wgsl".to_string(), include_str!("../engine_assets/shaders/Model.wgsl").to_string());
 		file_to_string_buffer.insert("particle.wgsl".to_string(), include_str!("../engine_assets/shaders/Particle.wgsl").to_string());
 		file_to_string_buffer.insert("postprocess_uber.wgsl".to_string(), include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string());
+		
+		file_to_string_buffer.insert("first_person.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string());
+		file_to_string_buffer.insert("first_person_outline.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person_outline.wgsl").to_string());
 
 		KbAssetManager {
 			texture_mappings: KbTextureAssetMappings::new(),

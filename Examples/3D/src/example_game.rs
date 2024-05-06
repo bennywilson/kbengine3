@@ -61,8 +61,7 @@ impl KbGameEngine for Example3DGame {
 		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, true, "game_assets/shaders/first_person.wgsl").await);
 		let fp_outline_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, false, "game_assets/shaders/first_person_outline.wgsl").await);
 		let hands_model = renderer.load_model("game_assets/models/fp_hands.glb").await;
-		let hands_outline_model = renderer.load_model("game_assets/models/fp_hands_outline.glb").await;
-		let mut player = GamePlayer::new(&hands_model, &hands_outline_model).await;
+		let mut player = GamePlayer::new(&hands_model).await;
 
 		let (hands, hands_outlines) = player.get_actors();
 

@@ -67,9 +67,9 @@ var t_noise: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var outColor: vec4<f32>;
-    var uv : vec2<f32>; 
-    uv = in.tex_coords;
-    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz * model_uniform.model_color.xyz;
-    return vec4<f32>(albedo.xyz, model_uniform.model_color.a);
+    var outColor: vec3<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords).xyz * model_uniform.model_color.xyz;
+    outColor.r = pow(outColor.r, model_uniform.time_colorpow_.y);
+    outColor.g = pow(outColor.g, model_uniform.time_colorpow_.y);
+    outColor.b = pow(outColor.b, model_uniform.time_colorpow_.y);
+    return vec4<f32>(outColor.xyz, model_uniform.model_color.a);
 }

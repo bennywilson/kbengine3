@@ -1777,10 +1777,8 @@ impl KbModelRenderGroup {
                 multiview: None,
             })
         } else {
-            let mut depth_comp = wgpu::CompareFunction::LessEqual;
             let mut write_enable = true;
-            if shader_path.contains("person") {
-                depth_comp = wgpu::CompareFunction::Always;
+            if shader_path.contains("first_person_outline") {
                 write_enable = false;
             }
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

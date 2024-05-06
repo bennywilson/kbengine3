@@ -19,7 +19,7 @@ pub struct GamePlayer {
 }
 
 impl GamePlayer {
-	pub async fn new(hand_handle: &KbModelHandle, hand_outline: &KbModelHandle) -> Self {
+	pub async fn new(hand_handle: &KbModelHandle) -> Self {
 		log!("Creating Player");
 		let current_state = GamePlayerState::Idle;
 		let current_state_time = Instant::now();
@@ -31,13 +31,12 @@ impl GamePlayer {
 
 		let mut outline_actors = Vec::<KbActor>::new();
 
-		let mut scale = CgVec3::new(1.0, 1.0, 1.0);
 		let mut push = 0.00075;
 		let num_steps = 10;
 		for i in 0..num_steps + 1 {
 			let mut outline_actor = KbActor::new();
 			outline_actor.set_position(&[5.0, 1.0, 3.0].into());
-			outline_actor.set_scale(&scale);
+			outline_actor.set_scale(&CG_VEC3_ONE);
 			let alpha = 1.0 - (i as f32 / num_steps as f32);
 			let alpha = (alpha).clamp(0.0, 1.0);
 			outline_actor.set_color(CgVec4::new(0.2, 0.2, 0.2, alpha));
@@ -80,7 +79,7 @@ impl GamePlayer {
 		self.hands_actor.set_rotation(&hand_rot);
 
 		let outline_iter = self.outline_actors.iter_mut();
-		for mut outline in outline_iter {
+		for outline in outline_iter {
 			outline.set_position(&hand_pos);
 			outline.set_rotation(&hand_rot);
 		}
