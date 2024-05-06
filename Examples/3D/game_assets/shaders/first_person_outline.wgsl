@@ -6,7 +6,9 @@ struct ModelUniform {
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
-    time_colorpow_: vec4<f32>
+    time_colorpow_: vec4<f32>,
+    model_color: vec4<f32>,
+    custom_data_1: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> model_uniform: ModelUniform;
@@ -36,6 +38,7 @@ fn vs_main(
     out.tex_coords = model.tex_coords;
 
     var pos: vec3<f32> = model.position.xyz * 0.3;
+    pos = pos + model.normal.xyz * model_uniform.custom_data_1.x;
     var normal = vec4<f32>(model.normal.xyz, 0.0);
     var normalized = normalize(normal.xyz);
     out.normal = (model_uniform.world * normal).xyz;
@@ -67,33 +70,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec4<f32>;
     var uv : vec2<f32>; 
     uv = in.tex_coords;
-    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
-
-    var normal = normalize(in.normal);
-    var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = dot_prod * vec3<f32>(0.0, 0.0, 0.0);
-
-    light_1 = light_1 * 0.9 + 0.1;
-    light_2 = light_2 * 0.9 + 0.1;
-    light_3 = light_3 * 0.9 + 0.1;
-
-    var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
-
-    outColor.x = lighting.x;
-    outColor.y = lighting.y;
-    outColor.z = lighting.z;
-    outColor.w = 1.0;
-
-    var val = 1.0 - (0.5 +  0.5 * pow(1.0 + dot(normal.xyz, -normalize(in.cam_to_vert.xyz)), 1.0));
-    outColor.r = val;//pow(outColor.r, model_uniform.time_colorpow_.y);
-    outColor.g = val;//pow(outColor.g, model_uniform.time_colorpow_.y);
-    outColor.b = val;//pow(outColor.b, model_uniform.time_colorpow_.y);
-    outColor.a = 1.0;//
-    return outColor;
+    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz * model_uniform.model_color.xyz;
+    return vec4<f32>(albedo.xyz, model_uniform.model_color.a);
 }

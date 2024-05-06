@@ -6,7 +6,9 @@ struct ModelUniform {
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
-    time_colorpow_: vec4<f32>
+    time_colorpow_: vec4<f32>,
+    model_color: vec4<f32>,
+    custom_data_1: vec4<f32>
 };
 @group(1) @binding(0)
 var<uniform> model_uniform: ModelUniform;
@@ -63,7 +65,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec4<f32>;
     var uv : vec2<f32>; 
     uv = in.tex_coords;
-    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
+    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz * model_uniform.model_color.xyz;
 
     var normal = normalize(in.normal);
     var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));

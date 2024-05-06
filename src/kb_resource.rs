@@ -42,7 +42,7 @@ impl KbVertex {
                 wgpu::VertexAttribute {
                     offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu::VertexFormat::Float32x3,
                 }
             ]
         }
@@ -1046,6 +1046,8 @@ pub struct KbModelUniform {
     pub camera_dir:[f32; 4],
     pub screen_dimensions: [f32; 4],
     pub time: [f32; 4],
+    pub model_color: [f32; 4],
+    pub custom_data_1: [f32; 4],
 }
 pub const MAX_UNIFORMS: usize = 100;
 
@@ -1775,6 +1777,12 @@ impl KbModelRenderGroup {
                 multiview: None,
             })
         } else {
+            let mut depth_comp = wgpu::CompareFunction::LessEqual;
+            let mut write_enable = true;
+            if shader_path.contains("person") {
+                depth_comp = wgpu::CompareFunction::Always;
+                write_enable = false;
+            }
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("KbModelTransparentGroup_opaque_pipeline"),
                 layout: Some(&render_pipeline_layout),
@@ -1803,7 +1811,7 @@ impl KbModelRenderGroup {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
+                    depth_write_enabled: write_enable,
                     depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
@@ -2010,7 +2018,10 @@ impl KbModelRenderGroup {
             let actor = actor_key_value.1;
             let model_handle = actor.get_model();
             let model = asset_manager.get_model(&model_handle).unwrap();
-            models_to_render.push(model_handle);
+
+            if models_to_render.contains(&model_handle) == false {
+                models_to_render.push(model_handle);
+            }
 
             let uniform_buffer = model.alloc_uniform_buffer();
             let mut uniform_data = KbModelUniform { ..Default::default() };
@@ -2024,6 +2035,8 @@ impl KbModelRenderGroup {
             uniform_data.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];
             uniform_data.time[0] = game_config.start_time.elapsed().as_secs_f32();
             uniform_data.time[1] = fragment_texture_fix;
+            uniform_data.model_color = [actor.get_color().x, actor.get_color().y, actor.get_color().z, actor.get_color().w];
+            uniform_data.custom_data_1 = [actor.get_custom_data_1().x, actor.get_custom_data_1().y, actor.get_custom_data_1().z, actor.get_custom_data_1().w];
             device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform_data]));
         }
 
@@ -2035,8 +2048,8 @@ impl KbModelRenderGroup {
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            for _ in 0..model.get_uniform_info_count() {
-                let uniform_bind_group = &model.get_uniform_bind_group(0);
+            for i in 0..model.get_uniform_info_count() {
+                let uniform_bind_group = &model.get_uniform_bind_group(i);
                 render_pass.set_bind_group(1, uniform_bind_group, &[]);
                 render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
                 render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
@@ -2121,6 +2134,8 @@ impl KbModelRenderGroup {
             uniform.screen_dimensions = [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0];
             uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
             uniform.time[1] = fragment_texture_fix;
+            uniform.custom_data_1 = [0.0, 0.0, 0.0, 0.0];
+            uniform.model_color = [1.0, 1.0, 1.0, 1.0];
             device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
 
             // Instances

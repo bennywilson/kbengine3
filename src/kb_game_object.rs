@@ -231,6 +231,8 @@ pub struct KbActor {
     position: CgVec3,
     rotation: CgQuat,
     scale: CgVec3,
+    color: CgVec4,
+    custom_data_1: CgVec4,
 
     render_group: KbRenderGroupType,
     custom_render_group_handle: Option<usize>,
@@ -247,6 +249,8 @@ impl KbActor {
                 position: (0.0, 0.0, 0.0).into(),
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
+                color: (1.0, 1.0, 1.0, 1.0).into(),
+                custom_data_1: (0.0, 0.0, 0.0, 0.0).into(),
                 render_group: KbRenderGroupType::World,
                 custom_render_group_handle: None,
                 model_handle: KbModelHandle::make_invalid()
@@ -293,6 +297,22 @@ impl KbActor {
 
     pub fn get_render_group(&self) -> (KbRenderGroupType, Option<usize>) {
         (self.render_group.clone(), self.custom_render_group_handle.clone())
+    }
+
+    pub fn set_color(&mut self, color: CgVec4) {
+        self.color = color;
+    }
+
+    pub fn get_color(&self) -> CgVec4 {
+        self.color.clone()
+    }
+
+    pub fn set_custom_data_1(&mut self, custom_data: CgVec4) {
+        self.custom_data_1 = custom_data;
+    }
+
+    pub fn get_custom_data_1(&self) -> CgVec4 {
+        self.custom_data_1.clone()
     }
 }
 

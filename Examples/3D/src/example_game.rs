@@ -64,11 +64,15 @@ impl KbGameEngine for Example3DGame {
 		let hands_outline_model = renderer.load_model("game_assets/models/fp_hands_outline.glb").await;
 		let mut player = GamePlayer::new(&hands_model, &hands_outline_model).await;
 
-		let (hands, hands_outline) = player.get_actors();
+		let (hands, hands_outlines) = player.get_actors();
+
 		hands.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_render_group);
-		hands_outline.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_outline_render_group);
 		renderer.add_or_update_actor(&hands);
-		renderer.add_or_update_actor(&hands_outline);
+
+		for outline in hands_outlines {
+			outline.set_render_group(&KbRenderGroupType::ForegroundCustom, &fp_outline_render_group);
+			renderer.add_or_update_actor(&outline);
+		}
 		self.player = Some(player);
 
 		// World objects
@@ -260,6 +264,8 @@ impl KbGameEngine for Example3DGame {
 
 		let (hands, hands_outline) = player.get_actors();
 		renderer.add_or_update_actor(&hands);
-		renderer.add_or_update_actor(&hands_outline);
+		for outline in hands_outline {
+			renderer.add_or_update_actor(&outline);
+		}
 	}
 }

@@ -6,7 +6,8 @@ struct ModelUniform {
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
-    time_colorpow_: vec4<f32>
+    time_colorpow_: vec4<f32>,
+    custom_data_1: vec4<f32>
 };
 
 @group(1) @binding(0)
