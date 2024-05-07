@@ -1,7 +1,8 @@
 use instant::Instant;
 //use cgmath::InnerSpace;
 
-use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*,
+            render_groups::kb_model_group::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -231,8 +232,13 @@ pub struct KbActor {
     position: CgVec3,
     rotation: CgQuat,
     scale: CgVec3,
+    color: CgVec4,
+    custom_data_1: CgVec4,
 
-    model_handle: KbModelFileHandle,
+    render_group: KbRenderGroupType,
+    custom_render_group_handle: Option<usize>,
+
+    model_handle: KbModelHandle,
 }
 
 impl KbActor {
@@ -244,7 +250,11 @@ impl KbActor {
                 position: (0.0, 0.0, 0.0).into(),
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: (0.0, 0.0, 0.0).into(),
-                model_handle: KbModelFileHandle::make_invalid()
+                color: (1.0, 1.0, 1.0, 1.0).into(),
+                custom_data_1: (0.0, 0.0, 0.0, 0.0).into(),
+                render_group: KbRenderGroupType::World,
+                custom_render_group_handle: None,
+                model_handle: KbModelHandle::make_invalid()
             }
         }
     }
@@ -273,12 +283,37 @@ impl KbActor {
         self.scale
     }
 
-    pub fn set_model(&mut self, new_model: &KbModelFileHandle) {
+    pub fn set_model(&mut self, new_model: &KbModelHandle) {
         self.model_handle = new_model.clone();
     }
 
-    pub fn get_model(&self) -> KbModelFileHandle {
+    pub fn get_model(&self) -> KbModelHandle {
         self.model_handle.clone()
+    }
+
+    pub fn set_render_group(&mut self, new_render_group: &KbRenderGroupType, custom_render_group_handle: &Option<usize>) {
+        self.render_group = new_render_group.clone();
+        self.custom_render_group_handle = custom_render_group_handle.clone();
+    }
+
+    pub fn get_render_group(&self) -> (KbRenderGroupType, Option<usize>) {
+        (self.render_group.clone(), self.custom_render_group_handle.clone())
+    }
+
+    pub fn set_color(&mut self, color: CgVec4) {
+        self.color = color;
+    }
+
+    pub fn get_color(&self) -> CgVec4 {
+        self.color.clone()
+    }
+
+    pub fn set_custom_data_1(&mut self, custom_data: CgVec4) {
+        self.custom_data_1 = custom_data;
+    }
+
+    pub fn get_custom_data_1(&self) -> CgVec4 {
+        self.custom_data_1.clone()
     }
 }
 

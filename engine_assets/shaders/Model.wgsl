@@ -1,11 +1,15 @@
 struct ModelUniform {
+    world: mat4x4<f32>,
     inv_world: mat4x4<f32>,
+    world_view_proj: mat4x4<f32>,
     view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
-    time_colorpow_: vec4<f32>
+    time_colorpow_: vec4<f32>,
+    custom_data_1: vec4<f32>
 };
+
 @group(1) @binding(0)
 var<uniform> model_uniform: ModelUniform;
 
@@ -33,9 +37,10 @@ fn vs_main(
     out.tex_coords = model.tex_coords;
 
     var pos: vec3<f32> = model.position.xyz * 0.3;
-    out.normal = model.normal;
+    var normal = vec4<f32>(model.normal.xyz, 0.0);
+    out.normal = (model_uniform.inv_world * normal).xyz;
 
-    out.clip_position = model_uniform.view_proj * vec4<f32>(pos.xyz, 1.0);
+    out.clip_position = model_uniform.world_view_proj * vec4<f32>(pos.xyz, 1.0);
     out.inv_light_1 = (model_uniform.inv_world * vec4<f32>(1.0, 1.0, 1.0, 0.0)).xyz;
     out.inv_light_2 = (model_uniform.inv_world * vec4<f32>(-1.0, 1.0, 1.0, 0.0)).xyz;
     out.inv_light_3 = (model_uniform.inv_world * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;

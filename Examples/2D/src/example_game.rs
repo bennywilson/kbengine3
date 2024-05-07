@@ -1,7 +1,7 @@
 use cgmath::{InnerSpace, Vector3};
 use instant::Instant;
 
-use kb_engine3::{log, kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::InputManager, kb_game_object::{GameObject, GameObjectState, GameObjectType}, kb_renderer::KbRenderer};
+use kb_engine3::{log, kb_config::KbConfig, kb_engine::KbGameEngine, kb_input::KbInputManager, kb_game_object::{GameObject, GameObjectState, GameObjectType}, kb_renderer::KbRenderer};
 use kb_engine3::kb_utils::*;
 
 const SKY_Z:f32 = 0.0;
@@ -130,7 +130,7 @@ impl KbGameEngine for Example2DGame {
 		}
     }
 
-	async fn initialize_world(&mut self, _renderer: &mut KbRenderer<'_>) {
+	async fn initialize_world(&mut self, _renderer: &mut KbRenderer<'_>, _game_config: &KbConfig ) {
 		log!("GameEngine::initialize_world() caled...");
 
 		// Create Player
@@ -338,7 +338,7 @@ impl KbGameEngine for Example2DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &InputManager, _game_config: &KbConfig) {
+	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &KbInputManager, _game_config: &KbConfig) {
 		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
         self.current_frame_time = Instant::now();
 

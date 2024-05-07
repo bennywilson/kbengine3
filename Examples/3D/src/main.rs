@@ -1,6 +1,7 @@
 use kb_engine3::{kb_config::KbConfig};
 
 mod example_game;
+mod game_actors;
 
 use example_game::Example3DGame;
 
