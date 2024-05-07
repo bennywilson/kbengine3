@@ -1,3 +1,4 @@
+use cgmath::InnerSpace;
 use std::mem::size_of;
 use wgpu::util::DeviceExt;
 
@@ -8,6 +9,7 @@ pub struct KbLine {
     pub start: CgVec3,
     pub end: CgVec3,
     pub color: CgVec4,
+    pub thickness: f32,
     pub end_time: f32,
 }
 
@@ -197,26 +199,36 @@ impl KbLineRenderGroup {
         let line_iter = lines.iter();
         let mut vertices = Vec::<KbVertex>::new();
         for line in line_iter {
+            let center_pos = (line.end + line.start) * 0.5;
+            let right_vec = center_pos - game_camera.get_position();
+            let forward_vec = (line.end - line.start).normalize();
+            let up_vec = right_vec.cross(forward_vec).normalize() * line.thickness;
+
+            let start_1 = line.start + up_vec;
+            let start_2 = line.start - up_vec;
+            let end_1 = line.end + up_vec;
+            let end_2 = line.end - up_vec;
+
             let vertex_1 = KbVertex{
-                position: [line.start.x, line.start.y, line.start.z].into(),
+                position: [start_1.x, start_1.y, start_1.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
                 color: line.color.into(),
             };
             let vertex_2 = KbVertex{
-                position: [line.start.x + 10.0, line.start.y, line.start.z].into(),
+                position: [start_2.x, start_2.y, start_2.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
                 color: line.color.into(),
             };
             let vertex_3 = KbVertex {
-                position: [line.start.x + 10.0, line.start.y + 1.0, line.start.z].into(),
+                position: [end_2.x, end_2.y, end_2.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
                 color: line.color.into(),
             };
             let vertex_4 = KbVertex {
-                position: [line.start.x, line.start.y + 1.0, line.start.z].into(),
+                position: [end_1.x, end_1.y, end_1.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
                 color: line.color.into(),

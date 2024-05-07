@@ -220,6 +220,11 @@ impl<'a> KbRenderer<'a> {
             self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
         }
 
+        {
+            PERF_SCOPE!("Line drawing pass");
+            self.line_render_group.render(&mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.debug_lines, game_config);
+        }
+
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
             self.model_render_group.render(&KbRenderGroupType::Foreground, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
@@ -227,11 +232,6 @@ impl<'a> KbRenderer<'a> {
                 let render_group = &mut self.custom_foreground_render_groups[i];
                 render_group.render(&KbRenderGroupType::ForegroundCustom, Some(i), &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
             }
-        }
-
-        {
-            PERF_SCOPE!("Line drawing pass");
-            self.line_render_group.render(&mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.debug_lines, game_config);
         }
 
         {
@@ -321,12 +321,13 @@ impl<'a> KbRenderer<'a> {
         handle
     }
 
-    pub fn add_line(&mut self, start: &CgVec3, end: &CgVec3, color: &CgVec4, duration: f32, game_config: &KbConfig) {
+    pub fn add_line(&mut self, start: &CgVec3, end: &CgVec3, color: &CgVec4, thickness: f32, duration: f32, game_config: &KbConfig) {
         self.debug_lines.push(
             KbLine {
                 start: start.clone(),
                 end: end.clone(),
                 color: color.clone(),
+                thickness,
                 end_time: game_config.start_time.elapsed().as_secs_f32() + duration,
             }
         );
