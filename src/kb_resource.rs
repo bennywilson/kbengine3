@@ -21,6 +21,7 @@ pub struct KbVertex {
     pub position: [f32; 3],
     pub tex_coords: [f32; 2],
     pub normal: [f32; 3],
+    pub color: [f32; 4],
 }
 
 impl KbVertex {
@@ -43,6 +44,11 @@ impl KbVertex {
                     offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
                 }
             ]
         }
@@ -50,10 +56,10 @@ impl KbVertex {
 }
  
 pub const VERTICES: &[KbVertex] = &[
-    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], normal: [0.0, 0.0, 1.0] },
-    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], normal: [0.0, 0.0, 1.0] },
-    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], normal: [0.0, 0.0, 1.0] },
-    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], normal: [0.0, 0.0, 1.0] },
+    KbVertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], normal: [0.0, 0.0, 1.0], color: [1.0, 1.0, 1.0, 1.0] },
+    KbVertex { position: [-1.0, 1.0, 0.0], tex_coords: [0.0, 0.0], normal: [0.0, 0.0, 1.0], color: [1.0, 1.0, 1.0, 1.0] },
+    KbVertex { position: [-1.0, -1.0, 0.0], tex_coords: [0.0, 1.0], normal: [0.0, 0.0, 1.0], color: [1.0, 1.0, 1.0, 1.0] },
+    KbVertex { position: [1.0, -1.0, 0.0], tex_coords: [1.0, 1.0], normal: [0.0, 0.0, 1.0], color: [1.0, 1.0, 1.0, 1.0] },
 ];
 
 pub const INDICES: &[u16] = &[
@@ -77,17 +83,17 @@ impl KbSpriteDrawInstance {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 3,     // Corresponds to @location in the shader
+                    shader_location: 10,     // Corresponds to @location in the shader
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 4,
+                    shader_location: 11,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     offset: 2 * size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 5,
+                    shader_location: 12,
                     format: wgpu::VertexFormat::Float32x4,
                 },
             ],

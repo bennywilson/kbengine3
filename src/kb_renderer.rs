@@ -247,7 +247,10 @@ impl<'a> KbRenderer<'a> {
         }
 
         self.end_frame(final_tex);
- 
+
+        let cur_time = game_config.start_time.elapsed().as_secs_f32();
+        self.debug_lines.retain_mut(|l| cur_time < l.end_time);
+
         Ok(())
     }
 

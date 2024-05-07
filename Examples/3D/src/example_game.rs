@@ -74,7 +74,8 @@ impl KbGameEngine for Example3DGame {
 		}
 		self.player = Some(player);
 
-		renderer.add_line(&CgVec3::new(5.0, 0.0, 5.0), &CgVec3::new(10.0, 0.0, 5.0), &CgVec4::new(1.0, 0.0, 1.0, 1.0), 5.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(1.0, 0.0, 0.0, 1.0), 5.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 0.75, 5.0), &CgVec3::new(10.0, 0.0, 5.0), &CgVec4::new(1.0, 1.0, 0.0, 1.0), 5.0, &game_config);
 
 		// World objects
 		let mut actor = KbActor::new();

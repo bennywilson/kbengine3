@@ -269,7 +269,8 @@ impl KbModel {
                     let vertex = KbVertex {
                         position: positions[i],
                         tex_coords: uvs[i],
-                        normal: normals[i]
+                        normal: normals[i],
+                        color: [1.0, 1.0, 1.0, 1.0]
                     };
                     vertices.push(vertex);
                     i = i + 1;
@@ -463,7 +464,8 @@ impl KbModel {
                     let vertex = KbVertex {
                         position: positions[i],
                         tex_coords: uvs[i],
-                        normal: normals[i]
+                        normal: normals[i],
+                        color: [1.0, 1.0, 1.0, 1.0]
                     };
                     vertices.push(vertex);
                     i = i + 1;

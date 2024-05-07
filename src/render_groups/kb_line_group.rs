@@ -201,21 +201,25 @@ impl KbLineRenderGroup {
                 position: [line.start.x, line.start.y, line.start.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
+                color: line.color.into(),
             };
             let vertex_2 = KbVertex{
                 position: [line.start.x + 10.0, line.start.y, line.start.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
+                color: line.color.into(),
             };
             let vertex_3 = KbVertex {
                 position: [line.start.x + 10.0, line.start.y + 1.0, line.start.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
+                color: line.color.into(),
             };
             let vertex_4 = KbVertex {
                 position: [line.start.x, line.start.y + 1.0, line.start.z].into(),
                 tex_coords: [0.0, 0.0].into(),
                 normal: [0.0, 1.0, 0.0].into(),
+                color: line.color.into(),
             };
 
             vertices.push(vertex_1);
