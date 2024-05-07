@@ -49,7 +49,7 @@ impl KbGameEngine for Example3DGame {
 		}
     }
 
-	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>) {
+	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
@@ -73,6 +73,8 @@ impl KbGameEngine for Example3DGame {
 			renderer.add_or_update_actor(&outline);
 		}
 		self.player = Some(player);
+
+		renderer.add_line(&CgVec3::new(5.0, 0.0, 5.0), &CgVec3::new(10.0, 0.0, 5.0), &CgVec4::new(1.0, 0.0, 1.0, 1.0), 5.0, &game_config);
 
 		// World objects
 		let mut actor = KbActor::new();

@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use wgpu_text::glyph_brush::{Section as TextSection, Text};
         
 use crate::{
-    kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log, PERF_SCOPE,
-    render_groups::{kb_model_group::*,  kb_postprocess_group::*, kb_sprite_group::* }
+    kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*, log, PERF_SCOPE,
+    render_groups::{kb_line_group::*, kb_model_group::*,  kb_postprocess_group::*, kb_sprite_group::* }
 };
 
 #[allow(dead_code)] 
@@ -13,6 +13,7 @@ pub struct KbRenderer<'a> {
     sprite_render_group: KbSpriteRenderGroup,
     postprocess_render_group: KbPostprocessRenderGroup,
     model_render_group: KbModelRenderGroup,
+    line_render_group: KbLineRenderGroup,
 
     custom_world_render_groups: Vec<KbModelRenderGroup>,
     custom_foreground_render_groups: Vec<KbModelRenderGroup>,
@@ -21,7 +22,7 @@ pub struct KbRenderer<'a> {
     actor_map: HashMap::<u32, KbActor>,
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
-
+    debug_lines: Vec<KbLine>,
     game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
     frame_times: Vec<f32>,
@@ -38,16 +39,18 @@ impl<'a> KbRenderer<'a> {
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
         let sprite_render_group = KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group = KbPostprocessRenderGroup::new(&device_resources, &mut asset_manager).await;  
-        let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/Model.wgsl", false, &device_resources, &mut asset_manager).await;
-        
+        let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/model.wgsl", false, &device_resources, &mut asset_manager).await;
+        let line_render_group = KbLineRenderGroup::new("/engine_assets/shaders/line.wgsl", &device_resources, &mut asset_manager).await;
         let custom_world_render_groups = Vec::<KbModelRenderGroup>::new();
         let custom_foreground_render_groups = Vec::<KbModelRenderGroup>::new();
+        let debug_lines = Vec::<KbLine>::new();
 
         KbRenderer {
             device_resources,
             sprite_render_group,
             model_render_group,
             postprocess_render_group,
+            line_render_group,
 
             custom_world_render_groups,
             custom_foreground_render_groups,
@@ -56,6 +59,7 @@ impl<'a> KbRenderer<'a> {
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
+            debug_lines,
 
             game_camera: KbCamera::new(),
             postprocess_mode: KbPostProcessMode::Passthrough,
@@ -226,6 +230,11 @@ impl<'a> KbRenderer<'a> {
         }
 
         {
+            PERF_SCOPE!("Line drawing pass");
+            self.line_render_group.render(&mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.debug_lines, game_config);
+        }
+
+        {
             PERF_SCOPE!("Postprocess pass");
             self.postprocess_render_group.render(&final_view, &mut self.device_resources, game_config);
         }
@@ -307,5 +316,16 @@ impl<'a> KbRenderer<'a> {
         } - 1;
         
         handle
+    }
+
+    pub fn add_line(&mut self, start: &CgVec3, end: &CgVec3, color: &CgVec4, duration: f32, game_config: &KbConfig) {
+        self.debug_lines.push(
+            KbLine {
+                start: start.clone(),
+                end: end.clone(),
+                color: color.clone(),
+                end_time: game_config.start_time.elapsed().as_secs_f32() + duration,
+            }
+        );
     }
 }

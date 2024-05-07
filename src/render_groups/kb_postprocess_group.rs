@@ -137,7 +137,7 @@ impl KbPostprocessRenderGroup {
             multiview: None,
         });
 
-        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/postprocess_filter.png", &device_resources).await;
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let postprocess_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -164,7 +164,7 @@ impl KbPostprocessRenderGroup {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+                usage: wgpu::BufferUsages::VERTEX
             }
         );
 
@@ -172,7 +172,7 @@ impl KbPostprocessRenderGroup {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+                usage: wgpu::BufferUsages::INDEX
             }
         );
         KbPostprocessRenderGroup {

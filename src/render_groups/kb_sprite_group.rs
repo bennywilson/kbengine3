@@ -53,8 +53,8 @@ impl KbSpriteRenderGroup {
             label: Some("kbSpritePipeline: texture_bind_group_layout"),
         });
 
-        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/SpriteSheet.png", &device_resources).await;
-        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/PostProcessFilter.png", &device_resources).await;
+        let sprite_tex_handle = asset_manager.load_texture("/engine_assets/textures/sprite_sheet.png", &device_resources).await;
+        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/postprocess_filter.png", &device_resources).await;
         let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(
@@ -78,7 +78,7 @@ impl KbSpriteRenderGroup {
             }
         );
 
-        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/BasicSprite.wgsl", &device_resources).await;
+        let shader_handle = asset_manager.load_shader("/engine_assets/shaders/basic_sprite.wgsl", &device_resources).await;
         let shader = asset_manager.get_shader(&shader_handle);
         
         let uniform = SpriteUniform {
@@ -172,7 +172,7 @@ impl KbSpriteRenderGroup {
             multiview: None,
         });
 
-        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/CloudSprite.wgsl", &device_resources).await;
+        let transparent_shader_handle = asset_manager.load_shader("/engine_assets/shaders/cloud_sprite.wgsl", &device_resources).await;
         let transparent_shader = asset_manager.get_shader(&transparent_shader_handle);
 
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -225,7 +225,7 @@ impl KbSpriteRenderGroup {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+                usage: wgpu::BufferUsages::VERTEX
             }
         );
 
@@ -233,7 +233,7 @@ impl KbSpriteRenderGroup {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+                usage: wgpu::BufferUsages::INDEX
             }
         );
 

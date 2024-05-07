@@ -1,7 +1,8 @@
 use cgmath::SquareMatrix;
 use std::{collections::HashMap, mem::size_of, result::Result::Ok};
-use wgpu::{BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension, util::DeviceExt};
-//use wgpu_text::{BrushBuilder, TextBrush};
+use wgpu::{
+    BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, 
+    TextureSampleType, TextureViewDimension, util::DeviceExt};
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, log};
 
@@ -1017,7 +1018,7 @@ impl KbModelRenderGroup {
         }
 
         // Render KbModels now that uniforms are set
-        let model_mappings = asset_manager.get_model_mappigns();
+        let model_mappings = asset_manager.get_model_mappings();
         let model_iter = models_to_render.iter_mut();
         for model_handle in model_iter {
             let model = &model_mappings[&model_handle];
