@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, result::Result::Ok};
 use wgpu::ShaderModule;
 
-use crate::{kb_resource::*, render_groups::kb_model_group::*, log};
+use crate::{kb_resource::*, render_groups::kb_model_group::*, log, make_kb_handle};
 
 #[cfg(target_arch = "wasm32")]
 fn format_url(file_name: &str) -> reqwest::Url {
@@ -50,44 +50,6 @@ pub async fn load_string(file_name: &str) -> anyhow::Result<String> {
     Ok(txt)
 }
 
-macro_rules! make_kb_handle {
-	($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
-		#[derive(Clone, Hash)]
-		pub struct $handle_type { index: u32 }
-
-		#[allow(dead_code)]
-		impl $handle_type {
-			fn is_valid(&self) -> bool {
-				self.index != u32::MAX 
-			}
-			pub fn make_invalid() -> $handle_type {
-				$handle_type { index: u32::MAX }
-			}
-		}
-		impl PartialEq for $handle_type { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
-		impl Eq for $handle_type{}
-
-		#[allow(dead_code)]
-		pub struct $mapping_type {
-			names_to_handles: HashMap<String, $handle_type>,
-			handles_to_assets: HashMap<$handle_type, $asset_type>,
-			next_handle: $handle_type,
-		}
-
-		impl $mapping_type {
-			pub fn new() -> Self {
-				let names_to_handles = HashMap::<String, $handle_type>::new();
-				let handles_to_assets = HashMap::<$handle_type, $asset_type>::new();
-				let next_handle = $handle_type { index: u32::MAX };
-				$mapping_type {
-					names_to_handles,
-					handles_to_assets,
-					next_handle
-				}
-			}
-		}
-	}
-}
 make_kb_handle!(KbTexture, KbTextureHandle, KbTextureAssetMappings);
 make_kb_handle!(ShaderModule, KbShaderHandle, KbShaderAssetMappings);
 type KbByteVec = Vec<u8>;
@@ -118,6 +80,7 @@ impl KbAssetManager {
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());
 		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec());
 		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/shotgun.glb").to_vec());
+		file_to_byte_buffer.insert("monster.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/monster.glb").to_vec());
 
 		let mut file_to_string_buffer =  HashMap::<String, String>:: new();
 		file_to_string_buffer.insert("basic_sprite.wgsl".to_string(), include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string());
@@ -129,6 +92,7 @@ impl KbAssetManager {
 	
 		file_to_string_buffer.insert("first_person.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string());
 		file_to_string_buffer.insert("first_person_outline.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person_outline.wgsl").to_string());
+		file_to_string_buffer.insert("monster.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/monster.wgsl").to_string());
 
 		KbAssetManager {
 			texture_mappings: KbTextureAssetMappings::new(),

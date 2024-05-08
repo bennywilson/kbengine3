@@ -6,6 +6,7 @@ use winit::{
 };
 
 pub mod kb_assets;
+pub mod kb_collision;
 pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;
@@ -76,7 +77,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame(&mut game_renderer, &input_manager, &mut game_config);
+                            game_engine.tick_frame(&mut game_renderer, &mut input_manager, &mut game_config);
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
@@ -132,7 +133,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
 
                     match event {
                         WindowEvent::RedrawRequested => {
-                            game_engine.tick_frame(&mut game_renderer, &input_manager, &mut game_config);
+                            game_engine.tick_frame(&mut game_renderer, &mut input_manager, &mut game_config);
                             let render_result = game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}

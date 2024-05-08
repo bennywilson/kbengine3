@@ -1,7 +1,8 @@
-use cgmath::InnerSpace;
+﻿use cgmath::InnerSpace;
 use instant::Instant;
 
-use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_resource::*, kb_utils::*, log};
+use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, 
+	kb_renderer::*, kb_resource::*, kb_utils::*, log};
 
 use crate::game_actors::*;
 use crate::game_actors::GamePlayerState;
@@ -11,12 +12,36 @@ pub const CAMERA_ROTATION_RATE: f32 = 100.0;
 
 pub struct Example3DGame {
 	player: Option<GamePlayer>,
+	mobs: Vec<GameMob>,
 	actors: Vec<KbActor>,
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
-	temp_shoot_count: u32,
+
+	monster_model: Option<KbModelHandle>,
+	monster_render_group: usize,
+	monster_spawn_timer: Instant,
+	collision_manager: KbCollisionManager,
+
+	invert_y: bool,
+	debug_collision: bool,
 }
-impl Example3DGame { }
+impl Example3DGame {
+	fn spawn_monster(&mut self, renderer: &mut KbRenderer<'_>) {
+		let pos = [
+			CgVec3::new(10.0, 2.0, 10.0),
+			CgVec3::new(-10.0, 2.0, 10.0),
+			CgVec3::new(-10.0, 2.0, -10.0),
+			CgVec3::new(10.0, 2.0, -10.0),
+		];
+		let monster_pos = pos[kb_random_u32(0, 3) as usize];
+
+		let mut monster = GameMob::new(&monster_pos, &mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
+		let monster_actor = monster.get_actor();
+		monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
+		renderer.add_or_update_actor(&monster_actor);
+		self.mobs.push(monster);
+	}
+}
 
 impl KbGameEngine for Example3DGame {
 	fn new(_game_config: &KbConfig) -> Self {
@@ -37,7 +62,7 @@ impl KbGameEngine for Example3DGame {
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
 			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: true
+			is_enemy: true,
 		});
 
 		let mut game_camera = KbCamera::new();
@@ -45,24 +70,34 @@ impl KbGameEngine for Example3DGame {
 	
 		Self {
 			actors: Vec::<KbActor>::new(),
+			mobs: Vec::<GameMob>::new(),
 			game_objects,
 			game_camera,
+			monster_model: None,
+			monster_render_group: usize::MAX,
+			monster_spawn_timer: Instant::now(),
 			player: None,
-			temp_shoot_count: 0,
+			collision_manager: KbCollisionManager::new(),
+			debug_collision: false,
+			invert_y: false,
 		}
     }
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
+		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]    [Y] inverts y   [i] toggle collision");
+		renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
+
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
 		let barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
 		let shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
 		let floor_model = renderer.load_model("game_assets/models/floor.glb").await;
+		let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
 
 		// First person set up
-		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, true, "game_assets/shaders/first_person.wgsl").await);
-		let fp_outline_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, false, "game_assets/shaders/first_person_outline.wgsl").await);
+		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, &KbBlendMode::None, "game_assets/shaders/first_person.wgsl").await);
+		let fp_outline_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, &KbBlendMode::Alpha, "game_assets/shaders/first_person_outline.wgsl").await);
 		let hands_model = renderer.load_model("game_assets/models/fp_hands.glb").await;
 		let mut player = GamePlayer::new(&hands_model).await;
 
@@ -76,11 +111,11 @@ impl KbGameEngine for Example3DGame {
 		}
 		self.player = Some(player);
 
-		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.46, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.45, 35.0, &game_config);
+		// Monster
+		let monster_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Additive, "game_assets/shaders/monster.wgsl").await);
+		self.monster_render_group = monster_render_group.unwrap();
+		self.monster_model = Some(monster_model);
+		self.spawn_monster(renderer);
 
 		// World objects
 		let mut actor = KbActor::new();
@@ -98,7 +133,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[1]);
 
 		let mut actor = KbActor::new();
-		actor.set_position(&[-4.0, 0.0, -5.0].into());
+		actor.set_position(&[9.0, 0.0, -4.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
@@ -215,6 +250,13 @@ impl KbGameEngine for Example3DGame {
 			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
+
+		// DEBUG
+		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
@@ -231,6 +273,7 @@ impl KbGameEngine for Example3DGame {
 		let mut camera_pos = self.game_camera.get_position();
 		let mut camera_rot = self.game_camera.get_rotation();
 
+		// Movement
 		if input_manager.up_pressed {
 			camera_pos = camera_pos + forward_dir * delta_time * CAMERA_MOVE_RATE;
 		}
@@ -247,24 +290,34 @@ impl KbGameEngine for Example3DGame {
 			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
 		}
 
-		let radians = delta_time * CAMERA_ROTATION_RATE;
+		let x_radians = delta_time * CAMERA_ROTATION_RATE;
+		let y_radians = if self.invert_y { -delta_time * CAMERA_ROTATION_RATE } else { delta_time * CAMERA_ROTATION_RATE };
 		if input_manager.left_arrow_pressed {
-			camera_rot.x += radians;
+			camera_rot.x += x_radians;
 		}
 		if input_manager.right_arrow_pressed {
-			camera_rot.x -= radians;
+			camera_rot.x -= x_radians;
 		}
 
 		if input_manager.up_arrow_pressed {
-			camera_rot.y -= radians;
+			camera_rot.y -= y_radians;
 		}
 		if input_manager.down_arrow_pressed {
-			camera_rot.y += radians
+			camera_rot.y += y_radians
 		}
 
 		self.game_camera.set_position(&camera_pos);
 		self.game_camera.set_rotation(&camera_rot);
 		renderer.set_camera(&self.game_camera);
+
+		// Debug
+		if input_manager.key_i() == KbButtonState::JustPressed {
+			self.debug_collision = !self.debug_collision;
+		}
+		
+		if input_manager.key_y() == KbButtonState::JustPressed {
+			self.invert_y = !self.invert_y;
+		}
 
 		let player = &mut self.player.as_mut().unwrap();
 		let (cur_state, next_state) = player.tick(&input_manager, &self.game_camera, &game_config);
@@ -273,21 +326,45 @@ impl KbGameEngine for Example3DGame {
 		for outline in hands_outline {
 			renderer.add_or_update_actor(&outline);
 		}
-		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
-			let mut color = CgVec4::new(1.0, 1.0, 1.0, 1.0);
-			if self.temp_shoot_count == 0 {
-				color = CgVec4::new(1.0, 0.0, 0.0, 1.0);
-			} else if self.temp_shoot_count == 1 {
-				color = CgVec4::new(0.0, 1.0, 1.0, 1.0);
-			} else if self.temp_shoot_count == 2 {
-				color = CgVec4::new(0.0, 0.0, 1.0, 1.0);
-			}
-			self.temp_shoot_count = (self.temp_shoot_count + 1) % 3;
 
+		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
 			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
 			let end = self.game_camera.get_position() + view_dir * 1000.0;
-			renderer.add_line(&start, &end, &color, 0.20, 1.0, &game_config);	
+
+			let (hit, handle) = self.collision_manager.cast_ray(&start, &end);
+			let mut mob_killed = false;
+			let color = if hit { CgVec4::new(1.0, 0.0, 0.0, 1.0) } else { CgVec4::new(0.0, 0.0, 1.0, 1.0) };
+			if hit {
+				self.mobs.retain_mut(|mob| {
+					if *mob.get_collision_handle() == *handle.as_ref().unwrap() {
+						mob_killed = mob.take_damage(&mut self.collision_manager, renderer);
+						!mob_killed
+					} else {
+						true
+					}
+				});
+			}
+
+			if self.debug_collision {
+				renderer.add_line(&start, &end, &color, 0.05, 0.33, &game_config);
+			}
+		}
+
+		// Tick monster
+		let monster_iter = self.mobs.iter_mut();
+		for monster in monster_iter {
+			monster.tick(camera_pos, &mut self.collision_manager, &game_config);
+			renderer.add_or_update_actor(&monster.get_actor());
+		}
+
+		if self.monster_spawn_timer.elapsed().as_secs_f32() > 2.0 {
+			self.monster_spawn_timer = Instant::now();
+			self.spawn_monster(renderer);
+		}
+
+		if self.debug_collision {
+			self.collision_manager.debug_draw(renderer, &game_config);
 		}
 	}
 }

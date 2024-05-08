@@ -1,8 +1,9 @@
-use cgmath::{InnerSpace, SquareMatrix};
+use cgmath::{InnerSpace, Rotation, SquareMatrix};
 
 use instant::Instant;
 
-use kb_engine3::{kb_assets::*, kb_config::*, kb_game_object::*, kb_input::*, kb_resource::*, kb_utils::*, log};
+use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*, kb_resource::*, 
+	kb_utils::*, log};
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,7 +65,6 @@ impl GamePlayer {
 	pub fn set_state(&mut self, new_state: GamePlayerState) {
 		self.current_state = new_state.clone();
 		self.current_state_time = Instant::now();
-		log!("Changing state to {:?}", new_state);
 	}
 
 	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
@@ -117,6 +117,7 @@ impl GamePlayer {
 		}
 		GamePlayerState::Shooting
 	}
+
 }
 
 #[allow(dead_code)]
@@ -129,26 +130,64 @@ enum GameMobState {
 
 #[allow(dead_code)]
 pub struct GameMob {
-	transform: KbActorTransform,
+	monster_actor: KbActor,
+	collision_handle: KbCollisionHandle,
+
 	current_state: GameMobState,
 	current_state_time: Instant
 }
 
 #[allow(dead_code)]
 impl GameMob {
-	pub fn new() -> Self {
-		let transform = KbActorTransform {
-			position: CG_VEC3_ZERO,
-			rotation: CG_QUAT_IDENT,
-			scale: CG_VEC3_ONE
-		};
+	pub fn new(position: &CgVec3, model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager) -> Self {
+		let mut monster_actor = KbActor::new();
+		monster_actor.set_position(&position);
+		monster_actor.set_scale(&[3.0, 3.0, 3.0].into());
+		monster_actor.set_model(&model_handle);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: monster_actor.get_position().clone(),
+			extents: CgVec3::new(2.0, 2.0, 2.0)
+		});
+		let collision_handle = collision_manager.add_collision(&collision_box);
+
 		let current_state = GameMobState::Idle;
 		let current_state_time = Instant::now();
 
 		GameMob {
-			transform,
+			monster_actor,
+			collision_handle,
 			current_state,
 			current_state_time
 		}
+	}
+
+	pub fn get_actor(&mut self) -> &mut KbActor {
+		&mut self.monster_actor
+	}
+
+	pub fn get_collision_handle(&self) -> &KbCollisionHandle {
+		&self.collision_handle
+	}
+
+	pub fn take_damage(&mut self, collision_manager: &mut KbCollisionManager, renderer: &mut KbRenderer) -> bool {
+		collision_manager.remove_collision(&self.collision_handle);
+		renderer.remove_actor(&self.monster_actor);
+		true
+	}
+
+	pub fn tick(&mut self, player_pos: CgVec3, collision_manager: &mut KbCollisionManager, game_config: &KbConfig) {
+		let vec_to_player = player_pos - self.monster_actor.get_position();
+		let dist_to_player = vec_to_player.magnitude();
+		let vec_to_player = vec_to_player.normalize();
+
+		let monster_actor = &mut self.monster_actor;
+		if dist_to_player > 5.0 {
+			let new_pos = monster_actor.get_position() + vec_to_player * game_config.delta_time * 5.0;
+			monster_actor.set_position(&new_pos);
+		}
+		monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
+
+		collision_manager.update_collision_position(&self.collision_handle, &monster_actor.get_position());
 	}
 }

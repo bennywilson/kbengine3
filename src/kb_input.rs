@@ -1,5 +1,12 @@
-//use winit::event::{VirtualKeyCode, ElementState};
-use winit::*;
+use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey}};
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum KbButtonState {
+   #[default]
+   None = 0,
+   JustPressed = 1,
+   Down = 2,
+}
 
 #[derive(Debug, Default)]
 pub struct KbInputManager {
@@ -17,6 +24,9 @@ pub struct KbInputManager {
     pub three_pressed: bool,
     pub four_pressed: bool,
     pub space_pressed: bool,
+
+    pub key_i: KbButtonState,
+    pub key_y: KbButtonState,
 }
 
 #[allow(dead_code)] 
@@ -25,62 +35,92 @@ impl KbInputManager {
         Default::default()
     }
 
-    pub fn update(&mut self, key: winit::keyboard::PhysicalKey, state: event::ElementState) -> bool {
-        let pressed = state == winit::event::ElementState::Pressed;
+    pub fn update(&mut self, key: PhysicalKey, state: ElementState) -> bool {
+        let pressed = state == ElementState::Pressed;
+
         match key {
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::KeyA) => {
+            PhysicalKey::Code(KeyCode::KeyA) => {
                 self.left_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::KeyD) => {
+            PhysicalKey::Code(KeyCode::KeyD) => {
                 self.right_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::KeyW) => {
+            PhysicalKey::Code(KeyCode::KeyW) => {
                 self.up_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::KeyS) => {
+            PhysicalKey::Code(KeyCode::KeyS) => {
                 self.down_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::Space) => {
+            PhysicalKey::Code(KeyCode::Space) => {
                 self.fire_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::Digit1) => {
+            PhysicalKey::Code(KeyCode::Digit1) => {
                 self.one_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::Digit2) => {
+            PhysicalKey::Code(KeyCode::Digit2) => {
                 self.two_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::Digit3) => {
+            PhysicalKey::Code(KeyCode::Digit3) => {
                 self.three_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::Digit4) => {
+            PhysicalKey::Code(KeyCode::Digit4) => {
                 self.four_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowUp) => {
+            PhysicalKey::Code(KeyCode::ArrowUp) => {
                 self.up_arrow_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowDown) => {
+            PhysicalKey::Code(KeyCode::ArrowDown) => {
                 self.down_arrow_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowLeft) => {
+            PhysicalKey::Code(KeyCode::ArrowLeft) => {
                 self.left_arrow_pressed = pressed;
                 true
             }
-            keyboard::PhysicalKey::Code(keyboard::KeyCode::ArrowRight) => {
+            PhysicalKey::Code(KeyCode::ArrowRight) => {
                 self.right_arrow_pressed = pressed;
                 true
             }
+            PhysicalKey::Code(KeyCode::KeyI) => {
+                if pressed {
+                    if self.key_i == KbButtonState::None {
+                        self.key_i = KbButtonState::JustPressed;
+                    }
+                } else {
+                    self.key_i = KbButtonState::None;
+                }
+                true
+            }
+            PhysicalKey::Code(KeyCode::KeyY) => {
+                if pressed {
+                    if self.key_y == KbButtonState::None {
+                        self.key_y = KbButtonState::JustPressed;
+                    }
+                } else {
+                    self.key_y = KbButtonState::None;
+                }
+                true
+            }
             _ => false
+        }
+    }
+
+    pub fn update_key_states(&mut self) {
+        if self.key_i == KbButtonState::JustPressed {
+            self.key_i = KbButtonState::Down;
+        }
+        if self.key_y == KbButtonState::JustPressed {
+            self.key_y = KbButtonState::Down;
         }
     }
 
@@ -102,5 +142,13 @@ impl KbInputManager {
 
     pub fn fire_pressed(&self) -> bool {
         self.fire_pressed
+    }
+
+    pub fn key_i(&self) -> KbButtonState {
+        self.key_i.clone()
+    }
+
+    pub fn key_y(&self) -> KbButtonState {
+        self.key_y.clone()
     }
 }

@@ -66,6 +66,46 @@ macro_rules! PERF_SCOPE {
 	}
 }
 
+#[macro_export]
+macro_rules! make_kb_handle {
+	($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
+		#[derive(Clone, Hash)]
+		pub struct $handle_type { index: u32 }
+
+		#[allow(dead_code)]
+		impl $handle_type {
+			fn is_valid(&self) -> bool {
+				self.index != u32::MAX 
+			}
+			pub fn make_invalid() -> $handle_type {
+				$handle_type { index: u32::MAX }
+			}
+		}
+		impl PartialEq for $handle_type { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
+		impl Eq for $handle_type{}
+
+		#[allow(dead_code)]
+		pub struct $mapping_type {
+			names_to_handles: HashMap<String, $handle_type>,
+			handles_to_assets: HashMap<$handle_type, $asset_type>,
+			next_handle: $handle_type,
+		}
+
+		impl $mapping_type {
+			pub fn new() -> Self {
+				let names_to_handles = HashMap::<String, $handle_type>::new();
+				let handles_to_assets = HashMap::<$handle_type, $asset_type>::new();
+				let next_handle = $handle_type { index: u32::MAX };
+				$mapping_type {
+					names_to_handles,
+					handles_to_assets,
+					next_handle
+				}
+			}
+		}
+	}
+}
+
 pub type CgVec3 = cgmath::Vector3<f32>;
 pub const CG_VEC3_ZERO: CgVec3 = CgVec3::new(0.0, 0.0, 0.0);
 pub const CG_VEC3_ONE: CgVec3 = CgVec3::new(1.0, 1.0, 1.0);
