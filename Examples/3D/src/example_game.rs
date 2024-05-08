@@ -1,7 +1,8 @@
 use cgmath::InnerSpace;
 use instant::Instant;
 
-use kb_engine3::{kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_resource::*, kb_utils::*, log};
+use kb_engine3::{kb_collision::*, kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, 
+	kb_resource::*, kb_utils::*, log};
 
 use crate::game_actors::*;
 use crate::game_actors::GamePlayerState;
@@ -15,6 +16,8 @@ pub struct Example3DGame {
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
 	temp_shoot_count: u32,
+
+	collision_manager: KbCollisionManager,
 }
 impl Example3DGame { }
 
@@ -49,6 +52,7 @@ impl KbGameEngine for Example3DGame {
 			game_camera,
 			player: None,
 			temp_shoot_count: 0,
+			collision_manager: KbCollisionManager::new(),
 		}
     }
 
@@ -75,12 +79,6 @@ impl KbGameEngine for Example3DGame {
 			renderer.add_or_update_actor(&outline);
 		}
 		self.player = Some(player);
-
-		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.46, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.45, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.45, 35.0, &game_config);
 
 		// World objects
 		let mut actor = KbActor::new();
@@ -215,6 +213,20 @@ impl KbGameEngine for Example3DGame {
 			random_val: kb_random_f32(0.0, 1000.0),
 			is_enemy: false
 		});
+
+		// DEBUG
+		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(-5.0, 2.5, 5.0),
+			extents: CgVec3::new(2.0, 2.0, 2.0)
+		});
+
+		self.collision_manager.add_collision(&collision_box);
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
@@ -289,5 +301,7 @@ impl KbGameEngine for Example3DGame {
 			let end = self.game_camera.get_position() + view_dir * 1000.0;
 			renderer.add_line(&start, &end, &color, 0.20, 1.0, &game_config);	
 		}
+
+		self.collision_manager.debug_draw(renderer, &game_config);
 	}
 }

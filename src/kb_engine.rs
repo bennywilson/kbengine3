@@ -1,37 +1,4 @@
-use crate::{kb_config::KbConfig, kb_game_object::*, kb_input::KbInputManager, kb_renderer::KbRenderer};
-
-#[allow(dead_code)] 
-trait KbAsset {
-    fn asset_name(&self) -> &String;
-}
-
-struct KbTexture {
-	name: String,
-}
-
-impl KbAsset for KbTexture {
-     fn asset_name(&self) -> &String {
-		 return &self.name;
-	 }
-}
-
-#[allow(dead_code)] 
-#[derive(Default)]
-pub struct KbAssetManager {
-	resources: Vec<Box<dyn KbAsset>>,
-}
-
-#[allow(dead_code)] 
-impl KbAssetManager {
-	pub fn new() -> Self {
-		Self {
-			..Default::default()
-		}
-	}
-	fn load_asset(_asset_name: String) {
-
-	}
-}
+use crate::{kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*};
 
 pub trait KbGameEngine {
 	fn new(game_config: &KbConfig) -> Self;

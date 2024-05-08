@@ -6,6 +6,7 @@ use winit::{
 };
 
 pub mod kb_assets;
+pub mod kb_collision;
 pub mod kb_config;
 pub mod kb_engine;
 pub mod kb_input;

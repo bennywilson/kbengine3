@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, result::Result::Ok};
 use wgpu::ShaderModule;
 
-use crate::{kb_resource::*, render_groups::kb_model_group::*, log};
+use crate::{kb_resource::*, render_groups::kb_model_group::*, log, make_kb_handle};
 
 #[cfg(target_arch = "wasm32")]
 fn format_url(file_name: &str) -> reqwest::Url {
@@ -50,44 +50,6 @@ pub async fn load_string(file_name: &str) -> anyhow::Result<String> {
     Ok(txt)
 }
 
-macro_rules! make_kb_handle {
-	($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
-		#[derive(Clone, Hash)]
-		pub struct $handle_type { index: u32 }
-
-		#[allow(dead_code)]
-		impl $handle_type {
-			fn is_valid(&self) -> bool {
-				self.index != u32::MAX 
-			}
-			pub fn make_invalid() -> $handle_type {
-				$handle_type { index: u32::MAX }
-			}
-		}
-		impl PartialEq for $handle_type { fn eq(&self, other: &Self) -> bool { self.index == other.index } }
-		impl Eq for $handle_type{}
-
-		#[allow(dead_code)]
-		pub struct $mapping_type {
-			names_to_handles: HashMap<String, $handle_type>,
-			handles_to_assets: HashMap<$handle_type, $asset_type>,
-			next_handle: $handle_type,
-		}
-
-		impl $mapping_type {
-			pub fn new() -> Self {
-				let names_to_handles = HashMap::<String, $handle_type>::new();
-				let handles_to_assets = HashMap::<$handle_type, $asset_type>::new();
-				let next_handle = $handle_type { index: u32::MAX };
-				$mapping_type {
-					names_to_handles,
-					handles_to_assets,
-					next_handle
-				}
-			}
-		}
-	}
-}
 make_kb_handle!(KbTexture, KbTextureHandle, KbTextureAssetMappings);
 make_kb_handle!(ShaderModule, KbShaderHandle, KbShaderAssetMappings);
 type KbByteVec = Vec<u8>;
