@@ -12,6 +12,7 @@ pub const CAMERA_ROTATION_RATE: f32 = 100.0;
 
 pub struct Example3DGame {
 	player: Option<GamePlayer>,
+	mobs: Vec<GameMob>,
 	actors: Vec<KbActor>,
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
@@ -47,6 +48,7 @@ impl KbGameEngine for Example3DGame {
 	
 		Self {
 			actors: Vec::<KbActor>::new(),
+			mobs: Vec::<GameMob>::new(),
 			game_objects,
 			game_camera,
 			player: None,
@@ -61,6 +63,7 @@ impl KbGameEngine for Example3DGame {
 		let barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
 		let shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
 		let floor_model = renderer.load_model("game_assets/models/floor.glb").await;
+		let monster_model = renderer.load_model("game_assets/models/chironex.glb").await;
 
 		// First person set up
 		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, true, "game_assets/shaders/first_person.wgsl").await);
@@ -78,6 +81,12 @@ impl KbGameEngine for Example3DGame {
 		}
 		self.player = Some(player);
 
+		// Monster
+		let mut monster = GameMob::new(&monster_model).await;
+		let monster_actor = monster.get_actor();
+		renderer.add_or_update_actor(&monster_actor);
+		self.mobs.push(monster);
+
 		// World objects
 		let mut actor = KbActor::new();
 		actor.set_position(&[3.0, 0.0, 3.0].into());
@@ -94,7 +103,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[1]);
 
 		let mut actor = KbActor::new();
-		actor.set_position(&[9.0, 0.0, -13.0].into());
+		actor.set_position(&[9.0, 0.0, -4.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
@@ -303,6 +312,12 @@ impl KbGameEngine for Example3DGame {
 			renderer.add_line(&start, &end, &color, 0.20, 1.0, &game_config);	
 		}
 
+		// Tick monster
+		let monster_iter = self.mobs.iter_mut();
+		for monster in monster_iter {
+			monster.tick(camera_pos);
+			renderer.add_or_update_actor(&monster.get_actor());
+		}
 		self.collision_manager.debug_draw(renderer, &game_config);
 	}
 }

@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, SquareMatrix};
+use cgmath::{InnerSpace, Rotation, SquareMatrix};
 
 use instant::Instant;
 
@@ -117,6 +117,7 @@ impl GamePlayer {
 		}
 		GamePlayerState::Shooting
 	}
+
 }
 
 #[allow(dead_code)]
@@ -129,26 +130,37 @@ enum GameMobState {
 
 #[allow(dead_code)]
 pub struct GameMob {
-	transform: KbActorTransform,
+	monster_actor: KbActor,
+
 	current_state: GameMobState,
 	current_state_time: Instant
 }
 
 #[allow(dead_code)]
 impl GameMob {
-	pub fn new() -> Self {
-		let transform = KbActorTransform {
-			position: CG_VEC3_ZERO,
-			rotation: CG_QUAT_IDENT,
-			scale: CG_VEC3_ONE
-		};
+	pub async fn new(model_handle: &KbModelHandle) -> Self {
+		let mut monster_actor = KbActor::new();
+		monster_actor.set_position(&[5.0, 3.0, -9.0].into());
+		monster_actor.set_scale(&[3.0, 3.0, 3.0].into());
+		monster_actor.set_model(&model_handle);
+		monster_actor.set_render_group(&KbRenderGroupType::World, &None);
+
 		let current_state = GameMobState::Idle;
 		let current_state_time = Instant::now();
 
 		GameMob {
-			transform,
+			monster_actor,
 			current_state,
 			current_state_time
 		}
+	}
+
+	pub fn get_actor(&mut self) -> &KbActor {
+		&self.monster_actor
+	}
+
+	pub fn tick(&mut self, player_pos: CgVec3) {
+		let vec_to_player = ((player_pos - self.monster_actor.get_position())).normalize();
+		self.monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
 	}
 }
