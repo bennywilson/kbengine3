@@ -15,7 +15,6 @@ pub struct Example3DGame {
 	actors: Vec<KbActor>,
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
-	temp_shoot_count: u32,
 
 	collision_manager: KbCollisionManager,
 }
@@ -51,7 +50,6 @@ impl KbGameEngine for Example3DGame {
 			game_objects,
 			game_camera,
 			player: None,
-			temp_shoot_count: 0,
 			collision_manager: KbCollisionManager::new(),
 		}
     }
@@ -96,7 +94,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_or_update_actor(&self.actors[1]);
 
 		let mut actor = KbActor::new();
-		actor.set_position(&[-4.0, 0.0, -5.0].into());
+		actor.set_position(&[9.0, 0.0, -13.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
 		self.actors.push(actor);
@@ -222,10 +220,9 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-			position: CgVec3::new(-5.0, 2.5, 5.0),
+			position: CgVec3::new(-8.0, 2.5, 5.0),
 			extents: CgVec3::new(2.0, 2.0, 2.0)
 		});
-
 		self.collision_manager.add_collision(&collision_box);
     }
 
@@ -285,20 +282,24 @@ impl KbGameEngine for Example3DGame {
 		for outline in hands_outline {
 			renderer.add_or_update_actor(&outline);
 		}
-		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
-			let mut color = CgVec4::new(1.0, 1.0, 1.0, 1.0);
-			if self.temp_shoot_count == 0 {
-				color = CgVec4::new(1.0, 0.0, 0.0, 1.0);
-			} else if self.temp_shoot_count == 1 {
-				color = CgVec4::new(0.0, 1.0, 1.0, 1.0);
-			} else if self.temp_shoot_count == 2 {
-				color = CgVec4::new(0.0, 0.0, 1.0, 1.0);
-			}
-			self.temp_shoot_count = (self.temp_shoot_count + 1) % 3;
 
+		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
 			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
 			let end = self.game_camera.get_position() + view_dir * 1000.0;
+
+			let (hit, handle) = self.collision_manager.cast_ray(&start, &end);
+			let color = if hit { CgVec4::new(1.0, 0.0, 0.0, 1.0) } else { CgVec4::new(0.0, 0.0, 1.0, 1.0) };
+			if hit {
+				self.collision_manager.remove_collision(&handle.unwrap());
+				let box_positions = [CgVec3::new(-12.0, 2.5, 10.0), CgVec3::new(-9.0, 2.5, 7.0), CgVec3::new(-6.0, 2.5, 4.0)];
+				let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+					position: box_positions[kb_random_u32(0, 2) as usize],
+					extents: CgVec3::new(2.0, 2.0, 2.0)
+				});
+				self.collision_manager.add_collision(&collision_box);
+			}
+
 			renderer.add_line(&start, &end, &color, 0.20, 1.0, &game_config);	
 		}
 
