@@ -17,6 +17,9 @@ pub struct Example3DGame {
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
 
+	pooled_gib_particles: Vec<KbParticleHandle>,
+	next_pooled_gib: usize,
+
 	monster_model: Option<KbModelHandle>,
 	monster_render_group: usize,
 	monster_spawn_timer: Instant,
@@ -73,6 +76,8 @@ impl KbGameEngine for Example3DGame {
 			mobs: Vec::<GameMob>::new(),
 			game_objects,
 			game_camera,
+			pooled_gib_particles: Vec::<KbParticleHandle>::new(),
+			next_pooled_gib: 0,
 			monster_model: None,
 			monster_render_group: usize::MAX,
 			monster_spawn_timer: Instant::now(),
@@ -150,11 +155,14 @@ impl KbGameEngine for Example3DGame {
 			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::AlphaBlend,
 
+			min_burst_count: 0,
+			max_burst_count: 0,
+
 			min_particle_life: 3.0,
 			max_particle_life: 5.0,
 
-			_min_actor_life: 5.1,
-			_max_actor_life: 5.1,
+			_min_actor_life: -1.0,
+			_max_actor_life: -1.0,
 
 			min_start_spawn_rate: 0.06,
 			max_start_spawn_rate: 0.06,
@@ -187,17 +195,20 @@ impl KbGameEngine for Example3DGame {
 			_end_color1: CgVec4::new(-0.5, -0.5, -0.5, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
 
 		let particle_params = KbParticleParams {
 			texture_file: "./game_assets/fx/ember_t.png".to_string(),
 			blend_mode: KbParticleBlendMode::Additive,
 
+			min_burst_count: 0,
+			max_burst_count: 0,
+
 			min_particle_life: 1.5,
 			max_particle_life: 2.5,
 
-			_min_actor_life: 5.1,
-			_max_actor_life: 5.1,
+			_min_actor_life: -1.0,
+			_max_actor_life: -1.0,
 
 			min_start_spawn_rate: 0.3,
 			max_start_spawn_rate: 0.3,
@@ -230,7 +241,7 @@ impl KbGameEngine for Example3DGame {
 			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
 		};
 		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		let _ = renderer.add_particle_actor(&particle_transform, &particle_params).await;
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
 
 		// Sky
 		self.game_objects.push(GameObject { 
@@ -257,6 +268,56 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
 		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
 		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+
+		// Pooled gibs
+		let particle_params = KbParticleParams {
+			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::AlphaBlend,
+
+			min_burst_count: 20,
+			max_burst_count: 30,
+
+			min_particle_life: 3.0,
+			max_particle_life: 5.0,
+
+			_min_actor_life: 1.5,
+			_max_actor_life: 1.5,
+
+			min_start_spawn_rate: 9999.0,
+			max_start_spawn_rate: 9999.0,
+
+			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
+			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
+
+			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
+			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
+
+			min_end_scale: CgVec3::new(0.7, 0.7, 0.7),
+			max_end_scale: CgVec3::new(1.2, 2.1, 2.1),
+
+			min_start_velocity: CgVec3::new(-10.0, -10.0, -10.0),
+			max_start_velocity: CgVec3::new(10.0, 10.0, 10.0),
+
+			min_start_rotation_rate: -0.03,
+			max_start_rotation_rate: 0.03,
+
+			min_start_acceleration: CgVec3::new(0.0, -5.0, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -5.0, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(0.4, 0.3, 0.6, 1.0),
+			start_color_1: CgVec4::new(0.9, 0.8, 0.8, 1.0),
+
+			end_color_0: CgVec4::new(-0.5, -0.5, -0.5, 0.0),
+			_end_color1: CgVec4::new(-0.5, -0.5, -0.5, 1.0),
+		};
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(3.0, 3.5, 0.0));
+		for _ in 0..20 {
+			let particle_handle = renderer.add_particle_actor(&particle_transform, &particle_params, false).await;
+			self.pooled_gib_particles.push(particle_handle);
+		}
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
@@ -339,6 +400,10 @@ impl KbGameEngine for Example3DGame {
 				self.mobs.retain_mut(|mob| {
 					if *mob.get_collision_handle() == *handle.as_ref().unwrap() {
 						mob_killed = mob.take_damage(&mut self.collision_manager, renderer);
+
+						self.next_pooled_gib = (self.next_pooled_gib + 1) % self.pooled_gib_particles.len();
+						renderer.enable_particle_actor(&self.pooled_gib_particles[self.next_pooled_gib], true);
+						renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actor().get_position());
 						!mob_killed
 					} else {
 						true

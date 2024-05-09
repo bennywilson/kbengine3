@@ -61,6 +61,9 @@ pub struct KbParticleParams {
     pub texture_file: String,
     pub blend_mode: KbParticleBlendMode,
 
+    pub min_burst_count: u32,
+    pub max_burst_count: u32,
+
     pub min_particle_life: f32,
     pub max_particle_life: f32,
     
@@ -122,7 +125,9 @@ pub struct KbParticleActor {
     start_time:  Instant,
     next_spawn_time: f32,
     pub particles: Vec<KbParticle>,
-    pub particle_handle: KbParticleHandle
+    pub particle_handle: KbParticleHandle,
+
+    pub active: bool,
 }
 
 impl KbParticleActor {
@@ -143,12 +148,18 @@ impl KbParticleActor {
             start_time,
             next_spawn_time,
             particles,
-            particle_handle: particle_handle.clone()
+            particle_handle: particle_handle.clone(),
+            active: true,
         }
     }
 
     pub fn tick(&mut self, game_config: &KbConfig) {
         let elapsed_time = self.start_time.elapsed().as_secs_f32();
+        if self.params._min_actor_life > 0.0 && elapsed_time > self.params._min_actor_life {
+            self.set_active(false);
+            return;
+        }
+
         if elapsed_time > self.next_spawn_time {
             let params = &self.params;
             self.next_spawn_time = elapsed_time + self.spawn_rate;
@@ -223,6 +234,47 @@ impl KbParticleActor {
 
     pub fn get_rotation(&self) -> CgQuat {
         self.transform.rotation
+    }
+
+    pub fn set_active(&mut self, active: bool) {
+        self.active = active;
+        self.particles.clear();
+        if active {
+            let count = kb_random_u32(self.params.min_burst_count, self.params.max_burst_count);
+            self.start_time = Instant::now();
+            for _ in 0..count {
+                let params = &self.params;
+                let position = kb_random_vec3(params.min_start_pos, params.max_start_pos);
+                let acceleration = kb_random_vec3(params.min_start_acceleration, params.max_start_acceleration);
+                let velocity = kb_random_vec3(params.min_start_velocity, params.max_start_velocity);
+                let color = kb_random_vec4(params.start_color_0, params.start_color_1);
+                let life_time = kb_random_f32(params.min_particle_life, params.max_particle_life);
+                let start_scale = kb_random_vec3(params.min_start_scale, params.max_start_scale);
+                let end_scale = kb_random_vec3(params.min_end_scale, params.max_end_scale);
+                let scale = start_scale;
+                let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_spawn_rate);
+                let rotation = 0.0;
+
+                let particle = KbParticle {
+                    position,
+                    scale,
+                    start_scale,
+                    end_scale,
+                    acceleration,
+                    velocity,
+                    rotation,
+                    rotation_rate,
+                    color,
+                    life_time,
+                    start_time: self.start_time.elapsed().as_secs_f32(),
+                };
+                self.particles.push(particle);
+            }
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 }
 

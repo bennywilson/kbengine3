@@ -1066,6 +1066,10 @@ impl KbModelRenderGroup {
                 continue;
             }
 
+            if particle_actor.is_active() == false {
+                continue;
+            }
+
             let position = particle_actor.get_position();
             let scale = particle_actor.get_scale();
             let model = &mut particle_val.1.model;
