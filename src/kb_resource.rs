@@ -8,6 +8,13 @@ use wgpu_text::{BrushBuilder, TextBrush};
 use crate::{kb_assets::*, kb_config::*, log};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+pub enum KbBlendMode {
+    None,
+    Alpha,
+    Additive
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum KbRenderGroupType {
     World,
     WorldCustom,

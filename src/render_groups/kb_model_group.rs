@@ -634,7 +634,7 @@ pub struct KbModelRenderGroup {
 }
 
 impl KbModelRenderGroup {
-    pub async fn new(shader_path: &str, use_opaque_pipeline: bool, device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
+    pub async fn new(shader_path: &str, blend_mode: &KbBlendMode, device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         log!("Creating KbModelRenderGroup with shader {shader_path}");
         let device = &device_resources.device;
         let surface_config = &device_resources.surface_config;
@@ -708,97 +708,68 @@ impl KbModelRenderGroup {
 
         let shader_handle = asset_manager.load_shader(shader_path, &device_resources).await;
         let model_shader = asset_manager.get_shader(&shader_handle);
-        let model_pipeline = if use_opaque_pipeline {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("KbModelRenderGroup_opaque_pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &model_shader,
-                    entry_point: "vs_main",
-                    buffers: &[KbVertex::desc()],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &model_shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState { 
-                        format: surface_config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-               primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-            })
-        } else {
-            let mut write_enable = true;
-            if shader_path.contains("first_person_outline") {
-                write_enable = false;
+        let blend = Some(match blend_mode {
+            KbBlendMode::None => { wgpu::BlendState::REPLACE }
+            KbBlendMode::Alpha => { wgpu::BlendState::ALPHA_BLENDING }
+            KbBlendMode::Additive => {
+                wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent::OVER,
+                }
             }
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("KbModelTransparentGroup_opaque_pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &model_shader,
-                    entry_point: "vs_main",
-                    buffers: &[KbVertex::desc()],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &model_shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState { 
-                        format: surface_config.format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: write_enable,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-            })
-        };
+        });
+
+        let mut depth_write_enabled = true;
+        if shader_path.contains("first_person_outline") {
+            depth_write_enabled = false;
+        }
+
+        let model_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("KbModelRenderGroup_opaque_pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &model_shader,
+                entry_point: "vs_main",
+                buffers: &[KbVertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &model_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { 
+                    format: surface_config.format,
+                    blend,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+           primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
 
         let particle_shader_handle = asset_manager.load_shader("/engine_assets/shaders/particle.wgsl", &device_resources).await;
         let particle_shader = asset_manager.get_shader(&particle_shader_handle);
@@ -965,7 +936,7 @@ impl KbModelRenderGroup {
         let (view_matrix, view_dir, _) = game_camera.calculate_view_matrix();
         let view_pos = game_camera.get_position();
         let view_pos = [view_pos.x, view_pos.y, view_pos.z, 1.0];
-        let fov = if render_group == KbRenderGroupType::World { game_config.fov } else { game_config.foreground_fov };
+        let fov = if render_group == KbRenderGroupType::World || render_group == KbRenderGroupType::WorldCustom { game_config.fov } else { game_config.foreground_fov };
         let proj_matrix = cgmath::perspective(cgmath::Deg(fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
         let fragment_texture_fix = {
             #[cfg(target_arch = "wasm32")] { 1.0 / 2.2 }

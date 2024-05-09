@@ -80,7 +80,7 @@ impl KbAssetManager {
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());
 		file_to_byte_buffer.insert("pinky.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec());
 		file_to_byte_buffer.insert("shotgun.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/shotgun.glb").to_vec());
-		file_to_byte_buffer.insert("chironex.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/chironex.glb").to_vec());
+		file_to_byte_buffer.insert("monster.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/monster.glb").to_vec());
 
 		let mut file_to_string_buffer =  HashMap::<String, String>:: new();
 		file_to_string_buffer.insert("basic_sprite.wgsl".to_string(), include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string());
@@ -92,6 +92,7 @@ impl KbAssetManager {
 	
 		file_to_string_buffer.insert("first_person.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string());
 		file_to_string_buffer.insert("first_person_outline.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person_outline.wgsl").to_string());
+		file_to_string_buffer.insert("monster.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/monster.wgsl").to_string());
 
 		KbAssetManager {
 			texture_mappings: KbTextureAssetMappings::new(),

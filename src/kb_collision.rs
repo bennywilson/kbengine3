@@ -1,7 +1,7 @@
 //use cgmath::InnerSpace;
 use std::collections::HashMap;
 
-use crate::{kb_config::*, kb_renderer::*, kb_utils::*, make_kb_handle, log};
+use crate::{kb_utils::*, make_kb_handle, log};
 
 make_kb_handle!(KbCollisionShape, KbCollisionHandle, KbCollisionMappings);
 
@@ -61,8 +61,27 @@ impl KbCollisionManager {
 		self.collision_objects.handles_to_assets.remove(handle);
 	}
 
+	pub fn update_collision_position(&mut self, handle: &KbCollisionHandle, new_pos: &CgVec3) {
+		let collision = self.collision_objects.handles_to_assets.get_mut(handle).expect("Bad collision handle");
+
+		let new_collision: KbCollisionShape;//::Sphere(KbCollisionSphere { position: CG_VEC3_ZERO, radius: 1.0 });
+		match collision {
+			KbCollisionShape::Sphere(s) => {
+				new_collision =  KbCollisionShape::Sphere(KbCollisionSphere { position: new_pos.clone(), radius: s.radius });
+			}
+			KbCollisionShape::AABB(b) => {
+				new_collision =  KbCollisionShape::AABB(KbCollisionAABB { position: new_pos.clone(), extents: b.extents });
+			}
+		}
+
+		self.collision_objects.handles_to_assets.insert(handle.clone(), new_collision);
+	}
+
 	pub fn cast_ray(&mut self, start: &CgVec3, dir: &CgVec3) -> (bool, Option<KbCollisionHandle>) {
 		
+	
+		let mut closest_hit = f32::MAX;
+		let mut closest_handle = KbCollisionHandle::make_invalid();
 		let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
 		for (handle, value) in collision_iter {
 			match value {
@@ -91,17 +110,18 @@ impl KbCollisionManager {
 					let smallest_max = actual_max.x.min(actual_max.y).min(actual_max.z);
 					let largest_min = actual_min.x.max(actual_min.y).max(actual_min.z);
 
-					if smallest_max >= largest_min {
-						return (true, Some(handle.clone()));
+					if largest_min > 0.0 && smallest_max >= largest_min && largest_min < closest_hit {
+						closest_hit = largest_min;
+						closest_handle = handle.clone();
 					}
 				}
 			}
 		}
 
-		(false, None)
+		(closest_handle.is_valid(), Some(closest_handle))
 	}
 
-	pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
+	/*pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
 		let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
 
 		for (_, value) in collision_iter {
@@ -138,5 +158,5 @@ impl KbCollisionManager {
 				}
 			}
 		}
-	}
+	}*/
 }

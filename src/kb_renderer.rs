@@ -39,7 +39,7 @@ impl<'a> KbRenderer<'a> {
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
         let sprite_render_group = KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group = KbPostprocessRenderGroup::new(&device_resources, &mut asset_manager).await;  
-        let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/model.wgsl", false, &device_resources, &mut asset_manager).await;
+        let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/model.wgsl", &KbBlendMode::None, &device_resources, &mut asset_manager).await;
         let line_render_group = KbLineRenderGroup::new("/engine_assets/shaders/line.wgsl", &device_resources, &mut asset_manager).await;
         let custom_world_render_groups = Vec::<KbModelRenderGroup>::new();
         let custom_foreground_render_groups = Vec::<KbModelRenderGroup>::new();
@@ -211,7 +211,10 @@ impl<'a> KbRenderer<'a> {
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
             self.model_render_group.render(&KbRenderGroupType::World, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
-            self.model_render_group.render(&KbRenderGroupType::WorldCustom, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+             for i in 0..self.custom_world_render_groups.len() {
+                let render_group = &mut self.custom_world_render_groups[i];
+                render_group.render(&KbRenderGroupType::WorldCustom, Some(i), &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
+            }
         }
 
         if self.particle_map.len() > 0 {
@@ -299,8 +302,8 @@ impl<'a> KbRenderer<'a> {
         }
     }
 
-    pub async fn add_custom_render_group(&mut self, render_group_type: &KbRenderGroupType, use_opaque_path: bool, shader_path: &str) -> usize {
-        let new_render_group = KbModelRenderGroup::new(shader_path, use_opaque_path, &self.device_resources, &mut self.asset_manager).await;
+    pub async fn add_custom_render_group(&mut self, render_group_type: &KbRenderGroupType, blend_mode: &KbBlendMode, shader_path: &str) -> usize {
+        let new_render_group = KbModelRenderGroup::new(shader_path, blend_mode, &self.device_resources, &mut self.asset_manager).await;
         let render_group: Option<KbModelRenderGroup> = Some(new_render_group);
         let handle = match *render_group_type {
             KbRenderGroupType::ForegroundCustom => {
