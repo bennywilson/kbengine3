@@ -17,19 +17,23 @@ pub struct GamePlayer {
 	current_state: GamePlayerState,
 	current_state_time: Instant,
 
+	hand_model: KbModelHandle,
 	hands_actor: KbActor,
 	outline_actors: Vec<KbActor>,
+
+	has_shotgun: bool,
+	ammo_count: u32,
 }
 
 impl GamePlayer {
-	pub async fn new(hand_handle: &KbModelHandle) -> Self {
+	pub async fn new(hand_model: &KbModelHandle) -> Self {
 		log!("Creating Player");
 		let current_state = GamePlayerState::Idle;
 		let current_state_time = Instant::now();
 		let mut hands_actor = KbActor::new();
 		hands_actor.set_position(&[5.0, 1.0, 3.0].into());
 		hands_actor.set_scale(&[1.0, 1.0, 1.0].into());
-		hands_actor.set_model(&hand_handle);
+		hands_actor.set_model(&hand_model);
 		hands_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
 		let mut outline_actors = Vec::<KbActor>::new();
@@ -44,7 +48,7 @@ impl GamePlayer {
 			let alpha = (alpha).clamp(0.0, 1.0);
 			outline_actor.set_color(CgVec4::new(0.2, 0.2, 0.2, alpha));
 			outline_actor.set_custom_data_1(CgVec4::new(push, 0.0, 0.0, 0.0)); 
-			outline_actor.set_model(&hand_handle);
+			outline_actor.set_model(&hand_model);
 			outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 			outline_actors.push(outline_actor);
 			push += 0.00075;
@@ -55,6 +59,9 @@ impl GamePlayer {
 			current_state_time,
 			hands_actor,
 			outline_actors,
+			has_shotgun: false,
+			ammo_count: 0,
+			hand_model: hand_model.clone()
 		}
 	}
 
@@ -65,6 +72,20 @@ impl GamePlayer {
 	pub fn set_state(&mut self, new_state: GamePlayerState) {
 		self.current_state = new_state.clone();
 		self.current_state_time = Instant::now();
+	}
+
+	pub fn give_shotgun(&mut self, model_handle: &KbModelHandle) {
+		self.hands_actor.set_model(&model_handle);
+
+		for i in 0..11 {
+			self.outline_actors[i].set_model(&model_handle);
+		}
+		self.ammo_count = 8;
+		self.has_shotgun = true;
+	}
+
+	pub fn has_shotgun(&self) -> bool {
+		self.has_shotgun
 	}
 
 	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
@@ -82,14 +103,24 @@ impl GamePlayer {
 			_ => { panic!("GamePlayer::tick() - GamePlayerState::None is an invalid state") }
 		}
 
+
 		let (view_matrix, view_dir, right_dir) = game_camera.calculate_view_matrix();
 		let up_dir = view_dir.cross(right_dir).normalize();
-		let hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
-		self.hands_actor.set_position(&hand_pos);
-
-        let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0));
 		let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
-		let hand_rot: CgQuat = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad) * CgMat3::from_angle_y(hand_fix_rad)); 
+
+		let hand_pos;
+		let hand_rot;
+
+		if self.has_shotgun == false {
+			hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
+			let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0) ); 
+			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad) * CgMat3::from_angle_y(hand_fix_rad)); 
+		} else {
+			hand_pos = game_camera.get_position() + (view_dir * 0.5) + (up_dir * 1.0) + (right_dir * 0.4);
+			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad)); 
+
+		}
+		self.hands_actor.set_position(&hand_pos);
 		self.hands_actor.set_rotation(&hand_rot);
 
 		let outline_iter = self.outline_actors.iter_mut();
@@ -112,6 +143,16 @@ impl GamePlayer {
 
 	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
+			if self.has_shotgun {
+				self.ammo_count = self.ammo_count - 1;
+				if self.ammo_count <= 0 {
+					self.hands_actor.set_model(&self.hand_model);
+					for outline in &mut self.outline_actors {
+						outline.set_model(&self.hand_model);
+					}
+					self.has_shotgun = false;
+				}
+			}
 			self.set_state(GamePlayerState::Idle);
 			return GamePlayerState::Idle;
 		}
@@ -189,5 +230,71 @@ impl GameMob {
 		monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
 
 		collision_manager.update_collision_position(&self.collision_handle, &monster_actor.get_position());
+	}
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum GamePropType {
+	Shotgun,
+	Barrel,
+}
+
+#[allow(dead_code)]
+pub struct GameProp {
+	actor: KbActor,
+	collision_handle: KbCollisionHandle,
+	prop_type: GamePropType,
+	particle_handles: [KbParticleHandle; 2],
+	start_time: Instant
+}
+
+impl GameProp {
+	pub fn new(prop_type: &GamePropType, position: &CgVec3, model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager, particle_handles: [KbParticleHandle; 2]) -> Self {
+		let mut actor = KbActor::new();
+		actor.set_position(&position);
+		actor.set_model(&model_handle);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: actor.get_position().clone(),
+			extents: CgVec3::new(2.0, 2.0, 2.0)
+		});
+
+		let collision_handle = collision_manager.add_collision(&collision_box);
+		let start_time = Instant::now();
+
+		GameProp {
+			actor,
+			collision_handle,
+			prop_type: *prop_type,
+			particle_handles,
+			start_time
+		}
+	}
+
+	pub fn take_damage(&mut self, collision_manager: &mut KbCollisionManager, renderer: &mut KbRenderer) -> bool {
+		collision_manager.remove_collision(&self.collision_handle);
+		renderer.remove_actor(&self.actor);
+
+		if self.particle_handles[0] != INVALID_PARTICLE_HANDLE {
+			renderer.enable_particle_actor(&self.particle_handles[0], false);
+		}
+
+		if self.particle_handles[1] != INVALID_PARTICLE_HANDLE {
+			renderer.enable_particle_actor(&self.particle_handles[1], false);
+		}
+
+		true
+	}
+
+	pub fn get_collision_handle(&self) -> KbCollisionHandle {
+		self.collision_handle.clone()
+	}
+
+	pub fn get_prop_type(&self) -> GamePropType {
+		self.prop_type
+	}
+	pub fn get_actor(&mut self) -> &mut KbActor {
+		&mut self.actor
 	}
 }

@@ -35,7 +35,7 @@ fn vs_main(
     instance: InstanceInput,
 ) -> VertexOutput {
     var particle_origin = instance.position.xyz;
-    var camera_to_particle = normalize(model_uniform.camera_pos.xyz - particle_origin);
+    var camera_to_particle = -model_uniform.camera_dir.xyz;
 
     var cos_theta = cos(instance.position.w);
     var sin_theta = sin(instance.position.w);

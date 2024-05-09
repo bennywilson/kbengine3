@@ -157,7 +157,7 @@ impl<'a> KbRenderer<'a> {
 
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "Press keys [1]-[4] to change postprocess fx.   {}\n\n\
+        let frame_time_string = format!(   "Keys [1]-[4] change postprocess fx.   {}\n\n\
                                             FPS: {:.0} \n\
                                             Frame time: {:.2} ms\n\
                                             Back End: {:?}\n\
@@ -283,15 +283,27 @@ impl<'a> KbRenderer<'a> {
         self.actor_map.remove(&actor.id);
     }
 
-    pub async fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams) {
+    pub async fn add_particle_actor(&mut self, transform: &KbActorTransform, particle_params: &KbParticleParams, active: bool) -> KbParticleHandle {
         self.next_particle_id.index = {
             if self.next_particle_id.index == u32::MAX { 0 }
             else { self.next_particle_id.index + 1 }
         };
-        let particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager).await;
+        let mut particle = KbParticleActor::new(&transform, &self.next_particle_id, &particle_params, &self.device_resources, &mut self.asset_manager).await;
+        particle.set_active(active);
         self.particle_map.insert(self.next_particle_id.clone(), particle);
+
+        self.next_particle_id.clone()
     }
 
+    pub fn enable_particle_actor(&mut self, handle: &KbParticleHandle, enable: bool) {
+        let particle = self.particle_map.get_mut(handle).unwrap();
+        particle.set_active(enable);
+    }
+
+    pub fn update_particle_transform(&mut self, handle: &KbParticleHandle, position: &CgVec3) {
+        let particle = self.particle_map.get_mut(handle).unwrap();
+        particle.set_position(&position);
+    }
     pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
         let model_handle = self.asset_manager.load_model(file_path, &mut self.device_resources).await;
         model_handle
@@ -302,9 +314,12 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn update_particles(&mut self, game_config: &KbConfig) {
+
         let particle_iter = self.particle_map.iter_mut();
         for particle in particle_iter {
-            particle.1.tick(game_config);
+            if particle.1.is_active() {
+                particle.1.tick(game_config);
+            }
         }
     }
 

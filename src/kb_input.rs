@@ -27,6 +27,7 @@ pub struct KbInputManager {
 
     pub key_i: KbButtonState,
     pub key_y: KbButtonState,
+    pub key_m: KbButtonState,
 }
 
 #[allow(dead_code)] 
@@ -111,6 +112,16 @@ impl KbInputManager {
                 }
                 true
             }
+            PhysicalKey::Code(KeyCode::KeyM) => {
+                if pressed {
+                    if self.key_m == KbButtonState::None {
+                        self.key_m = KbButtonState::JustPressed;
+                    }
+                } else {
+                    self.key_m = KbButtonState::None;
+                }
+                true
+            }
             _ => false
         }
     }
@@ -121,6 +132,9 @@ impl KbInputManager {
         }
         if self.key_y == KbButtonState::JustPressed {
             self.key_y = KbButtonState::Down;
+        }
+        if self.key_m == KbButtonState::JustPressed {
+            self.key_m = KbButtonState::Down;
         }
     }
 
@@ -150,5 +164,9 @@ impl KbInputManager {
 
     pub fn key_y(&self) -> KbButtonState {
         self.key_y.clone()
+    }
+
+    pub fn key_m(&self) -> KbButtonState {
+        self.key_m.clone()
     }
 }

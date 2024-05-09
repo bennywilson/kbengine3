@@ -977,6 +977,14 @@ impl KbModelRenderGroup {
             let mut uniform_data = KbModelUniform { ..Default::default() };
             let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from(actor.get_rotation()) * cgmath::Matrix4::from_nonuniform_scale(actor.get_scale().x, actor.get_scale().y, actor.get_scale().z);
             uniform_data.world = world_matrix.into();
+            if world_matrix.invert() == None {
+                log!("Doh!");
+                  log!("Doh!");
+                    log!("Doh!");
+                      log!("Doh!");
+                             uniform_data.inv_world = world_matrix.invert().unwrap().into();
+               
+            }
             uniform_data.inv_world = world_matrix.invert().unwrap().into();
             uniform_data.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
             uniform_data.view_proj = (proj_matrix * view_matrix).into();
@@ -1063,6 +1071,10 @@ impl KbModelRenderGroup {
         for mut particle_val in particle_iter {
             let particle_actor = &mut particle_val.1;
             if particle_actor.params.blend_mode != _blend_mode {
+                continue;
+            }
+
+            if particle_actor.is_active() == false {
                 continue;
             }
 
