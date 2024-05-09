@@ -29,6 +29,9 @@ pub struct KbRenderer<'a> {
     frame_timer: Instant,
     frame_count: u32,
     window_id: winit::window::WindowId,
+
+    game_debug_msg: String,
+    debug_msg_color: CgVec4,
 }
 
 impl<'a> KbRenderer<'a> {
@@ -66,7 +69,10 @@ impl<'a> KbRenderer<'a> {
             frame_times: Vec::<f32>::new(),
             frame_timer: Instant::now(),
             frame_count: 0,
-            window_id: window.id()
+            window_id: window.id(),
+
+            game_debug_msg: "".to_string(),
+            debug_msg_color: CgVec4::new(0.0, 1.0, 0.0, 1.0),
         }
     }
  
@@ -151,14 +157,14 @@ impl<'a> KbRenderer<'a> {
 
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "Press [1] to disable postprocess.   [2] Desaturation    [3] Scan lines   [4]  Warp.\n\n\
+        let frame_time_string = format!(   "Press keys [1]-[4] to change postprocess fx.   {}\n\n\
                                             FPS: {:.0} \n\
                                             Frame time: {:.2} ms\n\
                                             Back End: {:?}\n\
-                                            Graphics: {}\n",
+                                            Graphics: {}\n", self.game_debug_msg,
                                             frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
 
-        let section = TextSection::default().add_text(Text::new(&frame_time_string));
+        let section = TextSection::default().add_text(Text::new(&frame_time_string).with_color([self.debug_msg_color.x, self.debug_msg_color.y, self.debug_msg_color.z, self.debug_msg_color.w])); 
         device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
         let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
         device_resources.brush.draw(&mut render_pass);
@@ -334,5 +340,13 @@ impl<'a> KbRenderer<'a> {
                 end_time: game_config.start_time.elapsed().as_secs_f32() + duration,
             }
         );
+    }
+
+    pub fn set_debug_game_msg(&mut self, msg: &str) {
+        self.game_debug_msg = msg.to_string();
+    }
+
+    pub fn set_debug_font_color(&mut self, color: &CgVec4) {
+        self.debug_msg_color = color.clone();
     }
 }

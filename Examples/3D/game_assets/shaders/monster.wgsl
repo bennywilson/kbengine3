@@ -66,7 +66,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv : vec2<f32> = in.tex_coords;
 
     var scroll_uv1 = in.tex_coords * vec2<f32>(1.3, 1.3) + vec2<f32>(0.0, 3.0) * model_uniform.time_colorpow_.x;
-    var color1 = textureSample(t_diffuse, s_diffuse, scroll_uv1).x * vec3<f32>(0.0, 1.0, 1.0);
+    var color1 = textureSample(t_diffuse, s_diffuse, scroll_uv1).x * vec3<f32>(0.4, 0.0, 0.0);
 
     var scroll_uv2 = in.tex_coords * vec2<f32>(2.0, 2.0) + vec2<f32>(0.0, 0.1) * model_uniform.time_colorpow_.x;
     var color2 = textureSample(t_diffuse, s_diffuse, scroll_uv2).y * vec3<f32>(0.6, 0.3, 2.0);
@@ -74,24 +74,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var scroll_uv3 = in.tex_coords * vec2<f32>(0.55, 0.55) + vec2<f32>(0.0, 0.5) * model_uniform.time_colorpow_.x;
     var color3 = textureSample(t_diffuse, s_diffuse, scroll_uv3).y * vec3<f32>(1.0, 1.0, 0.0);
 
-
     let albedo = (color1 + color2 + color3) * 0.5;
-//let albedo = color1;
-    var normal = normalize(in.normal);
-    var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = dot_prod * vec3<f32>(0.0, 0.0, 0.0);
-
-    light_1 = light_1 * 0.9 + 0.1;
-    light_2 = light_2 * 0.9 + 0.1;
-    light_3 = light_3 * 0.9 + 0.1;
-
-    var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
 
     outColor.x = albedo.x;
     outColor.y = albedo.y;

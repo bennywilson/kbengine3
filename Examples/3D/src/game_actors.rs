@@ -139,9 +139,9 @@ pub struct GameMob {
 
 #[allow(dead_code)]
 impl GameMob {
-	pub fn new(model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager) -> Self {
+	pub fn new(position: &CgVec3, model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager) -> Self {
 		let mut monster_actor = KbActor::new();
-		monster_actor.set_position(&[5.0, 3.0, -9.0].into());
+		monster_actor.set_position(&position);
 		monster_actor.set_scale(&[3.0, 3.0, 3.0].into());
 		monster_actor.set_model(&model_handle);
 
@@ -149,7 +149,6 @@ impl GameMob {
 			position: monster_actor.get_position().clone(),
 			extents: CgVec3::new(2.0, 2.0, 2.0)
 		});
-
 		let collision_handle = collision_manager.add_collision(&collision_box);
 
 		let current_state = GameMobState::Idle;

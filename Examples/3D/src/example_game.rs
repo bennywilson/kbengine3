@@ -1,4 +1,4 @@
-use cgmath::InnerSpace;
+﻿use cgmath::InnerSpace;
 use instant::Instant;
 
 use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, 
@@ -21,20 +21,22 @@ pub struct Example3DGame {
 	monster_render_group: usize,
 	monster_spawn_timer: Instant,
 	collision_manager: KbCollisionManager,
+
+	invert_y: bool,
+	debug_collision: bool,
 }
 impl Example3DGame {
 	fn spawn_monster(&mut self, renderer: &mut KbRenderer<'_>) {
-
 		let pos = [
 			CgVec3::new(10.0, 2.0, 10.0),
 			CgVec3::new(-10.0, 2.0, 10.0),
 			CgVec3::new(-10.0, 2.0, -10.0),
 			CgVec3::new(10.0, 2.0, -10.0),
 		];
+		let monster_pos = pos[kb_random_u32(0, 3) as usize];
 
-		let mut monster = GameMob::new(&mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
+		let mut monster = GameMob::new(&monster_pos, &mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
 		let monster_actor = monster.get_actor();
-		monster_actor.set_position(&pos[kb_random_u32(0, 3) as usize]);
 		monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
 		renderer.add_or_update_actor(&monster_actor);
 		self.mobs.push(monster);
@@ -60,7 +62,7 @@ impl KbGameEngine for Example3DGame {
 			state_start_time: Instant::now(),
 			gravity_scale: 0.0,
 			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: true
+			is_enemy: true,
 		});
 
 		let mut game_camera = KbCamera::new();
@@ -76,11 +78,16 @@ impl KbGameEngine for Example3DGame {
 			monster_spawn_timer: Instant::now(),
 			player: None,
 			collision_manager: KbCollisionManager::new(),
+			debug_collision: false,
+			invert_y: false,
 		}
     }
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
+
+		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]    [Y] inverts y   [i] toggle collision");
+		renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
 		let barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
@@ -105,7 +112,7 @@ impl KbGameEngine for Example3DGame {
 		self.player = Some(player);
 
 		// Monster
-		let monster_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "game_assets/shaders/monster.wgsl").await);
+		let monster_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Additive, "game_assets/shaders/monster.wgsl").await);
 		self.monster_render_group = monster_render_group.unwrap();
 		self.monster_model = Some(monster_model);
 		self.spawn_monster(renderer);
@@ -250,12 +257,6 @@ impl KbGameEngine for Example3DGame {
 		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
 		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
 		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
-
-		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-			position: CgVec3::new(-8.0, 2.5, 5.0),
-			extents: CgVec3::new(2.0, 2.0, 2.0)
-		});
-		self.collision_manager.add_collision(&collision_box);
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
@@ -272,6 +273,7 @@ impl KbGameEngine for Example3DGame {
 		let mut camera_pos = self.game_camera.get_position();
 		let mut camera_rot = self.game_camera.get_rotation();
 
+		// Movement
 		if input_manager.up_pressed {
 			camera_pos = camera_pos + forward_dir * delta_time * CAMERA_MOVE_RATE;
 		}
@@ -288,24 +290,34 @@ impl KbGameEngine for Example3DGame {
 			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
 		}
 
-		let radians = delta_time * CAMERA_ROTATION_RATE;
+		let x_radians = delta_time * CAMERA_ROTATION_RATE;
+		let y_radians = if self.invert_y { -delta_time * CAMERA_ROTATION_RATE } else { delta_time * CAMERA_ROTATION_RATE };
 		if input_manager.left_arrow_pressed {
-			camera_rot.x += radians;
+			camera_rot.x += x_radians;
 		}
 		if input_manager.right_arrow_pressed {
-			camera_rot.x -= radians;
+			camera_rot.x -= x_radians;
 		}
 
 		if input_manager.up_arrow_pressed {
-			camera_rot.y -= radians;
+			camera_rot.y -= y_radians;
 		}
 		if input_manager.down_arrow_pressed {
-			camera_rot.y += radians
+			camera_rot.y += y_radians
 		}
 
 		self.game_camera.set_position(&camera_pos);
 		self.game_camera.set_rotation(&camera_rot);
 		renderer.set_camera(&self.game_camera);
+
+		// Debug
+		if input_manager.key_i() == KbButtonState::JustPressed {
+			self.debug_collision = !self.debug_collision;
+		}
+		
+		if input_manager.key_y() == KbButtonState::JustPressed {
+			self.invert_y = !self.invert_y;
+		}
 
 		let player = &mut self.player.as_mut().unwrap();
 		let (cur_state, next_state) = player.tick(&input_manager, &self.game_camera, &game_config);
@@ -334,7 +346,9 @@ impl KbGameEngine for Example3DGame {
 				});
 			}
 
-			renderer.add_line(&start, &end, &color, 0.05, 0.33, &game_config);	
+			if self.debug_collision {
+				renderer.add_line(&start, &end, &color, 0.05, 0.33, &game_config);
+			}
 		}
 
 		// Tick monster
@@ -349,6 +363,8 @@ impl KbGameEngine for Example3DGame {
 			self.spawn_monster(renderer);
 		}
 
-	//	self.collision_manager.debug_draw(renderer, &game_config);
+		if self.debug_collision {
+			self.collision_manager.debug_draw(renderer, &game_config);
+		}
 	}
 }

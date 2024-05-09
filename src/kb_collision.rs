@@ -1,7 +1,6 @@
-//use cgmath::InnerSpace;
 use std::collections::HashMap;
 
-use crate::{kb_utils::*, make_kb_handle, log};
+use crate::{kb_config::*, kb_renderer::*, kb_utils::*, make_kb_handle, log};
 
 make_kb_handle!(KbCollisionShape, KbCollisionHandle, KbCollisionMappings);
 
@@ -121,7 +120,7 @@ impl KbCollisionManager {
 		(closest_handle.is_valid(), Some(closest_handle))
 	}
 
-	/*pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
+	pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
 		let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
 
 		for (_, value) in collision_iter {
@@ -158,5 +157,5 @@ impl KbCollisionManager {
 				}
 			}
 		}
-	}*/
+	}
 }

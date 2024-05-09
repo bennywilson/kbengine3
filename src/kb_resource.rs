@@ -1,7 +1,8 @@
+use std::{mem::size_of, sync::Arc, result::Result::Ok};
+
 use ab_glyph::FontRef;
 use anyhow::*;
 use image::GenericImageView;
-use std::{mem::size_of, sync::Arc, result::Result::Ok};
 use wgpu::{Device, DeviceDescriptor, SurfaceConfiguration, Queue};
 use wgpu_text::{BrushBuilder, TextBrush};
 
