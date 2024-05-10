@@ -1,4 +1,4 @@
-struct Uniform {
+struct ModelUniform {
     world_view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
@@ -7,7 +7,7 @@ struct Uniform {
     extra_data: vec4<f32>,
 };
 @group(0) @binding(0)
-var<uniform> uniform: Uniform;
+var<uniform> uniform_buffer: ModelUniform;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -26,9 +26,12 @@ struct VertexOutput {
 @vertex
 fn vs_main(in_vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = vec4<f32>(in_vertex.position.xyz, 1.0);
-    out.clip_position.x *= instance.pos_scale.z;
-    out.clip_position.y *= instance.pos_scale.z;
+
+    var pos = in_vertex.position.xyz;
+    pos.x = ((pos.x - instance.pos_scale.x) * instance.pos_scale.z) + instance.pos_scale.x;
+    pos.y = ((pos.y - instance.pos_scale.y) * instance.pos_scale.z) + instance.pos_scale.y;
+
+    out.clip_position = vec4<f32>(pos, 1.0);
 
     out.tex_coords = in_vertex.tex_coords;
     return out;
@@ -45,6 +48,6 @@ var mask_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var out = vec4<f32>(0.3, 0.3, 0.0, 0.0) * textureSample(mask_texture, mask_sampler, in.tex_coords.xy).xyzw;
+    var out = vec4<f32>(0.1, 0.1, 0.0, 0.0) * textureSample(mask_texture, mask_sampler, in.tex_coords.xy).xyzw;
     return out;
 }

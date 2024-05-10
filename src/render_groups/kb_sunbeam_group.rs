@@ -1,11 +1,13 @@
 use std::mem::size_of;
-
+ 
+use cgmath::Transform;
 use wgpu::util::DeviceExt;
 
 use wgpu::{
-    BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
+    BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension
+};
 
-use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -16,7 +18,7 @@ pub struct KbSunbeamInstance {
 impl KbSunbeamInstance {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: size_of::<KbSpriteDrawInstance>() as wgpu::BufferAddress,
+            array_stride: size_of::<KbSunbeamInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -334,7 +336,7 @@ impl KbSunbeamRenderGroup {
         render_pass.set_pipeline(&self.mask_pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
@@ -384,12 +386,16 @@ impl KbSunbeamRenderGroup {
         };
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
 
+        let sun_position = CgPoint::new(500.0, 650.0, 600.0);
+        let sun_position = (proj_matrix * view_matrix).transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
-        for i in 0..10 {
-            let scale = (i as f32 + 1.0) * 1.1;
+        let mut scale = 1.0;
+
+        for _ in 0..20 {
             beam_instances.push(KbSunbeamInstance {
-                pos_scale: [1.0, 1.0, scale, scale],
+                pos_scale: [sun_position.x, sun_position.y, scale, scale],
             });
+            scale= scale + 0.1;
         }
         device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(beam_instances.as_slice()));
    
