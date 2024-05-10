@@ -30,6 +30,7 @@ pub struct KbRenderer<'a> {
     frame_count: u32,
     window_id: winit::window::WindowId,
 
+    display_debug_msg: bool,
     game_debug_msg: String,
     debug_msg_color: CgVec4,
 }
@@ -72,6 +73,7 @@ impl<'a> KbRenderer<'a> {
             window_id: window.id(),
 
             game_debug_msg: "".to_string(),
+            display_debug_msg: false,
             debug_msg_color: CgVec4::new(0.0, 1.0, 0.0, 1.0),
         }
     }
@@ -157,13 +159,19 @@ impl<'a> KbRenderer<'a> {
 
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "Keys [1]-[4] change postprocess fx.   {}\n\n\
-                                            FPS: {:.0} \n\
-                                            Frame time: {:.2} ms\n\
-                                            Back End: {:?}\n\
-                                            Graphics: {}\n", self.game_debug_msg,
-                                            frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str());
 
+        let frame_time_string = {
+            if self.display_debug_msg {
+                format!("Press [H] to disable Help.   Keys [1]-[4] change postprocess fx.   {}\n\n\
+                    FPS: {:.0} \n\
+                    Frame time: {:.2} ms\n\
+                    Back End: {:?}\n\
+                    Graphics: {}\n", self.game_debug_msg,
+                    frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str())
+            } else {
+                format!("Press [H] to enable Help.\n\nFPS: {:.0}", frame_rate)
+            }
+        };
         let section = TextSection::default().add_text(Text::new(&frame_time_string).with_color([self.debug_msg_color.x, self.debug_msg_color.y, self.debug_msg_color.z, self.debug_msg_color.w])); 
         device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
         let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
@@ -194,26 +202,6 @@ impl<'a> KbRenderer<'a> {
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
-        {
-            PERF_SCOPE!("Skybox Pass (Opaque)");
-            self.sprite_render_group.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
-        }
-
-        {
-            PERF_SCOPE!("Skybox Pass (Transparent)");
-            self.sprite_render_group.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
-        }
-
-        if self.particle_map.len() > 0 {
-            PERF_SCOPE!("Particle Pass");
-            self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
-        }
-
-        {
-            PERF_SCOPE!("World Objects Pass");
-            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
-        }
-
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
             self.model_render_group.render(&KbRenderGroupType::World, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
@@ -241,6 +229,21 @@ impl<'a> KbRenderer<'a> {
                 let render_group = &mut self.custom_foreground_render_groups[i];
                 render_group.render(&KbRenderGroupType::ForegroundCustom, Some(i), &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
             }
+        }
+
+        {
+            PERF_SCOPE!("World Objects Pass");
+            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
+        }
+
+        {
+            PERF_SCOPE!("Sprite Pass Opaque");
+            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &skybox_render_objs);
+        }
+
+        {
+            PERF_SCOPE!("Sprite Pass Transparent");
+            self.sprite_render_group.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
 
         {
@@ -363,5 +366,9 @@ impl<'a> KbRenderer<'a> {
 
     pub fn set_debug_font_color(&mut self, color: &CgVec4) {
         self.debug_msg_color = color.clone();
+    }
+
+    pub fn enable_help_text(&mut self) {
+        self.display_debug_msg = !self.display_debug_msg;
     }
 }

@@ -10,7 +10,8 @@ use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*,
 pub enum GamePlayerState {
 	None,
 	Idle,
-	Shooting
+	Shooting,
+	Reloading,
 }
 
 pub struct GamePlayer {
@@ -20,10 +21,14 @@ pub struct GamePlayer {
 	hand_model: KbModelHandle,
 	hands_actor: KbActor,
 	outline_actors: Vec<KbActor>,
+	hand_bone_offset: CgVec3,
 
 	has_shotgun: bool,
 	ammo_count: u32,
 }
+
+const PISTOL_AMMO_MAX: u32 = 8;
+const SHOTGUN_AMMO_MAX: u32 = 4;
 
 impl GamePlayer {
 	pub async fn new(hand_model: &KbModelHandle) -> Self {
@@ -60,8 +65,9 @@ impl GamePlayer {
 			hands_actor,
 			outline_actors,
 			has_shotgun: false,
-			ammo_count: 0,
-			hand_model: hand_model.clone()
+			ammo_count: PISTOL_AMMO_MAX,
+			hand_model: hand_model.clone(),
+			hand_bone_offset: CG_VEC3_ZERO,
 		}
 	}
 
@@ -80,12 +86,26 @@ impl GamePlayer {
 		for i in 0..11 {
 			self.outline_actors[i].set_model(&model_handle);
 		}
-		self.ammo_count = 8;
+		self.ammo_count = SHOTGUN_AMMO_MAX;
 		self.has_shotgun = true;
+	}
+
+	pub fn give_pistol(&mut self) {
+		self.hands_actor.set_model(&self.hand_model);
+
+		for i in 0..11 {
+			self.outline_actors[i].set_model(&self.hand_model);
+		}
+		self.ammo_count = PISTOL_AMMO_MAX;
+		self.has_shotgun = false;
 	}
 
 	pub fn has_shotgun(&self) -> bool {
 		self.has_shotgun
+	}
+
+	pub fn get_ammo_count(&self) -> u32 {
+		self.ammo_count
 	}
 
 	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
@@ -100,6 +120,9 @@ impl GamePlayer {
 				recoil_rad = cgmath::Rad::from(cgmath::Deg(5.0));
 				ret_val = (GamePlayerState::Shooting, self.tick_shooting(&game_camera));
 			}
+			GamePlayerState::Reloading => {
+				ret_val = (GamePlayerState::Reloading, self.tick_reloading(&game_camera));
+			}
 			_ => { panic!("GamePlayer::tick() - GamePlayerState::None is an invalid state") }
 		}
 
@@ -108,7 +131,7 @@ impl GamePlayer {
 		let up_dir = view_dir.cross(right_dir).normalize();
 		let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
 
-		let hand_pos;
+		let mut hand_pos;
 		let hand_rot;
 
 		if self.has_shotgun == false {
@@ -120,7 +143,9 @@ impl GamePlayer {
 			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad)); 
 
 		}
-		self.hands_actor.set_position(&hand_pos);
+		hand_pos += self.hand_bone_offset;
+
+		self.hands_actor.set_position(&(hand_pos));
 		self.hands_actor.set_rotation(&hand_rot);
 
 		let outline_iter = self.outline_actors.iter_mut();
@@ -136,6 +161,7 @@ impl GamePlayer {
 	fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.1 && input_manager.fire_pressed {
 			self.set_state(GamePlayerState::Shooting);
+			self.ammo_count = self.ammo_count - 1;
 			return GamePlayerState::Shooting;
 		}
 		GamePlayerState::Idle
@@ -143,22 +169,39 @@ impl GamePlayer {
 
 	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
-			if self.has_shotgun {
-				self.ammo_count = self.ammo_count - 1;
-				if self.ammo_count <= 0 {
-					self.hands_actor.set_model(&self.hand_model);
-					for outline in &mut self.outline_actors {
-						outline.set_model(&self.hand_model);
-					}
-					self.has_shotgun = false;
-				}
+			if self.ammo_count == 0 {
+				self.set_state(GamePlayerState::Reloading);
+				return GamePlayerState::Reloading;
 			}
+
 			self.set_state(GamePlayerState::Idle);
 			return GamePlayerState::Idle;
 		}
 		GamePlayerState::Shooting
 	}
 
+	fn tick_reloading(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
+		let reload_duration = 0.85;
+		let one_over_duration = 1.0 / reload_duration;
+		let half_duration = reload_duration * 0.5;
+		let bottom_y = -3.0;
+
+		let cur_state_time = self.current_state_time.elapsed().as_secs_f32();
+		if cur_state_time < half_duration {
+			self.hand_bone_offset.y = (bottom_y * cur_state_time * one_over_duration).clamp(bottom_y, 0.0);
+		} else {
+			self.give_pistol();
+			self.hand_bone_offset.y = (bottom_y * (reload_duration - cur_state_time) * one_over_duration).clamp(bottom_y, 0.0);
+		}
+
+		if cur_state_time > reload_duration {
+			self.give_pistol();
+			self.set_state(GamePlayerState::Idle);
+			GamePlayerState::Idle
+		} else {
+			GamePlayerState::Reloading
+		}
+	}
 }
 
 #[allow(dead_code)]
