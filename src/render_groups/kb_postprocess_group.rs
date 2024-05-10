@@ -5,11 +5,11 @@ use crate::{kb_assets::*, kb_config::*, kb_resource::*};
 pub struct KbPostprocessRenderGroup {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub postprocess_pipeline: wgpu::RenderPipeline,
+    pub pipeline: wgpu::RenderPipeline,
     pub postprocess_uniform: PostProcessUniform,
-    pub postprocess_constant_buffer: wgpu::Buffer,
-    pub postprocess_uniform_bind_group: wgpu::BindGroup,
-    pub postprocess_bind_group: wgpu::BindGroup,
+    pub uniform_buffer: wgpu::Buffer,
+    pub uniform_bind_group: wgpu::BindGroup,
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl KbPostprocessRenderGroup {
@@ -19,22 +19,22 @@ impl KbPostprocessRenderGroup {
         let render_texture = &device_resources.render_textures[0];
 
         // Post Process Pipeline
-        let postprocesst_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources).await;
-        let postprocess_shader = asset_manager.get_shader(&postprocesst_shader_handle);
+        let postprocess_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources).await;
+        let postprocess_shader = asset_manager.get_shader(&postprocess_shader_handle);
         
         let postprocess_uniform = PostProcessUniform {
             ..Default::default()
         };
 
-        let postprocess_constant_buffer = device.create_buffer_init(
+        let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("postprocess_constant_buffer"),
+                label: Some("uniform_buffer"),
                 contents: bytemuck::cast_slice(&[postprocess_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
 
-        let postprocess_uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -47,22 +47,22 @@ impl KbPostprocessRenderGroup {
                 count: None,
             }
             ],
-            label: Some("postprocess_uniform_bind_group_layout"),
+            label: Some("uniform_bind_group_layout"),
         });
 
 
-        let postprocess_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &postprocess_uniform_bind_group_layout,
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: postprocess_constant_buffer.as_entire_binding(),
+                    resource: uniform_buffer.as_entire_binding(),
                 }
             ],
-            label: Some("postprocess_bind_group"),
+            label: Some("bind_group"),
         });
 
-        let postprocess_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -91,18 +91,18 @@ impl KbPostprocessRenderGroup {
                     count: None,
                 },
             ],
-            label: Some("postprocess_bind_group_layout"),
+            label: Some("bind_group_layout"),
         });
 
-        let postprocess_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("postprocess_pipeline_layout"),
-            bind_group_layouts: &[&postprocess_bind_group_layout, &postprocess_uniform_bind_group_layout],
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout, &uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let postprocess_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("postprocess_pipeline"),
-            layout: Some(&postprocess_pipeline_layout),
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("pipeline"),
+            layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &postprocess_shader,
                 entry_point: "vs_main",
@@ -139,9 +139,9 @@ impl KbPostprocessRenderGroup {
 
         let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/postprocess_filter.png", &device_resources).await;
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
-        let postprocess_bind_group = device.create_bind_group(
+        let bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
-                layout: &postprocess_bind_group_layout,
+                layout: &bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -156,7 +156,7 @@ impl KbPostprocessRenderGroup {
                         resource: wgpu::BindingResource::TextureView(&render_texture.view),
                     },
                 ],
-                label: Some("postprocess_bind_group"),
+                label: Some("bind_group"),
             }
         );
  
@@ -176,11 +176,11 @@ impl KbPostprocessRenderGroup {
             }
         );
         KbPostprocessRenderGroup {
-            postprocess_pipeline,
+            pipeline,
             postprocess_uniform,
-            postprocess_constant_buffer,
-            postprocess_uniform_bind_group,
-            postprocess_bind_group,
+            uniform_buffer,
+            uniform_bind_group,
+            bind_group,
             vertex_buffer,
             index_buffer,
         }
@@ -208,9 +208,9 @@ impl KbPostprocessRenderGroup {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&self.postprocess_pipeline);
-        render_pass.set_bind_group(0, &self.postprocess_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.postprocess_uniform_bind_group, &[]);
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -225,7 +225,7 @@ impl KbPostprocessRenderGroup {
             }
         };
 
-        device_resources.queue.write_buffer(&self.postprocess_constant_buffer, 0, bytemuck::cast_slice(&[self.postprocess_uniform]));
+        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.postprocess_uniform]));
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
 

@@ -71,6 +71,7 @@ impl KbAssetManager {
 		let mut file_to_byte_buffer =  HashMap::<String, KbByteVec>:: new();
 		file_to_byte_buffer.insert("postprocess_filter.png".to_string(), include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec());
 		file_to_byte_buffer.insert("sprite_sheet.png".to_string(), include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec());
+		file_to_byte_buffer.insert("lens_flare.png".to_string(), include_bytes!("../engine_assets/textures/lens_flare.png").to_vec());
 		
 		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec());
 		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec());
@@ -89,6 +90,8 @@ impl KbAssetManager {
 		file_to_string_buffer.insert("particle.wgsl".to_string(), include_str!("../engine_assets/shaders/particle.wgsl").to_string());
 		file_to_string_buffer.insert("postprocess_uber.wgsl".to_string(), include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string());
 		file_to_string_buffer.insert("line.wgsl".to_string(), include_str!("../engine_assets/shaders/line.wgsl").to_string());
+		file_to_string_buffer.insert("sunbeam_draw.wgsl".to_string(), include_str!("../engine_assets/shaders/sunbeam_draw.wgsl").to_string());
+		file_to_string_buffer.insert("sunbeam_mask.wgsl".to_string(), include_str!("../engine_assets/shaders/sunbeam_mask.wgsl").to_string());
 	
 		file_to_string_buffer.insert("first_person.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string());
 		file_to_string_buffer.insert("first_person_outline.wgsl".to_string(), include_str!("./../Examples/3D/game_assets/shaders/first_person_outline.wgsl").to_string());

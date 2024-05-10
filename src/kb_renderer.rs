@@ -4,7 +4,7 @@ use wgpu_text::glyph_brush::{Section as TextSection, Text};
         
 use crate::{
     kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*, log, PERF_SCOPE,
-    render_groups::{kb_line_group::*, kb_model_group::*,  kb_postprocess_group::*, kb_sprite_group::* }
+    render_groups::{kb_line_group::*, kb_model_group::*,  kb_postprocess_group::*, kb_sprite_group::*, kb_sunbeam_group::*}
 };
 
 #[allow(dead_code)] 
@@ -14,6 +14,7 @@ pub struct KbRenderer<'a> {
     postprocess_render_group: KbPostprocessRenderGroup,
     model_render_group: KbModelRenderGroup,
     line_render_group: KbLineRenderGroup,
+    sunbeam_render_group: KbSunbeamRenderGroup,
 
     custom_world_render_groups: Vec<KbModelRenderGroup>,
     custom_foreground_render_groups: Vec<KbModelRenderGroup>,
@@ -41,12 +42,15 @@ impl<'a> KbRenderer<'a> {
 
         let mut asset_manager = KbAssetManager::new();
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
+        
         let sprite_render_group = KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group = KbPostprocessRenderGroup::new(&device_resources, &mut asset_manager).await;  
         let model_render_group = KbModelRenderGroup::new("/engine_assets/shaders/model.wgsl", &KbBlendMode::None, &device_resources, &mut asset_manager).await;
         let line_render_group = KbLineRenderGroup::new("/engine_assets/shaders/line.wgsl", &device_resources, &mut asset_manager).await;
+        let sunbeam_render_group = KbSunbeamRenderGroup::new(&device_resources, &mut asset_manager).await;
         let custom_world_render_groups = Vec::<KbModelRenderGroup>::new();
         let custom_foreground_render_groups = Vec::<KbModelRenderGroup>::new();
+
         let debug_lines = Vec::<KbLine>::new();
 
         KbRenderer {
@@ -55,7 +59,7 @@ impl<'a> KbRenderer<'a> {
             model_render_group,
             postprocess_render_group,
             line_render_group,
-
+            sunbeam_render_group,
             custom_world_render_groups,
             custom_foreground_render_groups,
 
@@ -132,31 +136,25 @@ impl<'a> KbRenderer<'a> {
     pub fn render_debug_text(&mut self, command_encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, _num_game_objects: u32, game_config: &KbConfig) { 
         let device_resources = &mut self.device_resources;
 
-        let color_attachment = {
-            Some(wgpu::RenderPassColorAttachment {
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Text"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                   load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
-                },
-            })
-        };
-
-        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Text"),
-            color_attachments: &[color_attachment],
+                }
+            })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
         });
 
         let mut total_frame_times = 0.0;
-        let frame_time_iter = self.frame_times.iter();
-        for frame_time in frame_time_iter {
+        for frame_time in &self.frame_times {
             total_frame_times = total_frame_times + frame_time;
         }
-
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
 
@@ -172,6 +170,7 @@ impl<'a> KbRenderer<'a> {
                 format!("Press [H] to enable Help.\n\nFPS: {:.0}", frame_rate)
             }
         };
+
         let section = TextSection::default().add_text(Text::new(&frame_time_string).with_color([self.debug_msg_color.x, self.debug_msg_color.y, self.debug_msg_color.z, self.debug_msg_color.w])); 
         device_resources.brush.resize_view(game_config.window_width as f32, game_config.window_height as f32, &device_resources.queue);
         let _ = &mut device_resources.brush.queue(&device_resources.device, &device_resources.queue, vec![&section]).unwrap();
@@ -193,14 +192,10 @@ impl<'a> KbRenderer<'a> {
     }
 
 	pub fn render_frame(&mut self, game_objects: &Vec<GameObject>, game_config: &KbConfig) -> Result<(), wgpu::SurfaceError> {
-
         self.update_particles(game_config);
         PERF_SCOPE!("render_frame()");
 
         let (final_tex, final_view) = self.begin_frame();
-
-       
-        let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("World Opaque");
@@ -225,6 +220,9 @@ impl<'a> KbRenderer<'a> {
             self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
         }
 
+        {
+            self.sunbeam_render_group.render(&mut self.device_resources, &self.game_camera, game_config);
+        }
 
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Foreground Opaque");
@@ -237,6 +235,8 @@ impl<'a> KbRenderer<'a> {
                 }
             }
         }
+
+        let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
         {
             PERF_SCOPE!("Sprite Pass Sky");

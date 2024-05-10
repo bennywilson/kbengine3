@@ -19,6 +19,7 @@ pub mod render_groups {
     pub mod kb_model_group;
     pub mod kb_postprocess_group;
     pub mod kb_sprite_group;
+    pub mod kb_sunbeam_group;
 }
 
 use crate::kb_config::*;
