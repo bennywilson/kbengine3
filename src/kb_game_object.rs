@@ -299,11 +299,11 @@ impl KbActor {
             NEXT_ACTOR_ID = NEXT_ACTOR_ID + 1;
             KbActor {
                 id: NEXT_ACTOR_ID,
-                position: (0.0, 0.0, 0.0).into(),
+                position: CG_VEC3_ZERO.into(),
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
-                scale: (0.0, 0.0, 0.0).into(),
-                color: (1.0, 1.0, 1.0, 1.0).into(),
-                custom_data_1: (0.0, 0.0, 0.0, 0.0).into(),
+                scale: CG_VEC3_ONE,
+                color: CG_VEC4_ONE,
+                custom_data_1: CG_VEC4_ZERO,
                 render_group: KbRenderGroupType::World,
                 custom_render_group_handle: None,
                 model_handle: KbModelHandle::make_invalid()

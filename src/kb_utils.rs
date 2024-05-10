@@ -113,6 +113,7 @@ pub const CG_VEC3_UP: CgVec3 = CgVec3::new(0.0, 1.0, 0.0);
 
 pub type CgVec4 = cgmath::Vector4<f32>;
 pub const CG_VEC4_ZERO: CgVec4 = CgVec4::new(0.0, 0.0, 0.0, 0.0);
+pub const CG_VEC4_ONE: CgVec4 = CgVec4::new(1.0, 1.0, 1.0, 1.0);
 
 pub type CgPoint = cgmath::Point3<f32>;
 pub const CG_POINT_ZERO: CgPoint = CgPoint::new(0.0, 0.0, 0.0);

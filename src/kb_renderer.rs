@@ -157,7 +157,7 @@ impl<'a> KbRenderer<'a> {
 
         let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
         let frame_rate = 1.0 / avg_frame_time;
-        let frame_time_string = format!(   "Press keys [1]-[4] to change postprocess fx.   {}\n\n\
+        let frame_time_string = format!(   "Keys [1]-[4] change postprocess fx.   {}\n\n\
                                             FPS: {:.0} \n\
                                             Frame time: {:.2} ms\n\
                                             Back End: {:?}\n\

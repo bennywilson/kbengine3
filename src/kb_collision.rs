@@ -76,9 +76,7 @@ impl KbCollisionManager {
 		self.collision_objects.handles_to_assets.insert(handle.clone(), new_collision);
 	}
 
-	pub fn cast_ray(&mut self, start: &CgVec3, dir: &CgVec3) -> (bool, Option<KbCollisionHandle>) {
-		
-	
+	pub fn cast_ray(&mut self, start: &CgVec3, dir: &CgVec3) -> (f32, Option<KbCollisionHandle>, Option<CgVec3>) {
 		let mut closest_hit = f32::MAX;
 		let mut closest_handle = KbCollisionHandle::make_invalid();
 		let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
@@ -117,7 +115,14 @@ impl KbCollisionManager {
 			}
 		}
 
-		(closest_handle.is_valid(), Some(closest_handle))
+		let hit_loc = {
+			if closest_handle.is_valid() {
+				Some(start + dir * closest_hit)
+			} else {
+				None
+			}
+		};
+		(closest_hit, Some(closest_handle), hit_loc)
 	}
 
 	pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {

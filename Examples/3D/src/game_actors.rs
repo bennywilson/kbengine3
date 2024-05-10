@@ -191,3 +191,63 @@ impl GameMob {
 		collision_manager.update_collision_position(&self.collision_handle, &monster_actor.get_position());
 	}
 }
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum GamePropType {
+	Shotgun,
+	Barrel,
+}
+
+#[allow(dead_code)]
+pub struct GameProp {
+	actor: KbActor,
+	collision_handle: KbCollisionHandle,
+	prop_type: GamePropType,
+	particle_handles: [KbParticleHandle; 2],
+	start_time: Instant
+}
+
+impl GameProp {
+	pub fn new(prop_type: &GamePropType, position: &CgVec3, model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager, particle_handles: [KbParticleHandle; 2]) -> Self {
+		let mut actor = KbActor::new();
+		actor.set_position(&position);
+		actor.set_model(&model_handle);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: actor.get_position().clone(),
+			extents: CgVec3::new(2.0, 2.0, 2.0)
+		});
+
+		let collision_handle = collision_manager.add_collision(&collision_box);
+		let start_time = Instant::now();
+
+		GameProp {
+			actor,
+			collision_handle,
+			prop_type: *prop_type,
+			particle_handles,
+			start_time
+		}
+	}
+
+	pub fn take_damage(&mut self, collision_manager: &mut KbCollisionManager, renderer: &mut KbRenderer) -> bool {
+		collision_manager.remove_collision(&self.collision_handle);
+		renderer.remove_actor(&self.actor);
+		renderer.enable_particle_actor(&self.particle_handles[0], false);
+		renderer.enable_particle_actor(&self.particle_handles[1], false);
+
+		true
+	}
+
+	pub fn get_collision_handle(&self) -> KbCollisionHandle {
+		self.collision_handle.clone()
+	}
+
+	pub fn get_prop_type(&self) -> GamePropType {
+		self.prop_type
+	}
+	pub fn get_actor(&mut self) -> &mut KbActor {
+		&mut self.actor
+	}
+}

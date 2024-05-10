@@ -13,23 +13,40 @@ pub const CAMERA_ROTATION_RATE: f32 = 100.0;
 pub struct Example3DGame {
 	player: Option<GamePlayer>,
 	mobs: Vec<GameMob>,
-	actors: Vec<KbActor>,
+	world_actors: Vec<KbActor>,
+	props: Vec<GameProp>,
+
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
+
+	collision_manager: KbCollisionManager,
 
 	pooled_gib_particles: Vec<KbParticleHandle>,
 	next_pooled_gib: usize,
 
+	pooled_impact_particles: Vec<KbParticleHandle>,
+	next_pooled_impact: usize,
+
+	pooled_smoke_particles: Vec<KbParticleHandle>,
+	next_pooled_smoke: usize,
+
+	barrel_model: Option<KbModelHandle>,
 	monster_model: Option<KbModelHandle>,
+
 	monster_render_group: usize,
 	monster_spawn_timer: Instant,
-	collision_manager: KbCollisionManager,
 
 	invert_y: bool,
 	debug_collision: bool,
+	pause_monsters: bool
 }
+
 impl Example3DGame {
 	fn spawn_monster(&mut self, renderer: &mut KbRenderer<'_>) {
+		if self.pause_monsters {
+			return;
+		}
+
 		let pos = [
 			CgVec3::new(10.0, 2.0, 10.0),
 			CgVec3::new(-10.0, 2.0, 10.0),
@@ -43,6 +60,31 @@ impl Example3DGame {
 		monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
 		renderer.add_or_update_actor(&monster_actor);
 		self.mobs.push(monster);
+	}
+
+	fn spawn_barrel(&mut self, renderer: &mut KbRenderer<'_>) {
+		let pos = [
+			CgVec3::new(0.0, 0.0, 0.0),
+		];
+		let barrel_pos = pos[0];//kb_random_u32(0, 3) as usize];
+		let smoke_pos = barrel_pos + CgVec3::new(0.0, 3.5, 0.0);
+
+		// Smoke
+		self.next_pooled_smoke = (self.next_pooled_smoke + 1) % self.pooled_smoke_particles.len();
+		let particle_handle_1 = self.pooled_smoke_particles[self.next_pooled_smoke].clone();
+		renderer.enable_particle_actor(&self.pooled_smoke_particles[self.next_pooled_smoke], true);
+		renderer.update_particle_transform(&self.pooled_smoke_particles[self.next_pooled_smoke], &smoke_pos);
+
+		// Ember
+		self.next_pooled_smoke = (self.next_pooled_smoke + 1) % self.pooled_smoke_particles.len();
+		let particle_handle_2 = self.pooled_smoke_particles[self.next_pooled_smoke].clone();
+		renderer.enable_particle_actor(&self.pooled_smoke_particles[self.next_pooled_smoke], true);
+		renderer.update_particle_transform(&self.pooled_smoke_particles[self.next_pooled_smoke], &smoke_pos);
+
+		let mut barrel = GameProp::new(&GamePropType::Barrel, &barrel_pos, self.barrel_model.as_ref().unwrap(), &mut self.collision_manager, [particle_handle_1, particle_handle_2]);
+		let barrel_actor = barrel.get_actor();
+		renderer.add_or_update_actor(&barrel_actor);
+		self.props.push(barrel);
 	}
 }
 
@@ -72,12 +114,18 @@ impl KbGameEngine for Example3DGame {
 		game_camera.set_position(&CgVec3::new(0.0, 2.0, -5.0));
 	
 		Self {
-			actors: Vec::<KbActor>::new(),
+			world_actors: Vec::<KbActor>::new(),
 			mobs: Vec::<GameMob>::new(),
+			props: Vec::<GameProp>::new(),
 			game_objects,
 			game_camera,
 			pooled_gib_particles: Vec::<KbParticleHandle>::new(),
 			next_pooled_gib: 0,
+			pooled_impact_particles: Vec::<KbParticleHandle>::new(),
+			next_pooled_impact: 0,
+			pooled_smoke_particles: Vec::<KbParticleHandle>::new(),
+			next_pooled_smoke: 0,
+			barrel_model: None,
 			monster_model: None,
 			monster_render_group: usize::MAX,
 			monster_spawn_timer: Instant::now(),
@@ -85,17 +133,18 @@ impl KbGameEngine for Example3DGame {
 			collision_manager: KbCollisionManager::new(),
 			debug_collision: false,
 			invert_y: false,
+			pause_monsters: false,
 		}
     }
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
-		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]    [Y] inverts y   [i] toggle collision");
+		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M] ");
 		renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
-		let barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+		self.barrel_model = Some(renderer.load_model("game_assets/models/barrel.glb").await);
 		let shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
 		let floor_model = renderer.load_model("game_assets/models/floor.glb").await;
 		let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
@@ -127,121 +176,29 @@ impl KbGameEngine for Example3DGame {
 		actor.set_position(&[3.0, 0.0, 3.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[0]);
+		self.world_actors.push(actor);
+		renderer.add_or_update_actor(&self.world_actors[0]);
 
-		let mut actor = KbActor::new();
+	/*	let mut actor = KbActor::new();
 		actor.set_position(&[0.0, 0.0, 0.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
-		actor.set_model(&barrel_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[1]);
+		actor.set_model(&self.barrel_model);
+		self.world_actors.push(actor);
+		renderer.add_or_update_actor(&self.world_actors[1]);*/
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[9.0, 0.0, -4.0].into());
 		actor.set_scale(&[2.0, 2.0, 2.0].into());
 		actor.set_model(&shotgun_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[2]);
+		self.world_actors.push(actor);
+		renderer.add_or_update_actor(&self.world_actors.last().unwrap());
 
 		let mut actor = KbActor::new();
 		actor.set_position(&[0.0, 0.0, 0.0].into());
 		actor.set_scale(&[10.0, 19.0, 10.0].into());
 		actor.set_model(&floor_model);
-		self.actors.push(actor);
-		renderer.add_or_update_actor(&self.actors[3]);
-
-		let particle_params = KbParticleParams {
-			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
-			blend_mode: KbParticleBlendMode::AlphaBlend,
-
-			min_burst_count: 0,
-			max_burst_count: 0,
-
-			min_particle_life: 3.0,
-			max_particle_life: 5.0,
-
-			_min_actor_life: -1.0,
-			_max_actor_life: -1.0,
-
-			min_start_spawn_rate: 0.06,
-			max_start_spawn_rate: 0.06,
-
-			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
-			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
-
-			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
-			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
-
-			min_end_scale: CgVec3::new(2.1, 2.1, 2.1),
-			max_end_scale: CgVec3::new(3.0, 3.0, 3.0),
-
-			min_start_velocity: CgVec3::new(-0.2, 1.0, -0.2),
-			max_start_velocity: CgVec3::new(0.2, 1.0, 0.2),
-
-			min_start_rotation_rate: -0.5,
-			max_start_rotation_rate: 0.5,
-
-			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
-			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
-
-			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
-			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
-
-			start_color_0: CgVec4::new(0.4, 0.04, 0.0, 1.0),
-			start_color_1: CgVec4::new(0.4, 0.07, 0.0, 1.0),
-
-			end_color_0: CgVec4::new(-0.5, -0.5, -0.5, 0.0),
-			_end_color1: CgVec4::new(-0.5, -0.5, -0.5, 1.0),
-		};
-		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
-
-		let particle_params = KbParticleParams {
-			texture_file: "./game_assets/fx/ember_t.png".to_string(),
-			blend_mode: KbParticleBlendMode::Additive,
-
-			min_burst_count: 0,
-			max_burst_count: 0,
-
-			min_particle_life: 1.5,
-			max_particle_life: 2.5,
-
-			_min_actor_life: -1.0,
-			_max_actor_life: -1.0,
-
-			min_start_spawn_rate: 0.3,
-			max_start_spawn_rate: 0.3,
-
-			min_start_pos: CgVec3::new(-0.75, -0.2, -0.75),
-			max_start_pos: CgVec3::new(0.75, 0.2, 0.75),
-    
-			min_start_scale: CgVec3::new(0.3, 0.3, 0.3),
-			max_start_scale: CgVec3::new(0.5, 0.5, 0.5),
-
-			min_end_scale: CgVec3::new(0.0, 0.0, 0.0),
-			max_end_scale: CgVec3::new(0.05, 0.05, 0.05),
-
-			min_start_velocity: CgVec3::new(-0.2, 3.0, -0.2),
-			max_start_velocity: CgVec3::new(0.2, 3.0, 0.2),
-
-			min_start_rotation_rate: -15.5,
-			max_start_rotation_rate: 15.5,
-
-			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
-			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
-
-			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
-			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
-
-			start_color_0: CgVec4::new(2.0, 1.0, 0.2, 1.0),
-			start_color_1: CgVec4::new(2.0, 1.0, 0.2, 1.0),
-
-			end_color_0: CgVec4::new(1.0, 0.8, -0.1, 0.0),
-			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
-		};
-		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
-		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
+		self.world_actors.push(actor);
+		renderer.add_or_update_actor(&self.world_actors.last().unwrap());
 
 		// Sky
 		self.game_objects.push(GameObject { 
@@ -262,12 +219,42 @@ impl KbGameEngine for Example3DGame {
 			is_enemy: false
 		});
 
-		// DEBUG
-		renderer.add_line(&CgVec3::new(5.0, 2.5, 5.0), &CgVec3::new(10.0, 2.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 2.0, 5.0), &CgVec3::new(10.0, 2.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.5, 5.0), &CgVec3::new(10.0, 1.5, 5.0), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 1.0, 5.0), &CgVec3::new(10.0, 1.0, 5.0), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 0.5, 5.0), &CgVec3::new(10.0, 0.5, 5.0), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(0.0, 2.4, 20.0),
+			extents: CgVec3::new(20.0, 10.0, 2.0)
+		});
+		let _ = self.collision_manager.add_collision(&collision_box);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(0.0, 2.4, -20.0),
+			extents: CgVec3::new(-20.0, 10.0, 2.0)
+		});
+		let _ = self.collision_manager.add_collision(&collision_box);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(20.0, 2.4, 0.0),
+			extents: CgVec3::new(2.0, 10.0, 20.0)
+		});
+		let _ = self.collision_manager.add_collision(&collision_box);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(-20.0, 2.4, 0.0),
+			extents: CgVec3::new(2.0, 10.0, 20.0)
+		});
+		let _ = self.collision_manager.add_collision(&collision_box);
+
+		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+			position: CgVec3::new(0.0, -0.5, 0.0),
+			extents: CgVec3::new(20.0, 0.5, 20.0)
+		});
+		let _ = self.collision_manager.add_collision(&collision_box);
+
+		// Trans Flag
+		renderer.add_line(&CgVec3::new(5.0, 6.5, 17.4), &CgVec3::new(10.0, 6.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 6.0, 17.4), &CgVec3::new(10.0, 6.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.5, 17.4), &CgVec3::new(10.0, 5.5, 17.4), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.0, 17.4), &CgVec3::new(10.0, 5.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 4.5, 17.4), &CgVec3::new(10.0, 4.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
 
 		// Pooled gibs
 		let particle_params = KbParticleParams {
@@ -318,6 +305,159 @@ impl KbGameEngine for Example3DGame {
 			let particle_handle = renderer.add_particle_actor(&particle_transform, &particle_params, false).await;
 			self.pooled_gib_particles.push(particle_handle);
 		}
+
+		// Pooled Impacts
+		let particle_params = KbParticleParams {
+			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::AlphaBlend,
+
+			min_burst_count: 50,
+			max_burst_count: 100,
+
+			min_particle_life: 3.0,
+			max_particle_life: 5.0,
+
+			_min_actor_life: 1.5,
+			_max_actor_life: 1.5,
+
+			min_start_spawn_rate: 9999.0,
+			max_start_spawn_rate: 9999.0,
+
+			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
+			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
+
+			min_start_scale: CgVec3::new(0.2, 0.2, 0.2),
+			max_start_scale: CgVec3::new(0.3, 0.3, 0.3),
+
+			min_end_scale: CgVec3::new(0.5, 0.5, 0.5),
+			max_end_scale: CgVec3::new(0.7, 0.7, 0.7),
+
+			min_start_velocity: CgVec3::new(-10.0, -10.0, -10.0),
+			max_start_velocity: CgVec3::new(10.0, 10.0, 10.0),
+
+			min_start_rotation_rate: -0.03,
+			max_start_rotation_rate: 0.03,
+
+			min_start_acceleration: CgVec3::new(0.0, -5.0, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -5.0, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(0.7, 0.7, 0.7, 1.0),
+			start_color_1: CgVec4::new(0.9, 0.8, 0.8, 1.0),
+
+			end_color_0: CgVec4::new(0.7, 0.7, 0.7, 0.0),
+			_end_color1: CgVec4::new(0.9, 0.8, 0.8, 0.0),
+		};
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(3.0, 3.5, 0.0));
+		for _ in 0..20 {
+			let particle_handle = renderer.add_particle_actor(&particle_transform, &particle_params, false).await;
+			self.pooled_impact_particles.push(particle_handle);
+		}
+
+		// Pooled smoke
+		let particle_smoke_params = KbParticleParams {
+			texture_file: "/game_assets/fx/smoke_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::AlphaBlend,
+
+			min_burst_count: 0,
+			max_burst_count: 0,
+
+			min_particle_life: 3.0,
+			max_particle_life: 5.0,
+
+			_min_actor_life: -1.0,
+			_max_actor_life: -1.0,
+
+			min_start_spawn_rate: 0.06,
+			max_start_spawn_rate: 0.06,
+
+			min_start_pos: CgVec3::new(-0.5, -0.2, -0.2),
+			max_start_pos: CgVec3::new(0.5, 0.2, 0.2),
+
+			min_start_scale: CgVec3::new(0.5, 0.5, 0.5),
+			max_start_scale: CgVec3::new(0.8, 0.8, 0.8),
+
+			min_end_scale: CgVec3::new(2.1, 2.1, 2.1),
+			max_end_scale: CgVec3::new(3.0, 3.0, 3.0),
+
+			min_start_velocity: CgVec3::new(-0.2, 1.0, -0.2),
+			max_start_velocity: CgVec3::new(0.2, 1.0, 0.2),
+
+			min_start_rotation_rate: -0.5,
+			max_start_rotation_rate: 0.5,
+
+			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(0.4, 0.04, 0.0, 1.0),
+			start_color_1: CgVec4::new(0.4, 0.07, 0.0, 1.0),
+
+			end_color_0: CgVec4::new(-0.5, -0.5, -0.5, 0.0),
+			_end_color1: CgVec4::new(-0.5, -0.5, -0.5, 1.0),
+		};
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
+
+		let particle_ember_params = KbParticleParams {
+			texture_file: "./game_assets/fx/ember_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::Additive,
+
+			min_burst_count: 0,
+			max_burst_count: 0,
+
+			min_particle_life: 1.5,
+			max_particle_life: 2.5,
+
+			_min_actor_life: -1.0,
+			_max_actor_life: -1.0,
+
+			min_start_spawn_rate: 0.3,
+			max_start_spawn_rate: 0.3,
+
+			min_start_pos: CgVec3::new(-0.75, -0.2, -0.75),
+			max_start_pos: CgVec3::new(0.75, 0.2, 0.75),
+    
+			min_start_scale: CgVec3::new(0.3, 0.3, 0.3),
+			max_start_scale: CgVec3::new(0.5, 0.5, 0.5),
+
+			min_end_scale: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_scale: CgVec3::new(0.05, 0.05, 0.05),
+
+			min_start_velocity: CgVec3::new(-0.2, 3.0, -0.2),
+			max_start_velocity: CgVec3::new(0.2, 3.0, 0.2),
+
+			min_start_rotation_rate: -15.5,
+			max_start_rotation_rate: 15.5,
+
+			min_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, -0.1, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(2.0, 1.0, 0.2, 1.0),
+			start_color_1: CgVec4::new(2.0, 1.0, 0.2, 1.0),
+
+			end_color_0: CgVec4::new(1.0, 0.8, -0.1, 0.0),
+			_end_color1: CgVec4::new(1.0, 0.8, -0.1, 1.0),
+		};
+		let particle_transform = KbActorTransform::from_position(CgVec3::new(0.0, 3.5, 0.0));
+		let _ = renderer.add_particle_actor(&particle_transform, &particle_params, true).await;
+
+		for _ in 0..20 {
+			let particle_handle = renderer.add_particle_actor(&particle_transform, &particle_smoke_params, false).await;
+			self.pooled_smoke_particles.push(particle_handle);
+
+			let particle_handle = renderer.add_particle_actor(&particle_transform, &particle_ember_params, false).await;
+			self.pooled_smoke_particles.push(particle_handle);
+		}
+
+		self.spawn_barrel(renderer);
     }
 
 	fn get_game_objects(&self) -> &Vec<GameObject> {
@@ -331,24 +471,34 @@ impl KbGameEngine for Example3DGame {
 		let delta_time = game_config.delta_time;
 		let (_s, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 		let forward_dir = CgVec3::new(view_dir.x, 0.0, view_dir.z).normalize();
-		let mut camera_pos = self.game_camera.get_position();
+		let camera_pos = self.game_camera.get_position();
 		let mut camera_rot = self.game_camera.get_rotation();
 
 		// Movement
+		let mut move_vec = CG_VEC3_ZERO;
 		if input_manager.up_pressed {
-			camera_pos = camera_pos + forward_dir * delta_time * CAMERA_MOVE_RATE;
+			move_vec += forward_dir
 		}
 
 		if input_manager.down_pressed {
-			camera_pos = camera_pos - forward_dir * delta_time * CAMERA_MOVE_RATE;
+			move_vec += -forward_dir;
 		}
 
 		if input_manager.right_pressed {
-			camera_pos = camera_pos + right_dir * delta_time * CAMERA_MOVE_RATE;
+			move_vec += right_dir;
 		}
 
 		if input_manager.left_pressed {
-			camera_pos = camera_pos - right_dir * delta_time * CAMERA_MOVE_RATE;
+			move_vec += -right_dir;
+		}
+
+		move_vec = move_vec.normalize() * delta_time * CAMERA_MOVE_RATE;
+		if move_vec.magnitude2() > 0.001 {
+			let mut final_pos = camera_pos + move_vec;
+			final_pos.x = final_pos.x.clamp(-17.0, 17.0);
+			final_pos.z = final_pos.z.clamp(-17.0, 17.0);
+
+			self.game_camera.set_position(&final_pos);
 		}
 
 		let x_radians = delta_time * CAMERA_ROTATION_RATE;
@@ -367,18 +517,8 @@ impl KbGameEngine for Example3DGame {
 			camera_rot.y += y_radians
 		}
 
-		self.game_camera.set_position(&camera_pos);
 		self.game_camera.set_rotation(&camera_rot);
 		renderer.set_camera(&self.game_camera);
-
-		// Debug
-		if input_manager.key_i() == KbButtonState::JustPressed {
-			self.debug_collision = !self.debug_collision;
-		}
-		
-		if input_manager.key_y() == KbButtonState::JustPressed {
-			self.invert_y = !self.invert_y;
-		}
 
 		let player = &mut self.player.as_mut().unwrap();
 		let (cur_state, next_state) = player.tick(&input_manager, &self.game_camera, &game_config);
@@ -393,10 +533,12 @@ impl KbGameEngine for Example3DGame {
 			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
 			let end = self.game_camera.get_position() + view_dir * 1000.0;
 
-			let (hit, handle) = self.collision_manager.cast_ray(&start, &end);
+			let (hit_t, handle, hit_loc) = self.collision_manager.cast_ray(&start, &end);
+			let found_hit = hit_t >= 0.0 && hit_t < 1.0;
 			let mut mob_killed = false;
-			let color = if hit { CgVec4::new(1.0, 0.0, 0.0, 1.0) } else { CgVec4::new(0.0, 0.0, 1.0, 1.0) };
-			if hit {
+
+			let color = if found_hit { CgVec4::new(1.0, 0.0, 0.0, 1.0) } else { CgVec4::new(0.0, 0.0, 1.0, 1.0) };
+			if found_hit {
 				self.mobs.retain_mut(|mob| {
 					if *mob.get_collision_handle() == *handle.as_ref().unwrap() {
 						mob_killed = mob.take_damage(&mut self.collision_manager, renderer);
@@ -404,11 +546,29 @@ impl KbGameEngine for Example3DGame {
 						self.next_pooled_gib = (self.next_pooled_gib + 1) % self.pooled_gib_particles.len();
 						renderer.enable_particle_actor(&self.pooled_gib_particles[self.next_pooled_gib], true);
 						renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actor().get_position());
+
 						!mob_killed
 					} else {
 						true
 					}
 				});
+
+				if mob_killed == false {
+					self.props.retain_mut(|prop| {
+						if prop.get_prop_type() == GamePropType::Barrel && prop.get_collision_handle() == *handle.as_ref().unwrap() {
+							prop.take_damage(&mut self.collision_manager, renderer);
+							return false
+						}
+						return true;
+					});
+				};
+
+				if mob_killed == false {
+					// Hit a wall, spawn impact
+					self.next_pooled_impact = (self.next_pooled_impact + 1) % self.pooled_impact_particles.len();
+					renderer.enable_particle_actor(&self.pooled_impact_particles[self.next_pooled_impact as usize], true);
+					renderer.update_particle_transform(&self.pooled_impact_particles[self.next_pooled_impact as usize], &hit_loc.unwrap());
+				}
 			}
 
 			if self.debug_collision {
@@ -417,15 +577,30 @@ impl KbGameEngine for Example3DGame {
 		}
 
 		// Tick monster
-		let monster_iter = self.mobs.iter_mut();
-		for monster in monster_iter {
-			monster.tick(camera_pos, &mut self.collision_manager, &game_config);
-			renderer.add_or_update_actor(&monster.get_actor());
+		if self.pause_monsters == false {
+			let monster_iter = self.mobs.iter_mut();
+			for monster in monster_iter {
+				monster.tick(camera_pos, &mut self.collision_manager, &game_config);
+				renderer.add_or_update_actor(&monster.get_actor());
+			}
 		}
 
 		if self.monster_spawn_timer.elapsed().as_secs_f32() > 2.0 {
 			self.monster_spawn_timer = Instant::now();
 			self.spawn_monster(renderer);
+		}
+		
+		// Debug
+		if input_manager.key_i() == KbButtonState::JustPressed {
+			self.debug_collision = !self.debug_collision;
+		}
+		
+		if input_manager.key_y() == KbButtonState::JustPressed {
+			self.invert_y = !self.invert_y;
+		}
+		  
+		if input_manager.key_m() == KbButtonState::JustPressed {
+			self.pause_monsters = !self.pause_monsters;
 		}
 
 		if self.debug_collision {
