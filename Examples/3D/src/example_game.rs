@@ -107,24 +107,7 @@ impl Example3DGame {
 impl KbGameEngine for Example3DGame {
 	fn new(_game_config: &KbConfig) -> Self {
 		log!("GameEngine::new() caled...");
-		let mut game_objects = Vec::<GameObject>::new();
-		game_objects.push(GameObject { 
-			position: (-1.0, -0.33, 55.0).into(),
-			scale: (0.1, 0.15, 0.15).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.3, 0.0, 0.0).into(),
-			object_type: GameObjectType::Robot,
-			object_state: GameObjectState::Running,
-			next_attack_time: 0.0,
-			texture_index: 0,
-			sprite_index: 8,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: true,
-		});
+		let mut game_objects = Vec::<GameObject>::new();;
 
 		let mut game_camera = KbCamera::new();
 		game_camera.set_position(&CgVec3::new(0.0, 2.0, -5.0));
@@ -158,6 +141,76 @@ impl KbGameEngine for Example3DGame {
 
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
+
+		// Cross Hairs are first in self.game_objects
+		self.game_objects.push(GameObject { 
+			position: (0.0, 0.5, 0.0).into(),
+			scale: (0.05, 0.05, 1.0).into(),
+			direction: (1.0, 0.0, 0.0).into(),
+			velocity: (0.0, 0.0, 0.0).into(),
+			object_type: GameObjectType::Background,
+			object_state: GameObjectState::Idle,
+			next_attack_time: 0.0,
+			texture_index: 1,
+			sprite_index: 43,
+			anim_frame: 0,
+			life_start_time: Instant::now(),
+			state_start_time: Instant::now(),
+			gravity_scale: 0.0,
+			random_val: kb_random_f32(0.0, 1000.0),
+			is_enemy: false
+		});
+		self.game_objects.push(GameObject { 
+			position: (0.0, 0.3, 0.0).into(),
+			scale: (0.05, 0.05, 1.0).into(),
+			direction: (1.0, 0.0, 0.0).into(),
+			velocity: (0.0, 0.0, 0.0).into(),
+			object_type: GameObjectType::Background,
+			object_state: GameObjectState::Idle,
+			next_attack_time: 0.0,
+			texture_index: 1,
+			sprite_index: 43,
+			anim_frame: 0,
+			life_start_time: Instant::now(),
+			state_start_time: Instant::now(),
+			gravity_scale: 0.0,
+			random_val: kb_random_f32(0.0, 1000.0),
+			is_enemy: false
+		});
+		self.game_objects.push(GameObject { 
+			position: (0.1, 0.4, 0.0).into(),
+			scale: (0.05, 0.05, 1.0).into(),
+			direction: (1.0, 0.0, 0.0).into(),
+			velocity: (0.0, 0.0, 0.0).into(),
+			object_type: GameObjectType::Background,
+			object_state: GameObjectState::Idle,
+			next_attack_time: 0.0,
+			texture_index: 1,
+			sprite_index: 44,
+			anim_frame: 0,
+			life_start_time: Instant::now(),
+			state_start_time: Instant::now(),
+			gravity_scale: 0.0,
+			random_val: kb_random_f32(0.0, 1000.0),
+			is_enemy: false
+		});
+		self.game_objects.push(GameObject { 
+			position: (-0.1, 0.4, 0.0).into(),
+			scale: (0.05, 0.05, 1.0).into(),
+			direction: (1.0, 0.0, 0.0).into(),
+			velocity: (0.0, 0.0, 0.0).into(),
+			object_type: GameObjectType::Background,
+			object_state: GameObjectState::Idle,
+			next_attack_time: 0.0,
+			texture_index: 1,
+			sprite_index: 44,
+			anim_frame: 0,
+			life_start_time: Instant::now(),
+			state_start_time: Instant::now(),
+			gravity_scale: 0.0,
+			random_val: kb_random_f32(0.0, 1000.0),
+			is_enemy: false
+		});
 
 		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M] ");
 		renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
@@ -219,25 +272,6 @@ impl KbGameEngine for Example3DGame {
 		actor.set_model(&floor_model);
 		self.world_actors.push(actor);
 		renderer.add_or_update_actor(&self.world_actors.last().unwrap());
-
-		// Sky
-		self.game_objects.push(GameObject { 
-			position: (0.0, 0.0, 0.0).into(),
-			scale: (2.0, 2.0, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Skybox,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 25,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: false
-		});
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: CgVec3::new(0.0, 2.4, 20.0),

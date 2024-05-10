@@ -194,26 +194,6 @@ impl<'a> KbRenderer<'a> {
        
         let (game_render_objs, skybox_render_objs, cloud_render_objs) = self.get_sorted_render_objects(game_objects);
 
-        {
-            PERF_SCOPE!("Skybox Pass (Opaque)");
-            self.sprite_render_group.render(KbRenderPassType::Opaque, true, &mut self.device_resources, game_config, &skybox_render_objs);
-        }
-
-        {
-            PERF_SCOPE!("Skybox Pass (Transparent)");
-            self.sprite_render_group.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
-        }
-
-        if self.particle_map.len() > 0 {
-            PERF_SCOPE!("Particle Pass");
-            self.model_render_group.render_particles(KbParticleBlendMode::Additive, &mut self.device_resources, &self.game_camera, &mut self.particle_map, game_config);
-        }
-
-        {
-            PERF_SCOPE!("World Objects Pass");
-            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
-        }
-
         if self.actor_map.len() > 0 {
             PERF_SCOPE!("Model Pass");
             self.model_render_group.render(&KbRenderGroupType::World, None, &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
@@ -241,6 +221,21 @@ impl<'a> KbRenderer<'a> {
                 let render_group = &mut self.custom_foreground_render_groups[i];
                 render_group.render(&KbRenderGroupType::ForegroundCustom, Some(i), &mut self.device_resources, &mut self.asset_manager, &self.game_camera, &mut self.actor_map, game_config);
             }
+        }
+
+        {
+            PERF_SCOPE!("World Objects Pass");
+            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &game_render_objs);
+        }
+
+        {
+            PERF_SCOPE!("Sprite Pass Opaque");
+            self.sprite_render_group.render(KbRenderPassType::Opaque, false, &mut self.device_resources, game_config, &skybox_render_objs);
+        }
+
+        {
+            PERF_SCOPE!("Sprite Pass Transparent");
+            self.sprite_render_group.render(KbRenderPassType::Transparent, false, &mut self.device_resources, game_config, &cloud_render_objs);
         }
 
         {
