@@ -3,6 +3,8 @@ struct Uniform {
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
+    uv_scale_offset: vec4<f32>,
+    extra_data: vec4<f32>,
 };
 @group(0) @binding(0)
 var<uniform> uniform: Uniform;
@@ -41,6 +43,8 @@ fn vs_main(in_vertex: VertexInput) -> VertexOutput {
 /**
  *  Fragment Shader
  */
+
+
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
