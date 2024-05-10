@@ -168,10 +168,22 @@ impl KbSunbeamRenderGroup {
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
             ],
             label: Some("KbModel_texture_bind_group_layout"),
         });
 
+        let flare_tex_handle = asset_manager.load_texture("/engine_assets/textures/lens_flare.png", &device_resources).await;
+        let flare_tex = asset_manager.get_texture(&flare_tex_handle);
         let tex_bind_group = device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
@@ -183,6 +195,10 @@ impl KbSunbeamRenderGroup {
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::Sampler(&device_resources.render_textures[2].sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&flare_tex.view),
                     },
                 ],
                 label: Some("KbModel_tex_bind_group"),
@@ -381,12 +397,12 @@ impl KbSunbeamRenderGroup {
             camera_pos: [camera.get_position().x, camera.get_position().y, camera.get_position().z, 0.0],
             camera_dir: [view_dir.x, view_dir.y, view_dir.z, 0.0],
             screen_dimensions: [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0],
-            uv_scale_offset: [01.0, 1.0, 0.0, 0.0],
+            uv_scale_offset: [1.0, 1.0, 0.0, 0.0],
             extra_data: [0.0, 0.0, 0.0, 0.0],
         };
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
 
-        let sun_position = CgPoint::new(500.0, 650.0, 600.0);
+        let sun_position = CgPoint::new(500.0, 650.0, 500.0);
         let sun_position = (proj_matrix * view_matrix).transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
         let mut scale = 1.0;
@@ -395,7 +411,7 @@ impl KbSunbeamRenderGroup {
             beam_instances.push(KbSunbeamInstance {
                 pos_scale: [sun_position.x, sun_position.y, scale, scale],
             });
-            scale= scale + 0.1;
+            scale= scale + 0.3;
         }
         device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(beam_instances.as_slice()));
    

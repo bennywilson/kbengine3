@@ -45,9 +45,15 @@ fn vs_main(in_vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 var mask_texture: texture_2d<f32>;
 @group(1) @binding(1)
 var mask_sampler: sampler;
+@group(1) @binding(2)
+var flare_texture: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var out = vec4<f32>(0.1, 0.1, 0.0, 0.0) * textureSample(mask_texture, mask_sampler, in.tex_coords.xy).xyzw;
+    var mask_rgba = textureSample(mask_texture, mask_sampler, in.tex_coords.xy);
+    var flare_uv = mask_rgba.xy;
+    var mask = mask_rgba.z;
+
+    var out = vec4<f32>(0.1, 0.1, 0.0, 0.0) * mask * textureSample(flare_texture, mask_sampler, flare_uv.xy);
     return out;
 }

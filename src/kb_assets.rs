@@ -71,6 +71,7 @@ impl KbAssetManager {
 		let mut file_to_byte_buffer =  HashMap::<String, KbByteVec>:: new();
 		file_to_byte_buffer.insert("postprocess_filter.png".to_string(), include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec());
 		file_to_byte_buffer.insert("sprite_sheet.png".to_string(), include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec());
+		file_to_byte_buffer.insert("lens_flare.png".to_string(), include_bytes!("../engine_assets/textures/lens_flare.png").to_vec());
 		
 		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec());
 		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec());
