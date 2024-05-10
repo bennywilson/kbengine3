@@ -323,9 +323,9 @@ impl KbSpriteRenderGroup {
             }
         };
 
-
+        let label = format!("Sprite {:?}", render_pass_type);
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
+            label: Some(&label),
             color_attachments: &[color_attachment],
             depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &device_resources.render_textures[1].view,

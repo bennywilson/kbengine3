@@ -49,7 +49,7 @@ impl Eq for KbParticleHandle{}
 
 pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::max_value() };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KbParticleBlendMode {
     Additive,
     AlphaBlend,

@@ -148,7 +148,7 @@ impl KbLineRenderGroup {
         }
     }
 
-    pub fn render(&mut self,device_resources: &mut KbDeviceResources, _asset_manager: &mut KbAssetManager, game_camera: &KbCamera, lines: &Vec<KbLine>, game_config: &KbConfig) {
+    pub fn render(&mut self, device_resources: &mut KbDeviceResources, _asset_manager: &mut KbAssetManager, game_camera: &KbCamera, lines: &Vec<KbLine>, game_config: &KbConfig) {
         let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbLineGroup::render()"),
         });
@@ -172,7 +172,7 @@ impl KbLineRenderGroup {
         };
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("KbModelRenderGroup_render_pass"),
+            label: Some("Line"),
             color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment:  Some(depth_attachment),
             occlusion_query_set: None,
