@@ -1,35 +1,41 @@
 use wgpu::util::DeviceExt;
 
-use crate::{kb_assets::*, kb_config::*, kb_resource::*};
+use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*};
 
-pub struct KbPostprocessRenderGroup {
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct KbSunbeamUniform {
+    pub view_proj: [[f32; 4]; 4],
+    pub camera_pos:[f32; 4],
+    pub camera_dir:[f32; 4],
+    pub screen_dimensions: [f32; 4],
+}
+
+pub struct KbSunbeamRenderGroup {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub pipeline: wgpu::RenderPipeline,
-    pub postprocess_uniform: PostProcessUniform,
+    pub sunbeam_uniform: KbSunbeamUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    pub bind_group: wgpu::BindGroup,
 }
 
-impl KbPostprocessRenderGroup {
+impl KbSunbeamRenderGroup {
     pub async fn new(device_resources: &KbDeviceResources<'_>, asset_manager: &mut KbAssetManager) -> Self {
         let device = &device_resources.device;
         let surface_config = &device_resources.surface_config;
-        let render_texture = &device_resources.render_textures[0];
 
         // Post Process Pipeline
-        let postprocess_shader_handle = asset_manager.load_shader("/engine_assets/shaders/postprocess_uber.wgsl", &device_resources).await;
-        let postprocess_shader = asset_manager.get_shader(&postprocess_shader_handle);
-        
-        let postprocess_uniform = PostProcessUniform {
+        let sunbeam_shader_handle = asset_manager.load_shader("/engine_assets/shaders/sunbeam_mask.wgsl", &device_resources).await;
+        let sunbeam_shader = asset_manager.get_shader(&sunbeam_shader_handle);
+
+        let sunbeam_uniform = KbSunbeamUniform {
             ..Default::default()
         };
-
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("uniform_buffer"),
-                contents: bytemuck::cast_slice(&[postprocess_uniform]),
+                contents: bytemuck::cast_slice(&[sunbeam_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -50,7 +56,6 @@ impl KbPostprocessRenderGroup {
             label: Some("uniform_bind_group_layout"),
         });
 
-
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
             entries: &[
@@ -62,55 +67,22 @@ impl KbPostprocessRenderGroup {
             label: Some("bind_group"),
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("bind_group_layout"),
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout, &uniform_bind_group_layout],
+            bind_group_layouts: &[&uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
-
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &postprocess_shader,
+                module: &sunbeam_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &postprocess_shader,
+                module: &sunbeam_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
@@ -128,7 +100,13 @@ impl KbPostprocessRenderGroup {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -137,29 +115,6 @@ impl KbPostprocessRenderGroup {
             multiview: None,
         });
 
-        let postprocess_tex_handle = asset_manager.load_texture("/engine_assets/textures/postprocess_filter.png", &device_resources).await;
-        let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
-        let bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&postprocess_tex.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&render_texture.view),
-                    },
-                ],
-                label: Some("bind_group"),
-            }
-        );
- 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -175,57 +130,65 @@ impl KbPostprocessRenderGroup {
                 usage: wgpu::BufferUsages::INDEX
             }
         );
-        KbPostprocessRenderGroup {
+        KbSunbeamRenderGroup {
             pipeline,
-            postprocess_uniform,
+            sunbeam_uniform,
             uniform_buffer,
             uniform_bind_group,
-            bind_group,
             vertex_buffer,
             index_buffer,
         }
     }
 
-    pub fn render(&mut self, target_view: &wgpu::TextureView, device_resources: &mut KbDeviceResources, game_config: &KbConfig) {
+    pub fn render(&mut self, device_resources: &mut KbDeviceResources, camera: &KbCamera, game_config: &KbConfig) {
 		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("KbPostprocessRenderGroup::render()"),
+			label: Some("KbSunbeamRenderGroup::render()"),
 		});
 
         let color_attachment = Some(
             wgpu::RenderPassColorAttachment {
-                view: &target_view,
+                view: &device_resources.render_textures[0].view,//&device_resources.render_textures[2].view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: wgpu::LoadOp::Load,//Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0, }),
                     store: wgpu::StoreOp::Store,
             }});
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Postprocess"),
+            label: Some("Sunbeams"),
             color_attachments: &[color_attachment],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(
+                wgpu::RenderPassDepthStencilAttachment {
+                view: &device_resources.render_textures[1].view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             occlusion_query_set: None,
             timestamp_writes: None,
         });
 
+        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
+        let (view_matrix, view_dir, _) = camera.calculate_view_matrix();
+        let sunbeam_uniform = KbSunbeamUniform {
+            view_proj: (proj_matrix * view_matrix).into(),
+            camera_pos: [camera.get_position().x, camera.get_position().y, camera.get_position().z, 0.0],
+            camera_dir: [view_dir.x, view_dir.y, view_dir.z, 0.0],
+            screen_dimensions: [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0],
+
+        };
+        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
+
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, device_resources.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        self.postprocess_uniform.time_mode_unused_unused[0] = game_config.start_time.elapsed().as_secs_f32();
-        self.postprocess_uniform.time_mode_unused_unused[1] = {
-            match game_config.postprocess_mode {
-                KbPostProcessMode::Desaturation => { 1.0 }
-                KbPostProcessMode::ScanLines => { 2.0 }
-                KbPostProcessMode::Warp => { 3.0 }
-                _ => { 0.0 }
-            }
-        };
+               // render_pass.set_bind_group(0, &model.tex_bind_group, &[]);
 
-        device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.postprocess_uniform]));
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
 
