@@ -631,6 +631,7 @@ pub struct KbModelRenderGroup {
     pub uniform: KbModelUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
+    pub blend_mode: KbBlendMode,
 }
 
 impl KbModelRenderGroup {
@@ -875,6 +876,7 @@ impl KbModelRenderGroup {
             uniform,
             uniform_buffer,
             uniform_bind_group,
+            blend_mode: blend_mode.clone()
         }
     }
 
@@ -923,8 +925,9 @@ impl KbModelRenderGroup {
             })
         };
 
+        let render_pass_label = format!("{:?} {:?}", render_group, self.blend_mode);
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("KbModelRenderGroup_render_pass"),
+            label: Some(&render_pass_label),
             color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment:  Some(depth_attachment),
             occlusion_query_set: None,
@@ -1024,14 +1027,15 @@ impl KbModelRenderGroup {
         }
     }
 
-    pub fn render_particles(&mut self, _blend_mode: KbParticleBlendMode, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, particles: &mut HashMap<KbParticleHandle, KbParticleActor>, game_config: &KbConfig) {
+    pub fn render_particles(&mut self, blend_mode: KbParticleBlendMode, device_resources: &mut KbDeviceResources, game_camera: &KbCamera, particles: &mut HashMap<KbParticleHandle, KbParticleActor>, game_config: &KbConfig) {
          let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KbModelRenderGroup::render_particles()"),
         });
 
         // Create instances
+        let label = format!("Particle {:?}", blend_mode);
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
+            label: Some(&label),
             color_attachments: &[ Some(wgpu::RenderPassColorAttachment {
                     view: &device_resources.render_textures[0].view,
                     resolve_target: None,
@@ -1062,7 +1066,7 @@ impl KbModelRenderGroup {
             #[cfg(not(target_arch = "wasm32"))] { 1.0 }
         };
 
-        match _blend_mode {
+        match blend_mode {
             KbParticleBlendMode::AlphaBlend => { render_pass.set_pipeline(&self.alpha_blend_pipeline); }
             KbParticleBlendMode::Additive => { render_pass.set_pipeline(&self.additive_pipeline) }
         };
@@ -1070,7 +1074,7 @@ impl KbModelRenderGroup {
         let particle_iter = particles.iter_mut();
         for mut particle_val in particle_iter {
             let particle_actor = &mut particle_val.1;
-            if particle_actor.params.blend_mode != _blend_mode {
+            if particle_actor.params.blend_mode != blend_mode {
                 continue;
             }
 

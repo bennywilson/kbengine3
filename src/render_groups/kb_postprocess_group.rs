@@ -201,7 +201,7 @@ impl KbPostprocessRenderGroup {
             }});
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("postprocess_render_pass"),
+            label: Some("Postprocess"),
             color_attachments: &[color_attachment],
             depth_stencil_attachment: None,
             occlusion_query_set: None,

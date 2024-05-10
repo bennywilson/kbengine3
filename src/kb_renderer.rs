@@ -144,7 +144,7 @@ impl<'a> KbRenderer<'a> {
         };
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Text Pass"),
+            label: Some("Text"),
             color_attachments: &[color_attachment],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
