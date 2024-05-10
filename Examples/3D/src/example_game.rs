@@ -113,7 +113,7 @@ impl KbGameEngine for Example3DGame {
 		let game_objects = Vec::<GameObject>::new();
 
 		let mut game_camera = KbCamera::new();
-		game_camera.set_position(&CgVec3::new(0.0, 2.0, -5.0));
+		game_camera.set_position(&CgVec3::new(0.0, 3.5, -5.0));
 	
 		Self {
 			world_actors: Vec::<KbActor>::new(),
