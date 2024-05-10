@@ -21,11 +21,11 @@ pub mod render_groups {
     pub mod kb_sprite_group;
 }
 
-use crate::kb_config::KbConfig;
-use crate::kb_engine::KbGameEngine;
-use crate::kb_input::KbInputManager;
-use crate::kb_renderer::KbRenderer;
-use crate::kb_resource::KbPostProcessMode;
+use crate::kb_config::*;
+use crate::kb_engine::*;
+use crate::kb_input::*;
+use crate::kb_renderer::*;
+use crate::kb_resource::*;
 
 #[cfg(target_arch = "wasm32")]
 const WEBAPP_CANVAS_ID: &str = "target";
@@ -155,6 +155,10 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
 
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             input_manager.update(event.physical_key, event.state);
+
+                            if input_manager.key_h() == KbButtonState::JustPressed {
+                                game_renderer.enable_help_text();
+                            }
 
                             game_config.postprocess_mode = {
                                 if input_manager.one_pressed { KbPostProcessMode::Passthrough } else

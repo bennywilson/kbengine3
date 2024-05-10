@@ -9,6 +9,7 @@ use crate::game_actors::GamePlayerState;
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 100.0;
+pub const CROSSHAIR_ERROR_RATE: f32 = 10.0;
 
 pub struct Example3DGame {
 	player: Option<GamePlayer>,
@@ -40,9 +41,11 @@ pub struct Example3DGame {
 	barrel_spawn_timer: Instant,
 	shotgun_spawn_timer: Instant,
 
+	crosshair_error: f32,
+
 	invert_y: bool,
 	debug_collision: bool,
-	pause_monsters: bool
+	pause_monsters: bool,
 }
 
 impl Example3DGame {
@@ -107,7 +110,7 @@ impl Example3DGame {
 impl KbGameEngine for Example3DGame {
 	fn new(_game_config: &KbConfig) -> Self {
 		log!("GameEngine::new() caled...");
-		let mut game_objects = Vec::<GameObject>::new();;
+		let game_objects = Vec::<GameObject>::new();
 
 		let mut game_camera = KbCamera::new();
 		game_camera.set_position(&CgVec3::new(0.0, 2.0, -5.0));
@@ -132,6 +135,7 @@ impl KbGameEngine for Example3DGame {
 			shotgun_spawn_timer: Instant::now(),
 			barrel_spawn_timer: Instant::now(),
 			player: None,
+			crosshair_error: 0.0,
 			collision_manager: KbCollisionManager::new(),
 			debug_collision: false,
 			invert_y: false,
@@ -142,75 +146,34 @@ impl KbGameEngine for Example3DGame {
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
-		// Cross Hairs are first in self.game_objects
-		self.game_objects.push(GameObject { 
-			position: (0.0, 0.5, 0.0).into(),
-			scale: (0.05, 0.05, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 43,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.0, 0.3, 0.0).into(),
-			scale: (0.05, 0.05, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 43,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (0.1, 0.4, 0.0).into(),
-			scale: (0.05, 0.05, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 44,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: false
-		});
-		self.game_objects.push(GameObject { 
-			position: (-0.1, 0.4, 0.0).into(),
-			scale: (0.05, 0.05, 1.0).into(),
-			direction: (1.0, 0.0, 0.0).into(),
-			velocity: (0.0, 0.0, 0.0).into(),
-			object_type: GameObjectType::Background,
-			object_state: GameObjectState::Idle,
-			next_attack_time: 0.0,
-			texture_index: 1,
-			sprite_index: 44,
-			anim_frame: 0,
-			life_start_time: Instant::now(),
-			state_start_time: Instant::now(),
-			gravity_scale: 0.0,
-			random_val: kb_random_f32(0.0, 1000.0),
-			is_enemy: false
-		});
+		// self.game_objects order is hard-coded.  Indexes 0-3 contain the cross hair
+		let positions = [
+			CgVec3::new(0.0, 0.5, 0.0),
+			CgVec3::new(0.0, 0.3, 0.0),
+			CgVec3::new(0.1, 0.4, 0.0),
+			CgVec3::new(-0.1, 0.4, 0.0)
+		];
+		let sprites = [40, 40, 41, 41];
+		let scale = CgVec3::new(0.035, 0.035, 1.0);
+		for i in 0..4 {
+			self.game_objects.push(GameObject { 
+				position: positions[i],
+				scale,
+				direction: (1.0, 0.0, 0.0).into(),
+				velocity: (0.0, 0.0, 0.0).into(),
+				object_type: GameObjectType::Background,
+				object_state: GameObjectState::Idle,
+				next_attack_time: 0.0,
+				texture_index: 1,
+				sprite_index: sprites[i],
+				anim_frame: 0,
+				life_start_time: Instant::now(),
+				state_start_time: Instant::now(),
+				gravity_scale: 0.0,
+				random_val: kb_random_f32(0.0, 1000.0),
+				is_enemy: false
+			});
+		}
 
 		renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M] ");
 		renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
@@ -567,6 +530,11 @@ impl KbGameEngine for Example3DGame {
 			final_pos.z = final_pos.z.clamp(-17.0, 17.0);
 
 			self.game_camera.set_position(&final_pos);
+
+			self.crosshair_error = (self.crosshair_error + delta_time * CROSSHAIR_ERROR_RATE).clamp(0.0, 1.0);
+		}
+		else {
+			self.crosshair_error = (self.crosshair_error - delta_time * CROSSHAIR_ERROR_RATE).clamp(0.0, 1.0);
 		}
 
 		let x_radians = delta_time * CAMERA_ROTATION_RATE;
@@ -676,6 +644,38 @@ impl KbGameEngine for Example3DGame {
 			if self.props.iter().filter(|&p| p.get_prop_type() == GamePropType::Barrel).count() == 0 {
 				self.barrel_spawn_timer = Instant::now();
 				self.spawn_barrel(renderer);
+			}
+		}
+
+		// UI
+		{
+			let (positions, sprites, scale) = {
+				if self.player.as_ref().unwrap().has_shotgun() == false {
+					([
+						CgVec3::new(0.0, 0.5, 0.0),
+						CgVec3::new(0.0, 0.3, 0.0),
+						CgVec3::new(0.1, 0.4, 0.0),
+						CgVec3::new(-0.1, 0.4, 0.0)
+					],
+					[40, 40, 41, 41],
+					CgVec3::new(0.035, 0.035, 1.0))
+				} else {
+					([
+						CgVec3::new(-0.11, 0.55, 0.0),
+						CgVec3::new(0.11, 0.55, 0.0),
+						CgVec3::new(-0.11, 0.35, 0.0),
+						CgVec3::new(0.11, 0.35, 0.0)
+					],
+					[48, 49, 56, 57],
+					CgVec3::new(0.065, 0.065, 0.065))
+				}
+			};
+
+			let center = (positions[0] + positions[1] + positions[2] + positions[3]) * 0.25;
+			for i in 0..4 {
+				self.game_objects[i].sprite_index = sprites[i];
+				self.game_objects[i].position = positions[i] + (positions[i] - center).normalize() * self.crosshair_error * 0.1;
+				self.game_objects[i].scale = scale;
 			}
 		}
 
