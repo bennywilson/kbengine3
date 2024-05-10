@@ -104,6 +104,10 @@ impl GamePlayer {
 		self.has_shotgun
 	}
 
+	pub fn get_ammo_count(&self) -> u32 {
+		self.ammo_count
+	}
+
 	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
 		let mut recoil_rad = cgmath::Rad::from(cgmath::Deg(0.0));
 
@@ -157,6 +161,7 @@ impl GamePlayer {
 	fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.1 && input_manager.fire_pressed {
 			self.set_state(GamePlayerState::Shooting);
+			self.ammo_count = self.ammo_count - 1;
 			return GamePlayerState::Shooting;
 		}
 		GamePlayerState::Idle
@@ -164,16 +169,6 @@ impl GamePlayer {
 
 	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
-			if self.has_shotgun {
-				if self.ammo_count <= 0 {
-					self.hands_actor.set_model(&self.hand_model);
-					for outline in &mut self.outline_actors {
-						outline.set_model(&self.hand_model);
-					}
-					self.has_shotgun = false;
-				}
-			}
-			self.ammo_count = self.ammo_count - 1;
 			if self.ammo_count == 0 {
 				self.set_state(GamePlayerState::Reloading);
 				return GamePlayerState::Reloading;

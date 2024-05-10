@@ -267,11 +267,11 @@ impl KbGameEngine for Example3DGame {
 		let _ = self.collision_manager.add_collision(&collision_box);
 
 		// Trans Flag
-		renderer.add_line(&CgVec3::new(5.0, 6.5, 17.4), &CgVec3::new(10.0, 6.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 6.0, 17.4), &CgVec3::new(10.0, 6.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 5.5, 17.4), &CgVec3::new(10.0, 5.5, 17.4), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 5.0, 17.4), &CgVec3::new(10.0, 5.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 35.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 4.5, 17.4), &CgVec3::new(10.0, 4.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 35.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 6.5, 17.4), &CgVec3::new(10.0, 6.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 6.0, 17.4), &CgVec3::new(10.0, 6.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.5, 17.4), &CgVec3::new(10.0, 5.5, 17.4), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.0, 17.4), &CgVec3::new(10.0, 5.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 4.5, 17.4), &CgVec3::new(10.0, 4.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 5535.0, &game_config);
 
 		// Pooled gibs
 		let particle_params = KbParticleParams {
@@ -649,8 +649,9 @@ impl KbGameEngine for Example3DGame {
 
 		// UI
 		{
+			let player = self.player.as_ref().unwrap();
 			let (positions, sprites, scale) = {
-				if self.player.as_ref().unwrap().has_shotgun() == false {
+				if player.has_shotgun() == false {
 					([
 						CgVec3::new(0.0, 0.5, 0.0),
 						CgVec3::new(0.0, 0.3, 0.0),
@@ -676,6 +677,35 @@ impl KbGameEngine for Example3DGame {
 				self.game_objects[i].sprite_index = sprites[i];
 				self.game_objects[i].position = positions[i] + (positions[i] - center).normalize() * self.crosshair_error * 0.1;
 				self.game_objects[i].scale = scale;
+			}
+			self.game_objects.truncate(4);
+
+			let ammo_count = player.get_ammo_count();
+			let mut position = CgVec3::new(-1.7, -0.45, 0.0);
+			let scale = CgVec3::new(0.1, 0.1, 0.1);
+			let sprite_index = if player.has_shotgun() { 50 } else { 42 };
+
+			for _ in 0..ammo_count {
+				self.game_objects.push(
+					GameObject{
+						position,
+						scale,
+						direction: (1.0, 0.0, 0.0).into(),
+						velocity: (0.0, 0.0, 0.0).into(),
+						object_type: GameObjectType::Background,
+						object_state: GameObjectState::Idle,
+						next_attack_time: 0.0,
+						texture_index: 1,
+						sprite_index,
+						anim_frame: 0,
+						life_start_time: Instant::now(),
+						state_start_time: Instant::now(),
+						gravity_scale: 0.0,
+						random_val: kb_random_f32(0.0, 1000.0),
+						is_enemy: false
+					}
+				);
+				position.x += 0.08;
 			}
 		}
 

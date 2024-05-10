@@ -100,6 +100,10 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
                         WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => {
                             input_manager.update(event.physical_key, event.state);
 
+                            if input_manager.key_h() == KbButtonState::JustPressed {
+                                game_renderer.enable_help_text();
+                            }
+
                             game_config.postprocess_mode = {
                                 if input_manager.one_pressed { KbPostProcessMode::Passthrough } else
                                 if input_manager.two_pressed { KbPostProcessMode::Desaturation } else
