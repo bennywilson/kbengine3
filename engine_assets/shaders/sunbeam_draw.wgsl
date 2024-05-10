@@ -54,6 +54,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var flare_uv = mask_rgba.xy;
     var mask = mask_rgba.z;
 
-    var out = vec4<f32>(0.1, 0.1, 0.0, 0.0) * mask * textureSample(flare_texture, mask_sampler, flare_uv.xy);
+    var out = vec4<f32>(0.03, 0.03, 0.0, 0.0) * mask * textureSample(flare_texture, mask_sampler, flare_uv.xy);
     return out;
 }

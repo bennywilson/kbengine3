@@ -21,7 +21,7 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in_vertex: VertexInput) -> VertexOutput {
-    var particle_origin = uniform_buffer.camera_pos.xyz + vec3<f32>(500.0, 650.0, 500.0);
+    var particle_origin = uniform_buffer.camera_pos.xyz + vec3<f32>(500.0, 550.0, 500.0);
     var particle_scale = 150.0;
 
     var camera_to_particle = -uniform_buffer.camera_dir.xyz;

@@ -402,7 +402,7 @@ impl KbSunbeamRenderGroup {
         };
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
 
-        let sun_position = CgPoint::new(500.0, 650.0, 500.0);
+        let sun_position = CgPoint::new(500.0, 550.0, 500.0);
         let sun_position = (proj_matrix * view_matrix).transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
         let mut scale = 1.0;
