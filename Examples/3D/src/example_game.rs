@@ -217,14 +217,26 @@ impl KbGameEngine for Example3DGame {
 		self.world_actors.push(actor);
 
 		let sky_model = renderer.load_model("game_assets/models/sky_dome.glb").await;
-		let sky_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "engine_assets/shaders/sky_dome.wgsl").await);
-		let mut actor = KbActor::new();
-		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[30.0, 30.0, 30.0].into());
-		actor.set_model(&sky_model);
-		actor.set_render_group(&KbRenderGroupType::WorldCustom, &sky_render_group);
-		renderer.add_or_update_actor(&actor);
-		self.world_actors.push(actor);
+		{
+			let sky_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "engine_assets/shaders/sky_dome_occlude.wgsl").await);
+			let mut actor = KbActor::new();
+			actor.set_position(&[0.0, 0.0, 0.0].into());
+			actor.set_scale(&[30.0, 30.0, 30.0].into());
+			actor.set_model(&sky_model);
+			actor.set_render_group(&KbRenderGroupType::WorldCustom, &sky_render_group);
+			renderer.add_or_update_actor(&actor);
+			self.world_actors.push(actor);
+		}
+		{
+			let sky_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "engine_assets/shaders/sky_dome_draw.wgsl").await);
+			let mut actor = KbActor::new();
+			actor.set_position(&[0.0, 0.0, 0.0].into());
+			actor.set_scale(&[30.0, 30.0, 30.0].into());
+			actor.set_model(&sky_model);
+			actor.set_render_group(&KbRenderGroupType::WorldCustom, &sky_render_group);
+			renderer.add_or_update_actor(&actor);
+			self.world_actors.push(actor);
+		}
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
 		let mut actor = KbActor::new();

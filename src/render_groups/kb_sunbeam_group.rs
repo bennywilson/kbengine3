@@ -30,10 +30,10 @@ impl KbSunbeamInstance {
 
 }
 
-const SUN_POS_SCALE: [f32; 4] = [500.0, 550.0, 500.0, 550.0];
-const SUN_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 0.1];
+const SUN_POS_SCALE: [f32; 4] = [500.0, 550.0, 500.0, 1550.0];
+const SUN_COLOR: [f32; 4] = [0.07, 0.07, 0.07, 0.1];
 const NUM_FLARE_STEPS: u32 = 20;
-const FLARE_SCALE: f32 = 1.05;
+const FLARE_SCALE: f32 = 1.03;
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

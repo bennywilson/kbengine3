@@ -726,7 +726,7 @@ impl KbModelRenderGroup {
         });
 
         let mut depth_write_enabled = true;
-        if shader_path.contains("first_person_outline") {
+        if shader_path.contains("first_person_outline") || shader_path.contains("sky_dome_draw") {
             depth_write_enabled = false;
         }
 

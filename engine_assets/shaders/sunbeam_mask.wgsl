@@ -20,7 +20,7 @@ struct VertexOutput {
 @vertex
 fn vs_main(in_vertex: VertexInput) -> VertexOutput {
     var flare_pos_scale = uniform_buffer.flare_position_scale;
-    var particle_origin = uniform_buffer.camera_pos.xyz + flare_pos_scale.xyz;
+    var particle_origin = uniform_buffer.camera_pos.xyz + (flare_pos_scale.xyz * 3.0);
 
     var camera_to_particle = -uniform_buffer.camera_dir.xyz;
     var vertex_pos = vec3<f32>(in_vertex.position.x, in_vertex.position.y, 0.0);
@@ -34,6 +34,11 @@ fn vs_main(in_vertex: VertexInput) -> VertexOutput {
 
     var out: VertexOutput;
     out.clip_position = uniform_buffer.world_view_proj * vec4<f32>(pos.xyz, 1.0);
+    out.clip_position.x /= out.clip_position.w;
+    out.clip_position.y /= out.clip_position.w;
+    out.clip_position.z = 0.99999;
+    out.clip_position.w = 1.0;
+
     out.tex_coords = in_vertex.tex_coords;
     return out;
 }
