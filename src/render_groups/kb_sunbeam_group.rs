@@ -1,10 +1,8 @@
 use std::mem::size_of;
  
 use cgmath::Transform;
-use wgpu::util::DeviceExt;
-
-use wgpu::{
-    BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension
+use wgpu::{ BindGroupLayoutEntry, BindingType, SamplerBindingType, ShaderStages, TextureSampleType, 
+    TextureViewDimension, util::DeviceExt,
 };
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*};
@@ -31,14 +29,18 @@ impl KbSunbeamInstance {
     }
 
 }
+
+const SUN_POS_SCALE: [f32; 4] = [500.0, 550.0, 500.0, 1550.0];
+const SUN_COLOR: [f32; 4] = [0.07, 0.07, 0.07, 0.1];
+const NUM_FLARE_STEPS: u32 = 20;
+const FLARE_SCALE: f32 = 1.03;
+
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbSunbeamUniform {
     pub view_proj: [[f32; 4]; 4],
-    pub camera_pos:[f32; 4],
-    pub camera_dir:[f32; 4],
-    pub screen_dimensions: [f32; 4],
-    pub uv_scale_offset: [f32; 4],
+    pub camera_pos: [f32; 4],
+    pub camera_dir: [f32; 4],
     pub extra_data: [f32; 4],
 }
 
@@ -343,9 +345,7 @@ impl KbSunbeamRenderGroup {
             view_proj: (proj_matrix * view_matrix).into(),
             camera_pos: [camera.get_position().x, camera.get_position().y, camera.get_position().z, 0.0],
             camera_dir: [view_dir.x, view_dir.y, view_dir.z, 0.0],
-            screen_dimensions: [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0],
-            uv_scale_offset: [1.0, 1.0, 0.0, 0.0],
-            extra_data: [0.0, 0.0, 0.0, 0.0],
+            extra_data: SUN_POS_SCALE,
         };
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
 
@@ -390,28 +390,29 @@ impl KbSunbeamRenderGroup {
             timestamp_writes: None,
         });
 
-        let proj_matrix = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0);
         let (view_matrix, view_dir, _) = camera.calculate_view_matrix();
+        let view_proj = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0) * view_matrix;
+
+        let iteration_color = [SUN_COLOR[0] * game_config.sun_color.x, SUN_COLOR[1] * game_config.sun_color.y, SUN_COLOR[2] * game_config.sun_color.z, 0.0];
+        let camera_pos = camera.get_position();
         let sunbeam_uniform = KbSunbeamUniform {
-            view_proj: (proj_matrix * view_matrix).into(),
-            camera_pos: [camera.get_position().x, camera.get_position().y, camera.get_position().z, 0.0],
+            view_proj: view_proj.into(),
+            camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
             camera_dir: [view_dir.x, view_dir.y, view_dir.z, 0.0],
-            screen_dimensions: [game_config.window_width as f32, game_config.window_height as f32, (game_config.window_height as f32) / (game_config.window_width as f32), 0.0],
-            uv_scale_offset: [1.0, 1.0, 0.0, 0.0],
-            extra_data: [0.0, 0.0, 0.0, 0.0],
+            extra_data: iteration_color,
         };
         device_resources.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[sunbeam_uniform]));
 
-        let sun_position = CgPoint::new(500.0, 550.0, 500.0);
-        let sun_position = (proj_matrix * view_matrix).transform_point(sun_position);
+        let sun_position = CgPoint::new(SUN_POS_SCALE[0], SUN_POS_SCALE[1], SUN_POS_SCALE[2]);
+        let sun_position = view_proj.transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
-        let mut scale = 1.0;
 
-        for _ in 0..20 {
+        let mut scale = 1.0;
+        for _ in 0..NUM_FLARE_STEPS {
             beam_instances.push(KbSunbeamInstance {
                 pos_scale: [sun_position.x, sun_position.y, scale, scale],
             });
-            scale= scale + 0.3;
+            scale *= FLARE_SCALE;
         }
         device_resources.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(beam_instances.as_slice()));
    

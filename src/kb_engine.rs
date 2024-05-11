@@ -6,7 +6,7 @@ pub trait KbGameEngine {
 	fn get_game_objects(&self) -> &Vec<GameObject>;
 
 	#[allow(async_fn_in_trait)]
-	async fn initialize_world<'a>(&mut self, renderer: &'a mut KbRenderer<'_>, game_config: &KbConfig);
+	async fn initialize_world<'a>(&mut self, renderer: &'a mut KbRenderer<'_>, game_config: &mut KbConfig);
 
 	// Do not override tick_frame().  Put custom code in tick_frame_internal()
 	fn tick_frame<'a>(&mut self, renderer: &'a mut KbRenderer<'_>, input_manager: &mut KbInputManager, game_config: &mut KbConfig) {

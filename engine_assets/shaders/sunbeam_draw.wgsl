@@ -2,9 +2,7 @@ struct ModelUniform {
     world_view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
     camera_dir: vec4<f32>,
-    target_dimensions: vec4<f32>,
-    uv_scale_offset: vec4<f32>,
-    extra_data: vec4<f32>,
+    sun_color: vec4<f32>,
 };
 @group(0) @binding(0)
 var<uniform> uniform_buffer: ModelUniform;
@@ -54,6 +52,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var flare_uv = mask_rgba.xy;
     var mask = mask_rgba.z;
 
-    var out = vec4<f32>(0.03, 0.03, 0.0, 0.0) * mask * textureSample(flare_texture, mask_sampler, flare_uv.xy);
+    var out = uniform_buffer.sun_color.xyzw * mask * textureSample(flare_texture, mask_sampler, flare_uv.xy);
     return out;
 }
