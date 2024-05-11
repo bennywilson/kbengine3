@@ -62,7 +62,7 @@ pub async fn run_game<T>(mut game_config: KbConfig) where T: KbGameEngine + 'sta
     let mut input_manager = KbInputManager::new();
     let mut game_renderer = KbRenderer::new(window.clone(), &game_config).await;
 
-    game_engine.initialize_world(&mut game_renderer, &game_config).await;
+    game_engine.initialize_world(&mut game_renderer, &mut game_config).await;
 
     #[cfg(target_arch = "wasm32")]
     {

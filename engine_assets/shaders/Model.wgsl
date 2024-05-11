@@ -7,7 +7,9 @@ struct ModelUniform {
     camera_dir: vec4<f32>,
     target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>,
-    custom_data_1: vec4<f32>
+    model_color: vec4<f32>,
+    custom_data_1: vec4<f32>,
+    sun_color: vec4<f32>
 };
 
 @group(1) @binding(0)
@@ -69,15 +71,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var normal = normalize(in.normal);
     var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
+    var light_1 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
 
     dot_prod = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
+    var light_2 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
 
     dot_prod = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = dot_prod * vec3<f32>(0.0, 0.0, 0.0);
+    var light_3 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(0.0, 0.0, 0.0);
 
-    light_1 = light_1 * 0.9 + 0.1;
+   light_1 = light_1 * 0.9 + 0.1;
     light_2 = light_2 * 0.9 + 0.1;
     light_3 = light_3 * 0.9 + 0.1;
 

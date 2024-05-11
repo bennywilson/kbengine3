@@ -8,7 +8,8 @@ struct ModelUniform {
     target_dimensions: vec4<f32>,
     time_colorpow_: vec4<f32>,
     model_color: vec4<f32>,
-    custom_data_1: vec4<f32>
+    custom_data_1: vec4<f32>,
+    sun_color: vec4<f32>,
 };
 @group(1) @binding(0)
 var<uniform> model_uniform: ModelUniform;
@@ -68,8 +69,8 @@ var t_noise: texture_2d<f32>;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec3<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords).xyz * model_uniform.model_color.xyz;
-    outColor.r = pow(outColor.r, model_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, model_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, model_uniform.time_colorpow_.y);
+    outColor.r = 0.75 * model_uniform.sun_color.r * pow(outColor.r, model_uniform.time_colorpow_.y);
+    outColor.g = 0.75 * model_uniform.sun_color.g * pow(outColor.g, model_uniform.time_colorpow_.y);
+    outColor.b = 0.75 * model_uniform.sun_color.b * pow(outColor.b, model_uniform.time_colorpow_.y);
     return vec4<f32>(outColor.xyz, model_uniform.model_color.a);
 }

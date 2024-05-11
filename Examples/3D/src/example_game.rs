@@ -143,8 +143,11 @@ impl KbGameEngine for Example3DGame {
 		}
     }
 
-	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &KbConfig) {
+	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &mut KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
+
+		game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 0.0);
+		game_config.sun_color = CgVec4::new(0.8, 0.58, 0.24, 0.0);
 
 		// self.game_objects order is hard-coded.  Indexes 0-3 contain the cross hair
 		let positions = [
@@ -182,7 +185,7 @@ impl KbGameEngine for Example3DGame {
 		self.shotgun_model = Some(renderer.load_model("game_assets/models/shotgun.glb").await);
 
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
-		let floor_model = renderer.load_model("game_assets/models/floor.glb").await;
+		let floor_model = renderer.load_model("game_assets/models/level.glb").await;
 		let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
 
 		// First person set up
