@@ -384,6 +384,7 @@ impl<'a> KbDeviceResources<'a> {
 
         self.render_textures[0] = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
         self.render_textures[1] = KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
+        self.render_textures[1] = KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
     }
 
     pub async fn new(window: Arc::<winit::window::Window>, game_config: &KbConfig) -> Self {
@@ -438,6 +439,9 @@ impl<'a> KbDeviceResources<'a> {
 
         let depth_texture = KbTexture::new_depth_texture(&device, &surface_config).unwrap();
         render_textures.push(depth_texture);
+
+        let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+        render_textures.push(render_texture);
 
         log!("  Creating Font");
         let brush = BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf")).unwrap()

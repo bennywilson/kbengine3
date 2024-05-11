@@ -19,6 +19,7 @@ pub struct KbModelUniform {
     pub time: [f32; 4],
     pub model_color: [f32; 4],
     pub custom_data_1: [f32; 4],
+    pub sun_color: [f32; 4],
 }
 pub const MAX_UNIFORMS: usize = 100;
 
@@ -888,9 +889,10 @@ impl KbModelRenderGroup {
         let render_group = (*render_group).clone();
         let (color_attachment, depth_attachment) = {
             let (color_ops, depth_ops) = {
+                let clear_color = game_config.clear_color;
                 if render_group == KbRenderGroupType::World {
                     (wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.52, g: 0.807, b: 0.92, a: 1.0, }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: clear_color.w as f64, }),
                         store: wgpu::StoreOp::Store,
                     }, wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
@@ -980,14 +982,6 @@ impl KbModelRenderGroup {
             let mut uniform_data = KbModelUniform { ..Default::default() };
             let world_matrix = cgmath::Matrix4::from_translation(actor.get_position()) * cgmath::Matrix4::from(actor.get_rotation()) * cgmath::Matrix4::from_nonuniform_scale(actor.get_scale().x, actor.get_scale().y, actor.get_scale().z);
             uniform_data.world = world_matrix.into();
-            if world_matrix.invert() == None {
-                log!("Doh!");
-                  log!("Doh!");
-                    log!("Doh!");
-                      log!("Doh!");
-                             uniform_data.inv_world = world_matrix.invert().unwrap().into();
-               
-            }
             uniform_data.inv_world = world_matrix.invert().unwrap().into();
             uniform_data.mvp_matrix = (proj_matrix * view_matrix * world_matrix).into();
             uniform_data.view_proj = (proj_matrix * view_matrix).into();
@@ -998,6 +992,7 @@ impl KbModelRenderGroup {
             uniform_data.time[1] = fragment_texture_fix;
             uniform_data.model_color = [actor.get_color().x, actor.get_color().y, actor.get_color().z, actor.get_color().w];
             uniform_data.custom_data_1 = [actor.get_custom_data_1().x, actor.get_custom_data_1().y, actor.get_custom_data_1().z, actor.get_custom_data_1().w];
+            uniform_data.sun_color = [game_config.sun_color.x, game_config.sun_color.y, game_config.sun_color.z, 0.0];
             device_resources.queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform_data]));
         }
 
@@ -1044,7 +1039,7 @@ impl KbModelRenderGroup {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-            depth_stencil_attachment:  Some(wgpu::RenderPassDepthStencilAttachment {
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &device_resources.render_textures[1].view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Load,

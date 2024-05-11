@@ -1,4 +1,5 @@
 use crate::KbPostProcessMode;
+use crate::kb_utils::*;
 
 #[derive(Clone)]
 pub struct KbConfig {
@@ -19,6 +20,9 @@ pub struct KbConfig {
 	pub delta_time: f32,
 	pub last_frame_time: f32,
 	pub postprocess_mode: KbPostProcessMode,
+
+	pub clear_color: CgVec4,
+	pub sun_color: CgVec4,
 }
 
 impl KbConfig {
@@ -103,6 +107,8 @@ impl KbConfig {
 			delta_time: 0.0,
 			last_frame_time: 0.0,
 			postprocess_mode: KbPostProcessMode::Passthrough,
+			clear_color: CG_VEC4_ZERO,
+			sun_color: CgVec4::new(1.0, 1.0, 1.0, 1.0),
         }
     }
 
