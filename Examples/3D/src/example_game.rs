@@ -184,10 +184,6 @@ impl KbGameEngine for Example3DGame {
 		self.barrel_model = Some(renderer.load_model("game_assets/models/barrel.glb").await);
 		self.shotgun_model = Some(renderer.load_model("game_assets/models/shotgun.glb").await);
 
-		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
-		let floor_model = renderer.load_model("game_assets/models/level.glb").await;
-		let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
-
 		// First person set up
 		let fp_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, &KbBlendMode::None, "game_assets/shaders/first_person.wgsl").await);
 		let fp_outline_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::ForegroundCustom, &KbBlendMode::Alpha, "game_assets/shaders/first_person_outline.wgsl").await);
@@ -205,40 +201,40 @@ impl KbGameEngine for Example3DGame {
 		self.player = Some(player);
 
 		// Monster
+		let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
 		let monster_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Additive, "game_assets/shaders/monster.wgsl").await);
 		self.monster_render_group = monster_render_group.unwrap();
 		self.monster_model = Some(monster_model);
 		self.spawn_monster(renderer);
 
 		// World objects
+		let level_model = renderer.load_model("game_assets/models/level.glb").await;
+		let mut actor = KbActor::new();
+		actor.set_position(&[0.0, 0.0, 0.0].into());
+		actor.set_scale(&[10.0, 19.0, 10.0].into());
+		actor.set_model(&level_model);
+		renderer.add_or_update_actor(&actor);
+		self.world_actors.push(actor);
+
+		let sky_model = renderer.load_model("game_assets/models/sky_dome.glb").await;
+		let sky_render_group = Some(renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "engine_assets/shaders/sky_dome.wgsl").await);
+		let mut actor = KbActor::new();
+		actor.set_position(&[0.0, 0.0, 0.0].into());
+		actor.set_scale(&[30.0, 30.0, 30.0].into());
+		actor.set_model(&sky_model);
+		actor.set_render_group(&KbRenderGroupType::WorldCustom, &sky_render_group);
+		renderer.add_or_update_actor(&actor);
+		self.world_actors.push(actor);
+
+		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
 		let mut actor = KbActor::new();
 		actor.set_position(&[3.0, 0.0, 3.0].into());
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
+		renderer.add_or_update_actor(&actor);
 		self.world_actors.push(actor);
-		renderer.add_or_update_actor(&self.world_actors[0]);
 
-	/*	let mut actor = KbActor::new();
-		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[1.0, 1.0, 1.0].into());
-		actor.set_model(&self.barrel_model);
-		self.world_actors.push(actor);
-		renderer.add_or_update_actor(&self.world_actors[1]);*/
-
-		/*let mut actor = KbActor::new();
-		actor.set_position(&[9.0, 0.0, -4.0].into());
-		actor.set_scale(&[2.0, 2.0, 2.0].into());
-		actor.set_model(&shotgun_model);
-		self.world_actors.push(actor);
-		renderer.add_or_update_actor(&self.world_actors.last().unwrap());*/
-
-		let mut actor = KbActor::new();
-		actor.set_position(&[0.0, 0.0, 0.0].into());
-		actor.set_scale(&[10.0, 19.0, 10.0].into());
-		actor.set_model(&floor_model);
-		self.world_actors.push(actor);
-		renderer.add_or_update_actor(&self.world_actors.last().unwrap());
-
+		// World Collision
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: CgVec3::new(0.0, 2.4, 20.0),
 			extents: CgVec3::new(20.0, 10.0, 2.0)
