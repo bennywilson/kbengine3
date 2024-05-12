@@ -33,6 +33,7 @@ pub struct KbRenderer<'a> {
 
     display_debug_msg: bool,
     game_debug_msg: String,
+    game_hud_msg: String,
     debug_msg_color: CgVec4,
 }
 
@@ -77,6 +78,8 @@ impl<'a> KbRenderer<'a> {
             window_id: window.id(),
 
             game_debug_msg: "".to_string(),
+            game_hud_msg: "".to_string(),
+
             display_debug_msg: false,
             debug_msg_color: CgVec4::new(0.0, 1.0, 0.0, 1.0),
         }
@@ -164,10 +167,11 @@ impl<'a> KbRenderer<'a> {
                     FPS: {:.0} \n\
                     Frame time: {:.2} ms\n\
                     Back End: {:?}\n\
-                    Graphics: {}\n", self.game_debug_msg,
-                    frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str())
+                    Graphics: {}\n\n\n
+                    {}\n", self.game_debug_msg,
+                    frame_rate, avg_frame_time * 1000.0, device_resources.adapter.get_info().backend, device_resources.adapter.get_info().name.as_str(), self.game_hud_msg)
             } else {
-                format!("Press [H] to enable Help.\n\nFPS: {:.0}", frame_rate)
+                format!("Press [H] to enable Help.\n\nFPS: {:.0}\n\n {}", frame_rate, self.game_hud_msg)
             }
         };
 
@@ -255,7 +259,7 @@ impl<'a> KbRenderer<'a> {
 
         {
             PERF_SCOPE!("Postprocess pass");
-            self.postprocess_render_group.render(&final_view, &mut self.device_resources, game_config);
+            self.postprocess_render_group.render(&final_view, &mut self.device_resources, game_config, Some(self.postprocess_mode.clone()));
         }
 
         {
@@ -377,6 +381,10 @@ impl<'a> KbRenderer<'a> {
     pub fn set_debug_game_msg(&mut self, msg: &str) {
         self.game_debug_msg = msg.to_string();
     }
+    
+    pub fn set_hud_msg(&mut self, msg: &str) {
+        self.game_hud_msg = msg.to_string();
+    }
 
     pub fn set_debug_font_color(&mut self, color: &CgVec4) {
         self.debug_msg_color = color.clone();
@@ -384,5 +392,9 @@ impl<'a> KbRenderer<'a> {
 
     pub fn enable_help_text(&mut self) {
         self.display_debug_msg = !self.display_debug_msg;
+    }
+
+    pub fn set_postprocess_mode(&mut self, new_mode: &KbPostProcessMode) {
+        self.postprocess_mode = new_mode.clone();
     }
 }

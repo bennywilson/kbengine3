@@ -1,8 +1,7 @@
 use instant::Instant;
 //use cgmath::InnerSpace;
 
-use crate::{kb_assets::*, kb_config::KbConfig, kb_utils::*, kb_resource::*,
-            render_groups::kb_model_group::*};
+use crate::{kb_assets::*, kb_config::*, kb_utils::*, kb_resource::*,render_groups::kb_model_group::*};
 
 static mut NEXT_ACTOR_ID: u32 = 0;
 
@@ -200,6 +199,7 @@ impl KbParticleActor {
                 let t = ((elapsed_time  - particle.start_time)/ particle.life_time).clamp(0.0, 1.0);
                 particle.velocity = particle.velocity + particle.acceleration * delta_time;
                 particle.position = particle.position + particle.velocity * delta_time;
+
                 particle.rotation = particle.rotation + particle.rotation_rate * delta_time;
                 particle.scale = particle.start_scale + (particle.end_scale - particle.start_scale) * t;
                 particle.color = self.params.start_color_0 + (self.params.end_color_0 - self.params.start_color_0) * t;
@@ -241,6 +241,8 @@ impl KbParticleActor {
         self.particles.clear();
         if active {
             let count = kb_random_u32(self.params.min_burst_count, self.params.max_burst_count);
+
+
             self.start_time = Instant::now();
             for _ in 0..count {
                 let params = &self.params;
@@ -252,7 +254,7 @@ impl KbParticleActor {
                 let start_scale = kb_random_vec3(params.min_start_scale, params.max_start_scale);
                 let end_scale = kb_random_vec3(params.min_end_scale, params.max_end_scale);
                 let scale = start_scale;
-                let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_spawn_rate);
+                let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_rotation_rate);
                 let rotation = 0.0;
 
                 let particle = KbParticle {

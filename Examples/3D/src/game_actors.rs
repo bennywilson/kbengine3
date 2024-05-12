@@ -1,5 +1,4 @@
 use cgmath::{InnerSpace, Rotation, SquareMatrix};
-
 use instant::Instant;
 
 use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*, kb_resource::*, 
@@ -45,7 +44,7 @@ impl GamePlayer {
 
 		let mut outline_actors = Vec::<KbActor>::new();
 
-		let mut push = 0.00075;
+		let mut push = 0.001;
 		let num_steps = 10;
 		for i in 0..num_steps + 1 {
 			let mut outline_actor = KbActor::new();
@@ -53,12 +52,12 @@ impl GamePlayer {
 			outline_actor.set_scale(&CG_VEC3_ONE);
 			let alpha = 1.0 - (i as f32 / num_steps as f32);
 			let alpha = (alpha).clamp(0.0, 1.0);
-			outline_actor.set_color(CgVec4::new(0.2, 0.2, 0.2, alpha));
-			outline_actor.set_custom_data_1(CgVec4::new(push, 0.0, 0.0, 0.0)); 
+			outline_actor.set_color(CgVec4::new(0.1, 0.1, 0.1, alpha));
+			outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75)); 
 			outline_actor.set_model(&hands_model);
 			outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 			outline_actors.push(outline_actor);
-			push += 0.00075;
+			push += 0.001;
 		}
 
 		GamePlayer {
@@ -195,6 +194,15 @@ impl GamePlayer {
 				self.ammo_count = PISTOL_AMMO_MAX;
 				self.has_shotgun = false;
 			}
+
+			let start_push = if self.has_shotgun { 0.01 } else { 0.0013 };
+			let mut push = start_push;
+			self.hands_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75));
+			for outline_actor in &mut self.outline_actors {
+				outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75)); 
+				push += 0.0013;
+			}
+
 			self.next_weapon_model = self.hands_model.clone();
 			self.set_state(GamePlayerState::FinishReloading);
 			return GamePlayerState::FinishReloading;
@@ -223,16 +231,18 @@ impl GamePlayer {
 }
 
 #[allow(dead_code)]
-enum GameMobState {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GameMobState {
 	Idle,
 	Chasing,
+	Attacking,
 	Dying,
 	Dead	
 }
 
 #[allow(dead_code)]
 pub struct GameMob {
-	monster_actor: KbActor,
+	monster_actors: Vec::<KbActor>,
 	collision_handle: KbCollisionHandle,
 
 	current_state: GameMobState,
@@ -246,51 +256,90 @@ impl GameMob {
 		monster_actor.set_position(&position);
 		monster_actor.set_scale(&[3.0, 3.0, 3.0].into());
 		monster_actor.set_model(&model_handle);
+		let mut monster_actors = Vec::<KbActor>::new();
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: monster_actor.get_position().clone(),
-			extents: CgVec3::new(2.0, 2.0, 2.0)
+			extents: CgVec3::new(2.0, 2.0, 2.0),
+			block: true
 		});
 		let collision_handle = collision_manager.add_collision(&collision_box);
 
 		let current_state = GameMobState::Idle;
 		let current_state_time = Instant::now();
 
+		monster_actors.push(monster_actor);
+		let mut monster_outline = KbActor::new();
+		monster_outline.set_position(&position);
+		monster_outline.set_scale(&[3.0, 3.0, 3.0].into());
+		monster_outline.set_model(&model_handle);
+		monster_actors.push(monster_outline);
+		
 		GameMob {
-			monster_actor,
+			monster_actors,
 			collision_handle,
 			current_state,
 			current_state_time
 		}
 	}
 
-	pub fn get_actor(&mut self) -> &mut KbActor {
-		&mut self.monster_actor
+	pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
+		&mut self.monster_actors
 	}
 
+	pub fn get_state(&self) -> GameMobState {
+		self.current_state.clone()
+	}
 	pub fn get_collision_handle(&self) -> &KbCollisionHandle {
 		&self.collision_handle
 	}
 
 	pub fn take_damage(&mut self, collision_manager: &mut KbCollisionManager, renderer: &mut KbRenderer) -> bool {
 		collision_manager.remove_collision(&self.collision_handle);
-		renderer.remove_actor(&self.monster_actor);
+		renderer.remove_actor(&self.monster_actors[0]);
+		renderer.remove_actor(&self.monster_actors[1]);
 		true
 	}
 
 	pub fn tick(&mut self, player_pos: CgVec3, collision_manager: &mut KbCollisionManager, game_config: &KbConfig) {
-		let vec_to_player = player_pos - self.monster_actor.get_position();
+		let vec_to_player = player_pos - self.monster_actors[0].get_position();
 		let dist_to_player = vec_to_player.magnitude();
 		let vec_to_player = vec_to_player.normalize();
 
-		let monster_actor = &mut self.monster_actor;
-		if dist_to_player > 5.0 {
-			let new_pos = monster_actor.get_position() + vec_to_player * game_config.delta_time * 5.0;
-			monster_actor.set_position(&new_pos);
+		{
+			let monster_actor = &mut self.monster_actors[0];
+			if dist_to_player > 5.0 {
+				collision_manager.remove_collision(&self.collision_handle);	// hack. Don't collide with self
+				let move_vec = vec_to_player * game_config.delta_time * 5.0;
+				let (t, _, _, blocks) = collision_manager.cast_ray(&monster_actor.get_position(), &move_vec);
+				let block = {
+					match blocks {
+						Some(b) => { b }
+						None => { true }
+					}
+				};
+				if t < 0.0 || t > 1.0 || block == false {
+					let new_pos = monster_actor.get_position() + move_vec;
+					monster_actor.set_position(&new_pos);
+				}
+				let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+					position: monster_actor.get_position().clone(),
+					extents: CgVec3::new(2.0, 2.0, 2.0),
+					block: true
+				});
+				self.collision_handle = collision_manager.add_collision(&collision_box);
+				self.current_state = GameMobState::Chasing;
+			} else {
+				self.current_state = GameMobState::Attacking;
+			}
+			monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
 		}
-		monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
+		let monster_pos = self.monster_actors[0].get_position();
+		let monster_rot = self.monster_actors[0].get_rotation();
+		self.monster_actors[1].set_position(&monster_pos);
+		self.monster_actors[1].set_rotation(&monster_rot);
 
-		collision_manager.update_collision_position(&self.collision_handle, &monster_actor.get_position());
+		collision_manager.update_collision_position(&self.collision_handle, &self.monster_actors[0].get_position());
 	}
 }
 
@@ -303,7 +352,7 @@ pub enum GamePropType {
 
 #[allow(dead_code)]
 pub struct GameProp {
-	actor: KbActor,
+	actors: Vec<KbActor>,
 	collision_handle: KbCollisionHandle,
 	prop_type: GamePropType,
 	particle_handles: [KbParticleHandle; 2],
@@ -312,10 +361,6 @@ pub struct GameProp {
 
 impl GameProp {
 	pub fn new(prop_type: &GamePropType, position: &CgVec3, model_handle: &KbModelHandle, collision_manager: &mut KbCollisionManager, particle_handles: [KbParticleHandle; 2]) -> Self {
-		let mut actor = KbActor::new();
-		actor.set_position(&position);
-		actor.set_model(&model_handle);
-
 		let extents = {
 			match prop_type {
 				GamePropType::Shotgun => {
@@ -329,15 +374,28 @@ impl GameProp {
 		};
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-			position: actor.get_position().clone(),
+			position: position.clone(),
 			extents,
+			block: false,
 		});
 
 		let collision_handle = collision_manager.add_collision(&collision_box);
 		let start_time = Instant::now();
 
+		let mut actors = Vec::<KbActor>::new();
+		let mut actor = KbActor::new();
+		actor.set_position(&position);
+		actor.set_model(&model_handle);
+		actors.push(actor);
+
+		// Outline
+		let mut actor = KbActor::new();
+		actor.set_position(&position);
+		actor.set_model(&model_handle);
+		actors.push(actor);
+
 		GameProp {
-			actor,
+			actors,
 			collision_handle,
 			prop_type: *prop_type,
 			particle_handles,
@@ -347,7 +405,9 @@ impl GameProp {
 
 	pub fn take_damage(&mut self, collision_manager: &mut KbCollisionManager, renderer: &mut KbRenderer) -> bool {
 		collision_manager.remove_collision(&self.collision_handle);
-		renderer.remove_actor(&self.actor);
+		for actor in &mut self.actors {
+			renderer.remove_actor(&actor);
+		}
 
 		if self.particle_handles[0] != INVALID_PARTICLE_HANDLE {
 			renderer.enable_particle_actor(&self.particle_handles[0], false);
@@ -367,7 +427,12 @@ impl GameProp {
 	pub fn get_prop_type(&self) -> GamePropType {
 		self.prop_type
 	}
-	pub fn get_actor(&mut self) -> &mut KbActor {
-		&mut self.actor
+	pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
+		&mut self.actors
 	}
+}
+
+pub struct GameDecal {
+	pub actor: KbActor,
+	pub start_time: f32,
 }

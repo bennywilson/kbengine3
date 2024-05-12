@@ -68,6 +68,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv : vec2<f32>; 
     uv = in.tex_coords;
     var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
+    albedo.r *= model_uniform.model_color.r;
+    albedo.g *= model_uniform.model_color.g;
+    albedo.b *= model_uniform.model_color.b;
 
     var normal = normalize(in.normal);
     var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));

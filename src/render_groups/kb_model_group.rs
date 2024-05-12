@@ -725,11 +725,20 @@ impl KbModelRenderGroup {
             }
         });
 
+        let mut cull_mode = Some(wgpu::Face::Back);
+        if shader_path.contains("decal") {
+            cull_mode = None;
+        }
+
         let mut depth_write_enabled = true;
-        if shader_path.contains("first_person_outline") || shader_path.contains("sky_dome_draw") {
+        if shader_path.contains("first_person_outline") || shader_path.contains("sky_dome_draw") || shader_path.contains("decal") {
             depth_write_enabled = false;
         }
 
+        let mut write_mask = wgpu::ColorWrites::ALL;
+        if shader_path.contains("sky_dome_occlude") {
+            write_mask = wgpu::ColorWrites::ALPHA;
+        }
         let model_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelRenderGroup_opaque_pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -745,7 +754,7 @@ impl KbModelRenderGroup {
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
                     blend,
-                    write_mask: wgpu::ColorWrites::ALL,
+                    write_mask,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
@@ -753,7 +762,7 @@ impl KbModelRenderGroup {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
