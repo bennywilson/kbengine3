@@ -393,7 +393,8 @@ impl KbSunbeamRenderGroup {
         let (view_matrix, view_dir, _) = camera.calculate_view_matrix();
         let view_proj = cgmath::perspective(cgmath::Deg(game_config.fov), game_config.window_width as f32 / game_config.window_height as f32, 0.1, 10000.0) * view_matrix;
 
-        let iteration_color = [SUN_COLOR[0] * game_config.sun_color.x, SUN_COLOR[1] * game_config.sun_color.y, SUN_COLOR[2] * game_config.sun_color.z, 0.0];
+        let iteration_color = [SUN_COLOR[0] * game_config.sun_color.x, SUN_COLOR[1] * game_config.sun_color.y, SUN_COLOR[2] * game_config.sun_color.z, 0.8];
+
         let camera_pos = camera.get_position();
         let sunbeam_uniform = KbSunbeamUniform {
             view_proj: view_proj.into(),

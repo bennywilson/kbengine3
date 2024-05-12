@@ -73,7 +73,7 @@ impl Example3DGame {
 		renderer.add_or_update_actor(&monster_actors[0]);
 
 		monster_actors[1].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.outline_render_group));
-		monster_actors[1].set_custom_data_1(CgVec4::new(0.01, 15.0, 15.0, 15.0));
+		monster_actors[1].set_custom_data_1(CgVec4::new(0.01, 1.0, 1.0, 1.0));
 		renderer.add_or_update_actor(&monster_actors[1]);
 
 		self.mobs.push(monster);
@@ -168,8 +168,19 @@ impl KbGameEngine for Example3DGame {
 	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &mut KbConfig) {
 		log!("GameEngine::initialize_world() caled...");
 
-		game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 0.0);
-		game_config.sun_color = CgVec4::new(0.8, 0.58, 0.24, 0.0);
+		#[cfg(not(target_arch = "wasm32"))]
+		{
+			game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 0.0);
+			game_config.sun_color = CgVec4::new(0.8 * 0.8, 0.58 * 0.58, 0.24 * 0.24, 0.0);
+		}
+
+		#[cfg(target_arch = "wasm32")]
+		{
+			use cgmath::num_traits::Pow;
+			let color_fix: f32 = 1.0 / 2.2;
+			game_config.clear_color = CgVec4::new(0.87_f32.pow(color_fix), 0.58_f32.pow(color_fix), 0.24_f32.pow(color_fix), 0.0);
+			game_config.sun_color = CgVec4::new(0.8, 0.58, 0.24, 0.0);		
+		}
 
 		// self.game_objects order is hard-coded.  Indexes 0-3 contain the cross hair
 		let positions = [

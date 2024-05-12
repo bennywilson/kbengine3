@@ -69,29 +69,38 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample 1
     var sample_1_scroll = 0.005f;
-    uv = in.tex_coords * vec2<f32>( 1.02, 0.5) + vec2<f32>(0.0, 0.0);
-    uv = uv + vec2<f32>(model_uniform.time_colorpow_.x * sample_1_scroll, 0.0);
-    var mask_1 = textureSample(t_diffuse, s_diffuse, uv);
+    var sample_1_uvs = in.tex_coords * vec2<f32>(1.02, 0.5) + vec2<f32>(0.0, 0.0);
+    sample_1_uvs += vec2<f32>(model_uniform.time_colorpow_.x * sample_1_scroll, 0.0);
+
+    var mask_1 = textureSample(t_diffuse, s_diffuse, sample_1_uvs);
     mask_1.r = mask_1.r * 0.5 + 0.5;
-    var out_color_1 = mask_1.rrrg * vec4<f32>(0.8 * 2.0, 0.58 * 2.0, 0.24 * 2.0, 1.0);
+
+    var out_color_1 = mask_1.rrrg;
+    out_color_1.x *= model_uniform.sun_color.x * 2;
+    out_color_1.y *= model_uniform.sun_color.y * 2;
+    out_color_1.z *= model_uniform.sun_color.z * 2;
 
     // Sample 2
-    var sample_2_scroll = 0.007;
-    uv = in.tex_coords * vec2<f32>(0.5, 0.25) + vec2<f32>(0.0, 0.0);
-    uv = uv + vec2<f32>(model_uniform.time_colorpow_.x * sample_2_scroll, 0.0);
-    var mask_2 = textureSample(t_diffuse, s_diffuse, uv);
-    mask_2.r = mask_2.r * 0.8 + 0.2;
-    var out_color_2 = mask_2.rrrg * vec4<f32>(0.8, 0.58, 0.24, 1.0);
+    var sample_2_scroll = 0.008;
+    var sample_2_uvs = in.tex_coords * vec2<f32>(0.5, 0.25) + vec2<f32>(0.0, 0.0);
+    sample_2_uvs += vec2<f32>(model_uniform.time_colorpow_.x * sample_2_scroll, 0.0);
+
+    var mask_2 = textureSample(t_diffuse, s_diffuse, sample_2_uvs);
+    mask_2.r = mask_2.r * (model_uniform.sun_color.w) + (1.0 - model_uniform.sun_color.w);
+
+    var out_color_2 = mask_2.rrrg;
+    out_color_2.x *= model_uniform.sun_color.x;
+    out_color_2.y *= model_uniform.sun_color.y;
+    out_color_2.z *= model_uniform.sun_color.z;
+
+    // Composite
     var out_color = mix(out_color_1, out_color_2, 0.4);
-
     out_color.a = smoothstep(0.1, 0.4,  out_color.a);
-
-
-	var edgeFade = 1.0 - saturate((in.tex_coords.y - 0.9) / 0.9);
-	out_color.a *= edgeFade * out_color.a;
+	//out_color.a *= 3.0 * in.tex_coords.y;
 
     if (out_color.a < 0.5) {
         discard;
     }
+
     return out_color;
 }

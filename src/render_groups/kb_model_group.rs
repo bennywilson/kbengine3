@@ -730,6 +730,10 @@ impl KbModelRenderGroup {
             depth_write_enabled = false;
         }
 
+        let mut write_mask = wgpu::ColorWrites::ALL;
+        if shader_path.contains("sky_dome_occlude") {
+            write_mask = wgpu::ColorWrites::ALPHA;
+        }
         let model_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelRenderGroup_opaque_pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -745,7 +749,7 @@ impl KbModelRenderGroup {
                 targets: &[Some(wgpu::ColorTargetState { 
                     format: surface_config.format,
                     blend,
-                    write_mask: wgpu::ColorWrites::ALL,
+                    write_mask,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
