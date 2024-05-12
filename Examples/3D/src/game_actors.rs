@@ -316,9 +316,25 @@ impl GameProp {
 		actor.set_position(&position);
 		actor.set_model(&model_handle);
 
+		let extents = {
+			match prop_type {
+				GamePropType::Shotgun => {
+					CgVec3::new(1.0, 1.0, 1.0)
+				}
+				
+				GamePropType::Barrel => {
+					CgVec3::new(0.75, 4.25, 0.75)
+				}
+
+				_ => {
+					CgVec3::new(1.0, 1.0, 1.0)
+				}
+			}
+		};
+
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: actor.get_position().clone(),
-			extents: CgVec3::new(2.0, 2.0, 2.0)
+			extents,
 		});
 
 		let collision_handle = collision_manager.add_collision(&collision_box);
