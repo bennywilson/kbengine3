@@ -76,6 +76,7 @@ impl KbAssetManager {
 
 		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec());		
 		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec());
+		file_to_byte_buffer.insert("muzzle_flash_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/muzzle_flash_t.png").to_vec());
 
 		file_to_byte_buffer.insert("barrel.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/barrel.glb").to_vec());
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());

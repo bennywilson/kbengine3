@@ -31,6 +31,9 @@ pub struct Example3DGame {
 	pooled_smoke_particles: Vec<KbParticleHandle>,
 	next_pooled_smoke: usize,
 
+	pooled_muzzle_flashes: Vec<KbParticleHandle>,
+	next_pooled_muzzle_flash: usize,
+
 	barrel_model: Option<KbModelHandle>,
 	shotgun_model: Option<KbModelHandle>,
 	monster_model: Option<KbModelHandle>,
@@ -78,15 +81,15 @@ impl Example3DGame {
 
 		// Smoke
 		self.next_pooled_smoke = (self.next_pooled_smoke + 1) % self.pooled_smoke_particles.len();
-		let particle_handle_1 = self.pooled_smoke_particles[self.next_pooled_smoke].clone();
-		renderer.enable_particle_actor(&self.pooled_smoke_particles[self.next_pooled_smoke], true);
-		renderer.update_particle_transform(&self.pooled_smoke_particles[self.next_pooled_smoke], &smoke_pos);
+		let particle_handle_1 = self.pooled_smoke_particles[self.next_pooled_smoke].clone();	
+		renderer.enable_particle_actor(&particle_handle_1, true);
+		renderer.update_particle_transform(&particle_handle_1, &smoke_pos, &None);
 
 		// Ember
 		self.next_pooled_smoke = (self.next_pooled_smoke + 1) % self.pooled_smoke_particles.len();
 		let particle_handle_2 = self.pooled_smoke_particles[self.next_pooled_smoke].clone();
-		renderer.enable_particle_actor(&self.pooled_smoke_particles[self.next_pooled_smoke], true);
-		renderer.update_particle_transform(&self.pooled_smoke_particles[self.next_pooled_smoke], &smoke_pos);
+		renderer.enable_particle_actor(&particle_handle_2, true);
+		renderer.update_particle_transform(&particle_handle_2, &smoke_pos, &None);
 
 		let mut barrel = GameProp::new(&GamePropType::Barrel, &barrel_pos, self.barrel_model.as_ref().unwrap(), &mut self.collision_manager, [particle_handle_1, particle_handle_2]);
 		let barrel_actor = barrel.get_actor();
@@ -127,6 +130,8 @@ impl KbGameEngine for Example3DGame {
 			next_pooled_impact: 0,
 			pooled_smoke_particles: Vec::<KbParticleHandle>::new(),
 			next_pooled_smoke: 0,
+			pooled_muzzle_flashes: Vec::<KbParticleHandle>::new(),
+			next_pooled_muzzle_flash: 0,
 			barrel_model: None,
 			shotgun_model: None,
 			monster_model: None,
@@ -491,6 +496,56 @@ impl KbGameEngine for Example3DGame {
 			self.pooled_smoke_particles.push(particle_handle);
 		}
 
+		// Pooled Muzzle Flashes
+		let muzzle_flash_params = KbParticleParams {
+			texture_file: "/game_assets/fx/muzzle_flash_t.png".to_string(),
+			blend_mode: KbParticleBlendMode::Additive,
+
+			min_burst_count: 1,
+			max_burst_count: 1,
+
+			min_particle_life: 0.1,
+			max_particle_life: 0.15,
+
+			_min_actor_life: -1.0,
+			_max_actor_life: -1.0,
+
+			min_start_spawn_rate: 999.06,
+			max_start_spawn_rate: 999.06,
+
+			min_start_pos: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_pos: CgVec3::new(0.0, 0.0, 0.0),
+
+			min_start_scale: CgVec3::new(1.0, 1.0, 1.0),
+			max_start_scale: CgVec3::new(1.25, 1.25, 1.25),
+
+			min_end_scale: CgVec3::new(0.2, 0.2, 0.2),
+			max_end_scale: CgVec3::new(0.3, 0.3, 0.3),
+
+			min_start_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			min_start_rotation_rate: 0.0,
+			max_start_rotation_rate: 0.0,
+
+			min_start_acceleration: CgVec3::new(0.0, 0.0, 0.0),
+			max_start_acceleration: CgVec3::new(0.0, 0.0, 0.0),
+
+			min_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+			max_end_velocity: CgVec3::new(0.0, 0.0, 0.0),
+
+			start_color_0: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+			start_color_1: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+
+			end_color_0: CgVec4::new(0.8, 0.9, 1.0, 1.0),
+			_end_color1: CgVec4::new(1.0, 1.0, 1.5, 1.0),
+		};
+		
+		for _ in 0..8 {
+			let particle_handle = renderer.add_particle_actor(&particle_transform, &muzzle_flash_params, false).await;
+			self.pooled_muzzle_flashes.push(particle_handle);
+		}
+
 		self.spawn_shotgun(renderer);
 		self.spawn_barrel(renderer);
     }
@@ -535,7 +590,6 @@ impl KbGameEngine for Example3DGame {
 				self.props.retain_mut(|prop| {
 					if prop.get_prop_type() == GamePropType::Shotgun && prop.get_collision_handle() == *handle.as_ref().unwrap() {
 						prop.take_damage(&mut self.collision_manager, renderer);
-						log!("Picked up Shotgun!");
 						self.player.as_mut().unwrap().give_shotgun(&self.shotgun_model.as_ref().unwrap());
 						return false;
 					}
@@ -574,6 +628,7 @@ impl KbGameEngine for Example3DGame {
 		renderer.set_camera(&self.game_camera);
 
 		let player = &mut self.player.as_mut().unwrap();
+		let has_shotgun = player.has_shotgun();
 		let (cur_state, next_state) = player.tick(&input_manager, &self.game_camera, &game_config);
 		let (hands, hands_outline) = player.get_actors();
 		renderer.add_or_update_actor(&hands);
@@ -581,10 +636,37 @@ impl KbGameEngine for Example3DGame {
 			renderer.add_or_update_actor(&outline);
 		}
 
+		let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
+		let start = {
+			if has_shotgun {
+				hands.get_position() + view_dir * 3.0 + right_dir * 0.5 + CgVec3::new(0.0, 0.75, 0.0)
+			} else {
+				hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0)
+			}
+		};
+		for muzzle_flash in &mut self.pooled_muzzle_flashes {
+			renderer.update_particle_transform(&muzzle_flash, &start, &None);
+		}
+
+
 		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
 			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
 			let num_shots = if self.player.as_ref().unwrap().has_shotgun() == true { 8 } else { 1 };
+
+			// Muzzle Flash
+			self.next_pooled_muzzle_flash = (self.next_pooled_muzzle_flash + 1) % self.pooled_muzzle_flashes.len();
+			let particle_handle = self.pooled_muzzle_flashes[self.next_pooled_smoke].clone();
+			renderer.enable_particle_actor(&particle_handle, true);
+
+			let scale = {
+				if has_shotgun {
+					CgVec3::new(2.0, 2.0, 2.0)
+				} else {
+					CgVec3::new(1.0, 1.0, 1.0)
+				}
+			};
+			renderer.update_particle_transform(&particle_handle, &start, &Some(scale));
 
 			for i in 0..num_shots {
 				let mut end = self.game_camera.get_position() + view_dir * 1000.0;
@@ -604,7 +686,7 @@ impl KbGameEngine for Example3DGame {
 
 							self.next_pooled_gib = (self.next_pooled_gib + 1) % self.pooled_gib_particles.len();
 							renderer.enable_particle_actor(&self.pooled_gib_particles[self.next_pooled_gib], true);
-							renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actor().get_position());
+							renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actor().get_position(), &None);
 
 							!mob_killed
 						} else {
@@ -626,7 +708,7 @@ impl KbGameEngine for Example3DGame {
 						// Hit a wall, spawn impact
 						self.next_pooled_impact = (self.next_pooled_impact + 1) % self.pooled_impact_particles.len();
 						renderer.enable_particle_actor(&self.pooled_impact_particles[self.next_pooled_impact as usize], true);
-						renderer.update_particle_transform(&self.pooled_impact_particles[self.next_pooled_impact as usize], &hit_loc.unwrap());
+						renderer.update_particle_transform(&self.pooled_impact_particles[self.next_pooled_impact as usize], &hit_loc.unwrap(), &None);
 					}
 				}
 

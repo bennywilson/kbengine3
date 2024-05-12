@@ -325,10 +325,6 @@ impl GameProp {
 				GamePropType::Barrel => {
 					CgVec3::new(0.75, 4.25, 0.75)
 				}
-
-				_ => {
-					CgVec3::new(1.0, 1.0, 1.0)
-				}
 			}
 		};
 
