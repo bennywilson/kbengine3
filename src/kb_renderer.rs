@@ -310,9 +310,16 @@ impl<'a> KbRenderer<'a> {
         particle.set_active(enable);
     }
 
-    pub fn update_particle_transform(&mut self, handle: &KbParticleHandle, position: &CgVec3) {
+    pub fn update_particle_transform(&mut self, handle: &KbParticleHandle, position: &CgVec3, scale: &Option<CgVec3>) {
         let particle = self.particle_map.get_mut(handle).unwrap();
         particle.set_position(&position);
+
+        match scale {
+            Some(s) => {
+                particle.set_scale(s);
+            }
+            _ => { }
+        }
     }
     pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
         let model_handle = self.asset_manager.load_model(file_path, &mut self.device_resources).await;
