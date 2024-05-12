@@ -44,6 +44,8 @@ pub struct Example3DGame {
 	barrel_spawn_timer: Instant,
 	shotgun_spawn_timer: Instant,
 
+	outline_render_group: usize,
+
 	crosshair_error: f32,
 
 	invert_y: bool,
@@ -66,9 +68,14 @@ impl Example3DGame {
 
 		let monster_pos = pos[kb_random_u32(0, 3) as usize];
 		let mut monster = GameMob::new(&monster_pos, &mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
-		let monster_actor = monster.get_actor();
-		monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
-		renderer.add_or_update_actor(&monster_actor);
+		let monster_actors = monster.get_actors();
+		monster_actors[0].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
+		renderer.add_or_update_actor(&monster_actors[0]);
+
+		monster_actors[1].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.outline_render_group));
+		monster_actors[1].set_custom_data_1(CgVec4::new(0.01, 15.0, 15.0, 15.0));
+		renderer.add_or_update_actor(&monster_actors[1]);
+
 		self.mobs.push(monster);
 	}
 
@@ -92,8 +99,12 @@ impl Example3DGame {
 		renderer.update_particle_transform(&particle_handle_2, &smoke_pos, &None);
 
 		let mut barrel = GameProp::new(&GamePropType::Barrel, &barrel_pos, self.barrel_model.as_ref().unwrap(), &mut self.collision_manager, [particle_handle_1, particle_handle_2]);
-		let barrel_actor = barrel.get_actor();
-		renderer.add_or_update_actor(&barrel_actor);
+		let barrel_actors = barrel.get_actors();
+		barrel_actors[1].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.outline_render_group));
+		barrel_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.1, 0.1, 0.1)); 
+		for actor in barrel_actors {
+			renderer.add_or_update_actor(&actor);
+		}
 		self.props.push(barrel);
 	}
 
@@ -104,8 +115,13 @@ impl Example3DGame {
 		let shotgun_pos = pos[0];//kb_random_u32(0, 3) as usize];
 
 		let mut shotgun = GameProp::new(&GamePropType::Shotgun, &shotgun_pos, self.shotgun_model.as_ref().unwrap(), &mut self.collision_manager, [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE]);
-		let shotgun_actor = shotgun.get_actor();
-		renderer.add_or_update_actor(&shotgun_actor);
+		let shotgun_actors = shotgun.get_actors();
+		shotgun_actors[1].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.outline_render_group));
+		shotgun_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.1, 0.1, 0.1)); 
+
+		for actor in shotgun_actors {
+			renderer.add_or_update_actor(&actor);
+		}
 		self.props.push(shotgun);
 	}
 }
@@ -139,6 +155,7 @@ impl KbGameEngine for Example3DGame {
 			monster_spawn_timer: Instant::now(),
 			shotgun_spawn_timer: Instant::now(),
 			barrel_spawn_timer: Instant::now(),
+			outline_render_group: usize::MAX,
 			player: None,
 			crosshair_error: 0.0,
 			collision_manager: KbCollisionManager::new(),
@@ -243,11 +260,26 @@ impl KbGameEngine for Example3DGame {
 			self.world_actors.push(actor);
 		}
 
+		self.outline_render_group = renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Alpha, "game_assets/shaders/first_person_outline.wgsl").await;
 		let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
 		let mut actor = KbActor::new();
-		actor.set_position(&[3.0, 0.0, 3.0].into());
+		actor.set_position(&[16.5, 0.5, 6.0].into());
+		let pinky_rot_x = cgmath::Rad::from(cgmath::Deg(90.0)); 
+		let pinky_rot_z = cgmath::Rad::from(cgmath::Deg(115.0)); 
+		let pinky_rot = cgmath::Quaternion::from(CgMat3::from_angle_z(pinky_rot_z) * CgMat3::from_angle_x(pinky_rot_x));
+		actor.set_rotation(&pinky_rot);
 		actor.set_scale(&[1.0, 1.0, 1.0].into());
 		actor.set_model(&pinky_model);
+		renderer.add_or_update_actor(&actor);
+		self.world_actors.push(actor);
+
+		let mut actor = KbActor::new();
+		actor.set_position(&[16.5, 0.5, 6.0].into());
+		actor.set_rotation(&pinky_rot);
+		actor.set_scale(&[1.0, 1.0, 1.0].into());
+		actor.set_model(&pinky_model);
+		actor.set_custom_data_1(CgVec4::new(0.05, 0.1, 0.1, 0.1)); 
+		actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.outline_render_group));
 		renderer.add_or_update_actor(&actor);
 		self.world_actors.push(actor);
 
@@ -278,7 +310,7 @@ impl KbGameEngine for Example3DGame {
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: CgVec3::new(0.0, -0.5, 0.0),
-			extents: CgVec3::new(20.0, 0.5, 20.0)
+			extents: CgVec3::new(20.0, 0.0, 20.0)
 		});
 		let _ = self.collision_manager.add_collision(&collision_box);
 
@@ -584,7 +616,7 @@ impl KbGameEngine for Example3DGame {
 
 		move_vec = move_vec.normalize() * delta_time * CAMERA_MOVE_RATE;
 		if move_vec.magnitude2() > 0.001 {
-			let trace_start = CgVec3::new(camera_pos.x, 0.1, camera_pos.z);
+			let trace_start = CgVec3::new(camera_pos.x, 0.25, camera_pos.z);
 			let (t, handle, _) = self.collision_manager.cast_ray(&trace_start, &move_vec);
 			if t >= 0.0 && t < 1.0 {
 				self.props.retain_mut(|prop| {
@@ -686,7 +718,7 @@ impl KbGameEngine for Example3DGame {
 
 							self.next_pooled_gib = (self.next_pooled_gib + 1) % self.pooled_gib_particles.len();
 							renderer.enable_particle_actor(&self.pooled_gib_particles[self.next_pooled_gib], true);
-							renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actor().get_position(), &None);
+							renderer.update_particle_transform(&self.pooled_gib_particles[self.next_pooled_gib], &mob.get_actors()[0].get_position(), &None);
 
 							!mob_killed
 						} else {
@@ -723,7 +755,8 @@ impl KbGameEngine for Example3DGame {
 			let monster_iter = self.mobs.iter_mut();
 			for monster in monster_iter {
 				monster.tick(camera_pos, &mut self.collision_manager, &game_config);
-				renderer.add_or_update_actor(&monster.get_actor());
+				renderer.add_or_update_actor(&monster.get_actors()[0]);
+				renderer.add_or_update_actor(&monster.get_actors()[1]);
 			}
 		}
 
