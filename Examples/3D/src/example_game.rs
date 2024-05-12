@@ -60,8 +60,8 @@ impl Example3DGame {
 			CgVec3::new(-10.0, 2.0, -10.0),
 			CgVec3::new(10.0, 2.0, -10.0),
 		];
-		let monster_pos = pos[kb_random_u32(0, 3) as usize];
 
+		let monster_pos = pos[kb_random_u32(0, 3) as usize];
 		let mut monster = GameMob::new(&monster_pos, &mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
 		let monster_actor = monster.get_actor();
 		monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
@@ -278,11 +278,17 @@ impl KbGameEngine for Example3DGame {
 		let _ = self.collision_manager.add_collision(&collision_box);
 
 		// Trans Flag
-		renderer.add_line(&CgVec3::new(5.0, 6.5, 17.4), &CgVec3::new(10.0, 6.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 5535.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 6.0, 17.4), &CgVec3::new(10.0, 6.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 5535.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 5.5, 17.4), &CgVec3::new(10.0, 5.5, 17.4), &CgVec4::new(1.0, 1.0, 1.0, 1.0), 0.25, 5535.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 5.0, 17.4), &CgVec3::new(10.0, 5.0, 17.4), &CgVec4::new(0.96, 0.66, 0.72, 1.0), 0.25, 5535.0, &game_config);
-		renderer.add_line(&CgVec3::new(5.0, 4.5, 17.4), &CgVec3::new(10.0, 4.5, 17.4), &CgVec4::new(0.356, 0.807, 0.980, 1.0), 0.25, 5535.0, &game_config);
+		let sun_color = game_config.sun_color;
+		let trans_colors = [
+			CgVec4::new(0.356 * sun_color.x, 0.807 * sun_color.y, 0.980 * sun_color.z, 1.0),
+			CgVec4::new(0.96 * sun_color.x, 0.66 * sun_color.y, 0.72 * sun_color.z, 1.0),
+			CgVec4::new(1.0 * sun_color.x, 1.0 * sun_color.y, 1.0 * sun_color.z, 1.0),
+		];
+		renderer.add_line(&CgVec3::new(5.0, 6.5, 17.4), &CgVec3::new(10.0, 6.5, 17.4), &trans_colors[0], 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 6.0, 17.4), &CgVec3::new(10.0, 6.0, 17.4), &trans_colors[1], 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.5, 17.4), &CgVec3::new(10.0, 5.5, 17.4), &trans_colors[2], 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 5.0, 17.4), &CgVec3::new(10.0, 5.0, 17.4), &trans_colors[1], 0.25, 5535.0, &game_config);
+		renderer.add_line(&CgVec3::new(5.0, 4.5, 17.4), &CgVec3::new(10.0, 4.5, 17.4), &trans_colors[0], 0.25, 5535.0, &game_config);
 
 		// Pooled gibs
 		let particle_params = KbParticleParams {

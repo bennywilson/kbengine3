@@ -11,18 +11,20 @@ pub enum GamePlayerState {
 	None,
 	Idle,
 	Shooting,
-	Reloading,
+	StartReloading,
+	FinishReloading,
 }
 
 pub struct GamePlayer {
 	current_state: GamePlayerState,
 	current_state_time: Instant,
 
-	hand_model: KbModelHandle,
+	hands_model: KbModelHandle,
 	hands_actor: KbActor,
 	outline_actors: Vec<KbActor>,
 	hand_bone_offset: CgVec3,
 
+	next_weapon_model: KbModelHandle,
 	has_shotgun: bool,
 	ammo_count: u32,
 }
@@ -31,14 +33,14 @@ const PISTOL_AMMO_MAX: u32 = 8;
 const SHOTGUN_AMMO_MAX: u32 = 4;
 
 impl GamePlayer {
-	pub async fn new(hand_model: &KbModelHandle) -> Self {
+	pub async fn new(hands_model: &KbModelHandle) -> Self {
 		log!("Creating Player");
 		let current_state = GamePlayerState::Idle;
 		let current_state_time = Instant::now();
 		let mut hands_actor = KbActor::new();
 		hands_actor.set_position(&[5.0, 1.0, 3.0].into());
 		hands_actor.set_scale(&[1.0, 1.0, 1.0].into());
-		hands_actor.set_model(&hand_model);
+		hands_actor.set_model(&hands_model);
 		hands_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
 		let mut outline_actors = Vec::<KbActor>::new();
@@ -53,7 +55,7 @@ impl GamePlayer {
 			let alpha = (alpha).clamp(0.0, 1.0);
 			outline_actor.set_color(CgVec4::new(0.2, 0.2, 0.2, alpha));
 			outline_actor.set_custom_data_1(CgVec4::new(push, 0.0, 0.0, 0.0)); 
-			outline_actor.set_model(&hand_model);
+			outline_actor.set_model(&hands_model);
 			outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 			outline_actors.push(outline_actor);
 			push += 0.00075;
@@ -65,8 +67,9 @@ impl GamePlayer {
 			hands_actor,
 			outline_actors,
 			has_shotgun: false,
+			next_weapon_model: hands_model.clone(),
 			ammo_count: PISTOL_AMMO_MAX,
-			hand_model: hand_model.clone(),
+			hands_model: hands_model.clone(),
 			hand_bone_offset: CG_VEC3_ZERO,
 		}
 	}
@@ -81,23 +84,8 @@ impl GamePlayer {
 	}
 
 	pub fn give_shotgun(&mut self, model_handle: &KbModelHandle) {
-		self.hands_actor.set_model(&model_handle);
-
-		for i in 0..11 {
-			self.outline_actors[i].set_model(&model_handle);
-		}
-		self.ammo_count = SHOTGUN_AMMO_MAX;
-		self.has_shotgun = true;
-	}
-
-	pub fn give_pistol(&mut self) {
-		self.hands_actor.set_model(&self.hand_model);
-
-		for i in 0..11 {
-			self.outline_actors[i].set_model(&self.hand_model);
-		}
-		self.ammo_count = PISTOL_AMMO_MAX;
-		self.has_shotgun = false;
+		self.set_state(GamePlayerState::StartReloading);
+		self.next_weapon_model = model_handle.clone();
 	}
 
 	pub fn has_shotgun(&self) -> bool {
@@ -120,8 +108,11 @@ impl GamePlayer {
 				recoil_rad = cgmath::Rad::from(cgmath::Deg(5.0));
 				ret_val = (GamePlayerState::Shooting, self.tick_shooting(&game_camera));
 			}
-			GamePlayerState::Reloading => {
-				ret_val = (GamePlayerState::Reloading, self.tick_reloading(&game_camera));
+			GamePlayerState::StartReloading => {
+				ret_val = (GamePlayerState::StartReloading, self.tick_start_reloading(&game_camera));
+			}
+			GamePlayerState::FinishReloading => {
+				ret_val = (GamePlayerState::FinishReloading, self.tick_finish_reloading(&game_camera));
 			}
 			_ => { panic!("GamePlayer::tick() - GamePlayerState::None is an invalid state") }
 		}
@@ -170,8 +161,8 @@ impl GamePlayer {
 	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
 		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
 			if self.ammo_count == 0 {
-				self.set_state(GamePlayerState::Reloading);
-				return GamePlayerState::Reloading;
+				self.set_state(GamePlayerState::StartReloading);
+				return GamePlayerState::StartReloading;
 			}
 
 			self.set_state(GamePlayerState::Idle);
@@ -180,7 +171,7 @@ impl GamePlayer {
 		GamePlayerState::Shooting
 	}
 
-	fn tick_reloading(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
+	fn tick_start_reloading(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
 		let reload_duration = 0.85;
 		let one_over_duration = 1.0 / reload_duration;
 		let half_duration = reload_duration * 0.5;
@@ -190,17 +181,44 @@ impl GamePlayer {
 		if cur_state_time < half_duration {
 			self.hand_bone_offset.y = (bottom_y * cur_state_time * one_over_duration).clamp(bottom_y, 0.0);
 		} else {
-			self.give_pistol();
-			self.hand_bone_offset.y = (bottom_y * (reload_duration - cur_state_time) * one_over_duration).clamp(bottom_y, 0.0);
+			self.hand_bone_offset.y = bottom_y;
+
+			self.hands_actor.set_model(&self.next_weapon_model);
+			for i in 0..11 {
+				self.outline_actors[i].set_model(&self.next_weapon_model);
+			}
+
+			if self.next_weapon_model != self.hands_model {
+				self.ammo_count = SHOTGUN_AMMO_MAX;
+				self.has_shotgun = true;
+			} else {
+				self.ammo_count = PISTOL_AMMO_MAX;
+				self.has_shotgun = false;
+			}
+			self.next_weapon_model = self.hands_model.clone();
+			self.set_state(GamePlayerState::FinishReloading);
+			return GamePlayerState::FinishReloading;
 		}
 
-		if cur_state_time > reload_duration {
-			self.give_pistol();
-			self.set_state(GamePlayerState::Idle);
-			GamePlayerState::Idle
+		GamePlayerState::StartReloading
+	}
+
+	fn tick_finish_reloading(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
+		let reload_duration = 0.85;
+		let one_over_duration = 1.0 / reload_duration;
+		let half_duration = reload_duration * 0.5;
+		let bottom_y = -3.0;
+
+		let cur_state_time = self.current_state_time.elapsed().as_secs_f32();
+		if cur_state_time < half_duration {
+			self.hand_bone_offset.y = (bottom_y * (half_duration - cur_state_time) * one_over_duration).clamp(bottom_y, 0.0);
 		} else {
-			GamePlayerState::Reloading
+			self.hand_bone_offset.y = 0.0;
+			self.set_state(GamePlayerState::Idle);
+			return GamePlayerState::Idle
 		}
+
+		return GamePlayerState::FinishReloading
 	}
 }
 

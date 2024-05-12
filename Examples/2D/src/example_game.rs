@@ -32,7 +32,6 @@ impl Example2DGame {
 
 		let game_time = self.game_start_time.elapsed().as_secs_f32();
 		if game_time > self.next_enemy_spawn_time {
-
 			self.next_enemy_spawn_time  = game_time + self.enemy_spawn_delay;
 			self.num_enemies = self.num_enemies + 1;
 			
