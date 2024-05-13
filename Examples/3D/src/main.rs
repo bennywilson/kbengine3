@@ -1,11 +1,10 @@
-use kb_engine3::{kb_config::KbConfig};
+use kb_engine3::kb_config::KbConfig;
 
 mod example_game;
 mod game_actors;
 mod game_vfx;
 
 use example_game::Example3DGame;
-
 
 fn main() {
     let config_file_text = include_str!("game_config.txt");

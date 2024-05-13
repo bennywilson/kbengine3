@@ -1,11 +1,14 @@
-use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey}};
+use winit::{
+    event::ElementState,
+    keyboard::{KeyCode, PhysicalKey},
+};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum KbButtonState {
-   #[default]
-   None = 0,
-   JustPressed = 1,
-   Down = 2,
+    #[default]
+    None = 0,
+    JustPressed = 1,
+    Down = 2,
 }
 
 #[derive(Debug, Default)]
@@ -13,7 +16,7 @@ pub struct KbInputManager {
     pub left_arrow_pressed: bool,
     pub right_arrow_pressed: bool,
     pub up_arrow_pressed: bool,
-    pub down_arrow_pressed:bool,
+    pub down_arrow_pressed: bool,
     pub left_pressed: bool,
     pub right_pressed: bool,
     pub up_pressed: bool,
@@ -31,7 +34,7 @@ pub struct KbInputManager {
     pub key_h: KbButtonState,
 }
 
-#[allow(dead_code)] 
+#[allow(dead_code)]
 impl KbInputManager {
     pub fn new() -> Self {
         Default::default()
@@ -133,7 +136,7 @@ impl KbInputManager {
                 }
                 true
             }
-            _ => false
+            _ => false,
         }
     }
 
