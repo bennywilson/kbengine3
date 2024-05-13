@@ -631,7 +631,7 @@ impl KbGameEngine for Example3DGame {
 			_end_color1: CgVec4::new(1.0, 1.0, 1.5, 1.0),
 		};
 		
-		for _ in 0..8 {
+		for _ in 0..24 {
 			let particle_handle = renderer.add_particle_actor(&particle_transform, &muzzle_flash_params, false).await;
 			self.pooled_muzzle_flashes.push(particle_handle);
 		}
