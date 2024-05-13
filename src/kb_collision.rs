@@ -13,7 +13,8 @@ pub struct KbCollisionSphere {
 #[derive(Clone, Copy)]
 pub struct KbCollisionAABB {
 	pub position: CgVec3,
-	pub extents: CgVec3
+	pub extents: CgVec3,
+	pub block: bool,
 }
 
 impl KbCollisionAABB {
@@ -60,6 +61,10 @@ impl KbCollisionManager {
 		self.collision_objects.handles_to_assets.remove(handle);
 	}
 
+	pub fn get_collision(&self, handle: &KbCollisionHandle) -> KbCollisionShape {
+		self.collision_objects.handles_to_assets.get(&handle).unwrap().clone()
+	}
+
 	pub fn update_collision_position(&mut self, handle: &KbCollisionHandle, new_pos: &CgVec3) {
 		let collision = self.collision_objects.handles_to_assets.get_mut(handle).expect("Bad collision handle");
 
@@ -69,16 +74,17 @@ impl KbCollisionManager {
 				new_collision =  KbCollisionShape::Sphere(KbCollisionSphere { position: new_pos.clone(), radius: s.radius });
 			}
 			KbCollisionShape::AABB(b) => {
-				new_collision =  KbCollisionShape::AABB(KbCollisionAABB { position: new_pos.clone(), extents: b.extents });
+				new_collision = KbCollisionShape::AABB(KbCollisionAABB { position: new_pos.clone(), extents: b.extents, block: b.block });
 			}
 		}
 
 		self.collision_objects.handles_to_assets.insert(handle.clone(), new_collision);
 	}
 
-	pub fn cast_ray(&mut self, start: &CgVec3, dir: &CgVec3) -> (f32, Option<KbCollisionHandle>, Option<CgVec3>) {
+	pub fn cast_ray(&mut self, start: &CgVec3, dir: &CgVec3) -> (f32, Option<KbCollisionHandle>, Option<CgVec3>, Option<bool>) {
 		let mut closest_hit = f32::MAX;
 		let mut closest_handle = KbCollisionHandle::make_invalid();
+		let mut blocks = None;
 		let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
 		for (handle, value) in collision_iter {
 			match value {
@@ -110,6 +116,7 @@ impl KbCollisionManager {
 					if largest_min > 0.0 && smallest_max >= largest_min && largest_min < closest_hit {
 						closest_hit = largest_min;
 						closest_handle = handle.clone();
+						blocks = Some(aabb.block);
 					}
 				}
 			}
@@ -122,7 +129,7 @@ impl KbCollisionManager {
 				None
 			}
 		};
-		(closest_hit, Some(closest_handle), hit_loc)
+		(closest_hit, Some(closest_handle), hit_loc, blocks)
 	}
 
 	pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {

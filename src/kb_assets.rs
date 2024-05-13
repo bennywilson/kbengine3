@@ -77,8 +77,10 @@ impl KbAssetManager {
 		file_to_byte_buffer.insert("ember_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec());		
 		file_to_byte_buffer.insert("smoke_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec());
 		file_to_byte_buffer.insert("muzzle_flash_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/muzzle_flash_t.png").to_vec());
+		file_to_byte_buffer.insert("monster_gibs_t.png".to_string(), include_bytes!("./../Examples/3D/game_assets/fx/monster_gibs_t.png").to_vec());
 
 		file_to_byte_buffer.insert("barrel.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/barrel.glb").to_vec());
+		file_to_byte_buffer.insert("decal.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/decal.glb").to_vec());
 		file_to_byte_buffer.insert("fp_hands.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/fp_hands.glb").to_vec());
 		file_to_byte_buffer.insert("level.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/level.glb").to_vec());
 		file_to_byte_buffer.insert("monster.glb".to_string(), include_bytes!("./../Examples/3D/game_assets/models/monster.glb").to_vec());
@@ -89,6 +91,7 @@ impl KbAssetManager {
 		let mut file_to_string_buffer =  HashMap::<String, String>:: new();
 		file_to_string_buffer.insert("basic_sprite.wgsl".to_string(), include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string());
 		file_to_string_buffer.insert("cloud_sprite.wgsl".to_string(), include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string());
+		file_to_string_buffer.insert("decal.wgsl".to_string(), include_str!("../engine_assets/shaders/decal.wgsl").to_string());
 		file_to_string_buffer.insert("line.wgsl".to_string(), include_str!("../engine_assets/shaders/line.wgsl").to_string());
 		file_to_string_buffer.insert("model.wgsl".to_string(), include_str!("../engine_assets/shaders/model.wgsl").to_string());
 		file_to_string_buffer.insert("particle.wgsl".to_string(), include_str!("../engine_assets/shaders/particle.wgsl").to_string());

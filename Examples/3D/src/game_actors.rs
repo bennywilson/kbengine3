@@ -44,7 +44,7 @@ impl GamePlayer {
 
 		let mut outline_actors = Vec::<KbActor>::new();
 
-		let mut push = 0.00075;
+		let mut push = 0.001;
 		let num_steps = 10;
 		for i in 0..num_steps + 1 {
 			let mut outline_actor = KbActor::new();
@@ -52,12 +52,12 @@ impl GamePlayer {
 			outline_actor.set_scale(&CG_VEC3_ONE);
 			let alpha = 1.0 - (i as f32 / num_steps as f32);
 			let alpha = (alpha).clamp(0.0, 1.0);
-			outline_actor.set_color(CgVec4::new(0.2, 0.2, 0.2, alpha));
+			outline_actor.set_color(CgVec4::new(0.1, 0.1, 0.1, alpha));
 			outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75)); 
 			outline_actor.set_model(&hands_model);
 			outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 			outline_actors.push(outline_actor);
-			push += 0.00075;
+			push += 0.001;
 		}
 
 		GamePlayer {
@@ -195,10 +195,12 @@ impl GamePlayer {
 				self.has_shotgun = false;
 			}
 
-			let push = if self.has_shotgun { 0.01 } else { 0.00075};
+			let start_push = if self.has_shotgun { 0.01 } else { 0.0013 };
+			let mut push = start_push;
 			self.hands_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75));
-			for actor in &mut self.outline_actors {
-				actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75)); 
+			for outline_actor in &mut self.outline_actors {
+				outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75)); 
+				push += 0.0013;
 			}
 
 			self.next_weapon_model = self.hands_model.clone();
@@ -229,9 +231,11 @@ impl GamePlayer {
 }
 
 #[allow(dead_code)]
-enum GameMobState {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GameMobState {
 	Idle,
 	Chasing,
+	Attacking,
 	Dying,
 	Dead	
 }
@@ -256,7 +260,8 @@ impl GameMob {
 
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: monster_actor.get_position().clone(),
-			extents: CgVec3::new(2.0, 2.0, 2.0)
+			extents: CgVec3::new(2.0, 2.0, 2.0),
+			block: true
 		});
 		let collision_handle = collision_manager.add_collision(&collision_box);
 
@@ -282,6 +287,9 @@ impl GameMob {
 		&mut self.monster_actors
 	}
 
+	pub fn get_state(&self) -> GameMobState {
+		self.current_state.clone()
+	}
 	pub fn get_collision_handle(&self) -> &KbCollisionHandle {
 		&self.collision_handle
 	}
@@ -301,8 +309,28 @@ impl GameMob {
 		{
 			let monster_actor = &mut self.monster_actors[0];
 			if dist_to_player > 5.0 {
-				let new_pos = monster_actor.get_position() + vec_to_player * game_config.delta_time * 5.0;
-				monster_actor.set_position(&new_pos);
+				collision_manager.remove_collision(&self.collision_handle);	// hack. Don't collide with self
+				let move_vec = vec_to_player * game_config.delta_time * 5.0;
+				let (t, _, _, blocks) = collision_manager.cast_ray(&monster_actor.get_position(), &move_vec);
+				let block = {
+					match blocks {
+						Some(b) => { b }
+						None => { true }
+					}
+				};
+				if t < 0.0 || t > 1.0 || block == false {
+					let new_pos = monster_actor.get_position() + move_vec;
+					monster_actor.set_position(&new_pos);
+				}
+				let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
+					position: monster_actor.get_position().clone(),
+					extents: CgVec3::new(2.0, 2.0, 2.0),
+					block: true
+				});
+				self.collision_handle = collision_manager.add_collision(&collision_box);
+				self.current_state = GameMobState::Chasing;
+			} else {
+				self.current_state = GameMobState::Attacking;
 			}
 			monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
 		}
@@ -348,6 +376,7 @@ impl GameProp {
 		let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
 			position: position.clone(),
 			extents,
+			block: false,
 		});
 
 		let collision_handle = collision_manager.add_collision(&collision_box);
@@ -401,4 +430,9 @@ impl GameProp {
 	pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
 		&mut self.actors
 	}
+}
+
+pub struct GameDecal {
+	pub actor: KbActor,
+	pub start_time: f32,
 }

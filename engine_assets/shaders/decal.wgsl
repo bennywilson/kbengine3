@@ -38,7 +38,7 @@ fn vs_main(
 
     out.tex_coords = model.tex_coords;
 
-    var pos: vec3<f32> = model.position.xyz * 0.3;
+    var pos: vec3<f32> = model.position.xyz;
     var normal = vec4<f32>(model.normal.xyz, 0.0);
     out.normal = (model_uniform.inv_world * normal).xyz;
 
@@ -46,9 +46,6 @@ fn vs_main(
     out.inv_light_1 = (model_uniform.inv_world * vec4<f32>(1.0, 1.0, 1.0, 0.0)).xyz;
     out.inv_light_2 = (model_uniform.inv_world * vec4<f32>(-1.0, 1.0, 1.0, 0.0)).xyz;
     out.inv_light_3 = (model_uniform.inv_world * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
-
-//out.clip_position.z = 0.5;
-//out.clip_position.w = 0.5;
 
     return out;
 }
@@ -64,38 +61,17 @@ var t_noise: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var outColor: vec4<f32>;
     var uv : vec2<f32>; 
     uv = in.tex_coords;
-    var albedo: vec3<f32> = textureSample(t_diffuse, s_diffuse, uv).xyz;
+    var albedo: vec4<f32> = textureSample(t_diffuse, s_diffuse, uv);
     albedo.r *= model_uniform.model_color.r;
     albedo.g *= model_uniform.model_color.g;
     albedo.b *= model_uniform.model_color.b;
 
-    var normal = normalize(in.normal);
-    var dot_prod: f32 = saturate(dot(normal, normalize(in.inv_light_1)));
-    var light_1 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_2)));
-    var light_2 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(1.0, 1.0, 1.0) * 0.5;
-
-    dot_prod = saturate(dot(normal, normalize(in.inv_light_3)));
-    var light_3 = model_uniform.sun_color.xyz * dot_prod * vec3<f32>(0.0, 0.0, 0.0);
-
-   light_1 = light_1 * 0.9 + 0.1;
-    light_2 = light_2 * 0.9 + 0.1;
-    light_3 = light_3 * 0.9 + 0.1;
-
-    var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
-
-    outColor.x = lighting.x;
-    outColor.y = lighting.y;
-    outColor.z = lighting.z;
-    outColor.w = 1.0;
-
-    outColor.r = pow(outColor.r, model_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, model_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, model_uniform.time_colorpow_.y);
-
+    var outColor: vec4<f32>;
+    outColor.r = pow(albedo.r, model_uniform.time_colorpow_.y) * 0.5;
+    outColor.g = pow(albedo.g, model_uniform.time_colorpow_.y) * 0.5;
+    outColor.b = pow(albedo.b, model_uniform.time_colorpow_.y) * 0.5;
+    outColor.a = albedo.a;
     return outColor;
 }

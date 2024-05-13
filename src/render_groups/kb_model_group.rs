@@ -725,8 +725,13 @@ impl KbModelRenderGroup {
             }
         });
 
+        let mut cull_mode = Some(wgpu::Face::Back);
+        if shader_path.contains("decal") {
+            cull_mode = None;
+        }
+
         let mut depth_write_enabled = true;
-        if shader_path.contains("first_person_outline") || shader_path.contains("sky_dome_draw") {
+        if shader_path.contains("first_person_outline") || shader_path.contains("sky_dome_draw") || shader_path.contains("decal") {
             depth_write_enabled = false;
         }
 
@@ -757,7 +762,7 @@ impl KbModelRenderGroup {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,

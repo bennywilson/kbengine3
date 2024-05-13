@@ -186,7 +186,7 @@ impl KbPostprocessRenderGroup {
         }
     }
 
-    pub fn render(&mut self, target_view: &wgpu::TextureView, device_resources: &mut KbDeviceResources, game_config: &KbConfig) {
+    pub fn render(&mut self, target_view: &wgpu::TextureView, device_resources: &mut KbDeviceResources, game_config: &KbConfig, postprocess_override: Option<KbPostProcessMode>) {
 		let mut command_encoder = device_resources.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("KbPostprocessRenderGroup::render()"),
 		});
@@ -217,7 +217,11 @@ impl KbPostprocessRenderGroup {
 
         self.postprocess_uniform.time_mode_unused_unused[0] = game_config.start_time.elapsed().as_secs_f32();
         self.postprocess_uniform.time_mode_unused_unused[1] = {
-            match game_config.postprocess_mode {
+            let postprocess_mode = match postprocess_override {
+                Some(p) => { p.clone() }
+                None => { game_config.postprocess_mode.clone() }
+            };
+            match postprocess_mode {
                 KbPostProcessMode::Desaturation => { 1.0 }
                 KbPostProcessMode::ScanLines => { 2.0 }
                 KbPostProcessMode::Warp => { 3.0 }
