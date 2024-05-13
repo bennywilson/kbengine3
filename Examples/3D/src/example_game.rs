@@ -17,7 +17,6 @@ pub struct Example3DGame {
 	mobs: Vec<GameMob>,
 	world_actors: Vec<KbActor>,
 	props: Vec<GameProp>,
-	decals: Vec<GameDecal>,
 
 	game_objects: Vec<GameObject>,
 	game_camera: KbCamera,
@@ -27,7 +26,6 @@ pub struct Example3DGame {
 	vfx_manager: GameVfxManager,
 
 	barrel_model: Option<KbModelHandle>,
-	decal_model: Option<KbModelHandle>,
 	shotgun_model: Option<KbModelHandle>,
 	monster_model: Option<KbModelHandle>,
 
@@ -148,14 +146,12 @@ impl KbGameEngine for Example3DGame {
 			world_actors: Vec::<KbActor>::new(),
 			mobs: Vec::<GameMob>::new(),
 			props: Vec::<GameProp>::new(),
-			decals: Vec::<GameDecal>::new(),
 			game_objects,
 			game_camera,
 			vfx_manager: GameVfxManager::new(),
 			barrel_model: None,
 			shotgun_model: None,
 			monster_model: None,
-			decal_model: None,
 			monster_render_group: usize::MAX,
 			monster_spawn_timer: Instant::now(),
 			shotgun_spawn_timer: Instant::now(),
@@ -225,7 +221,6 @@ impl KbGameEngine for Example3DGame {
 
 		self.barrel_model = Some(renderer.load_model("game_assets/models/barrel.glb").await);
 		self.shotgun_model = Some(renderer.load_model("game_assets/models/shotgun.glb").await);
-		self.decal_model = Some(renderer.load_model("game_assets/models/decal.glb").await);
 
 		self.decal_render_group = renderer.add_custom_render_group(&KbRenderGroupType::WorldCustom, &KbBlendMode::Additive, "engine_assets/shaders/decal.wgsl").await;
 
@@ -462,7 +457,7 @@ impl KbGameEngine for Example3DGame {
 			}
 		};
 
-		self.vfx_manager.update_muzzle_flashes(&start, renderer);
+		self.vfx_manager.tick(&start, renderer, game_config);
 
 		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
 			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
@@ -492,82 +487,7 @@ impl KbGameEngine for Example3DGame {
 							self.score = self.score + 1;
 
 							let mob_pos = mob.get_actors()[0].get_position();
-							self.vfx_manager.spawn_mob_death_fx(&mob_pos, renderer);
-
-							// Floor decals
-							let num_floor_decals = kb_random_u32(3, 7);
-							for _ in 0..num_floor_decals {
-								let mut decal_actor = KbActor::new();
-								let mut ground_pos = mob_pos + kb_random_vec3(CgVec3::new(-3.0, 0.0, -3.0), CgVec3::new(3.0, 0.0, 3.0));
-								ground_pos.y = 0.05;
-								decal_actor.set_position(&ground_pos);
-								let scale = kb_random_f32(1.0, 5.0);
-								decal_actor.set_scale(&CgVec3::new(scale, scale, scale));
-								let decal_rotation = cgmath::Rad::from(cgmath::Deg(kb_random_f32(0.0, 360.0))); 
-								let rotation = cgmath::Quaternion::from(CgMat3::from_angle_y(decal_rotation));
-								decal_actor.set_rotation(&rotation);
-								decal_actor.set_model(&self.decal_model.as_ref().unwrap());
-								decal_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.decal_render_group));
-								renderer.add_or_update_actor(&decal_actor);
-								let decal = GameDecal {
-									actor: decal_actor,
-									start_time: game_config.start_time.elapsed().as_secs_f32() + kb_random_f32(-0.25, 0.25),
-								};
-								self.decals.push(decal);
-							}
-
-							// Wall decals
-							let num_wall_decals = kb_random_u32(3, 5);
-							let decal_range = CgVec3::new(3.0, 3.0, 3.0);
-							for _ in 0..num_wall_decals {
-								let rot_1 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
-								let rot_2 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
-								let rot_3 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
-
-								let rotation = cgmath::Quaternion::from(CgMat3::from_angle_x(rot_1) * CgMat3::from_angle_y(rot_2) * CgMat3::from_angle_z(rot_3));
-								let splat_dir = rotation * view_dir * 15.0;
-								let (t, _, decal_hit_loc, _) = self.collision_manager.cast_ray(&hit_loc, &splat_dir);
-								if t >= 0.0 && t < 1.0 {
-									let (pos, rotation) = {
-										let decal_hit_loc = decal_hit_loc.unwrap();
-										if decal_hit_loc.x.abs() > decal_hit_loc.z.abs() {
-											if decal_hit_loc.x < 0.0 {
-												(CgVec3::new(-18.0, splat_dir.y + kb_random_f32(-decal_range.x, decal_range.x), splat_dir.z + kb_random_f32(-decal_range.z, decal_range.z)),
-												90.0)
-											} else {
-												(CgVec3::new(18.0, splat_dir.y + kb_random_f32(-decal_range.x, decal_range.x), splat_dir.z + kb_random_f32(-decal_range.z, decal_range.z)),
-												90.0)
-											}
-										} else {
-											if decal_hit_loc.z < 0.0 {
-												(CgVec3::new(splat_dir.x + kb_random_f32(-decal_range.x, decal_range.x), splat_dir.y + kb_random_f32(-decal_range.x, decal_range.x), -18.0),
-												180.0)
-											} else {
-												(CgVec3::new(splat_dir.x + kb_random_f32(-decal_range.x, decal_range.x), splat_dir.y + kb_random_f32(-decal_range.x, decal_range.x), 18.0),
-												180.0)
-											}
-										}
-									};
-
-									let mut decal_actor = KbActor::new();
-									decal_actor.set_position(&pos);
-									let scale = kb_random_f32(1.0, 5.0);
-									decal_actor.set_scale(&CgVec3::new(scale, scale, scale));
-									let decal_fix = cgmath::Rad::from(cgmath::Deg(90.0));
-									let decal_rotation = cgmath::Rad::from(cgmath::Deg(rotation)); 
-									let spin = cgmath::Rad::from(cgmath::Deg(kb_random_f32(0.0, 360.0)));
-									let rotation = cgmath::Quaternion::from(CgMat3::from_angle_y(decal_rotation) * CgMat3::from_angle_x(decal_fix) * CgMat3::from_angle_y(spin));
-									decal_actor.set_rotation(&rotation);
-									decal_actor.set_model(&self.decal_model.as_ref().unwrap());
-									decal_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.decal_render_group));
-									renderer.add_or_update_actor(&decal_actor);
-									let decal = GameDecal {
-										actor: decal_actor,
-										start_time: game_config.start_time.elapsed().as_secs_f32() + kb_random_f32(-0.25, 0.25),
-									};
-									self.decals.push(decal);
-								}
-							}
+							self.vfx_manager.spawn_mob_death_fx(&mob_pos, &view_dir, renderer, &mut self.collision_manager, game_config);
 
 							!mob_killed
 						} else {
@@ -603,6 +523,8 @@ impl KbGameEngine for Example3DGame {
 							if magnitude < 15.0 {
 								mob.take_damage(&mut self.collision_manager, renderer);
 								self.score = self.score + 1;
+
+								self.vfx_manager.spawn_mob_death_fx(&mob_pos, &view_dir, renderer, &mut self.collision_manager, game_config);
 								return false
 							}
 
@@ -673,18 +595,7 @@ impl KbGameEngine for Example3DGame {
 			renderer.set_postprocess_mode(&KbPostProcessMode::Passthrough);
 		}
 
-		// Decals
-		let elapsed_time = game_config.start_time.elapsed().as_secs_f32();
-		self.decals.retain_mut(|d| {
-			if elapsed_time > d.start_time + 2.0 {
-				renderer.remove_actor(&d.actor);
-				return false
-			}
-			let alpha = 1.0 - (elapsed_time - d.start_time) / 2.0;
-			d.actor.set_color(0.5 * CgVec4::new(alpha, alpha, alpha, alpha));
-			renderer.add_or_update_actor(&d.actor);
-			return true
-		});
+
 
 		// UI
 		{
