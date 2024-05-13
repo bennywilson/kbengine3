@@ -301,7 +301,7 @@ impl GameMob {
 		true
 	}
 
-	pub fn tick(&mut self, player_pos: CgVec3, collision_manager: &mut KbCollisionManager, game_config: &KbConfig) {
+	pub fn tick(&mut self, player_pos: CgVec3, speed_multiplier: f32, collision_manager: &mut KbCollisionManager, game_config: &KbConfig) {
 		let vec_to_player = player_pos - self.monster_actors[0].get_position();
 		let dist_to_player = vec_to_player.magnitude();
 		let vec_to_player = vec_to_player.normalize();
@@ -310,7 +310,7 @@ impl GameMob {
 			let monster_actor = &mut self.monster_actors[0];
 			if dist_to_player > 5.0 {
 				collision_manager.remove_collision(&self.collision_handle);	// hack. Don't collide with self
-				let move_vec = vec_to_player * game_config.delta_time * 5.0;
+				let move_vec = vec_to_player * game_config.delta_time *speed_multiplier;
 				let (t, _, _, blocks) = collision_manager.cast_ray(&monster_actor.get_position(), &move_vec);
 				let block = {
 					match blocks {

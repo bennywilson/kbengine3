@@ -55,18 +55,22 @@ impl Example3DGame {
 			return;
 		}
 
-		if self.mobs.len() > 10 {
+		if self.mobs.len() > 15 {
 			return;
 		}
 
 		let pos = [
-			CgVec3::new(10.0, 2.0, 10.0),
-			CgVec3::new(-10.0, 2.0, 10.0),
-			CgVec3::new(-10.0, 2.0, -10.0),
-			CgVec3::new(10.0, 2.0, -10.0),
+			CgVec3::new(15.0, 2.0, 15.0),
+			CgVec3::new(-15.0, 2.0, 15.0),
+			CgVec3::new(-15.0, 2.0, -15.0),
+			CgVec3::new(15.0, 2.0, -15.0),
+			CgVec3::new(15.0, 2.0, 0.0),
+			CgVec3::new(-15.0, 2.0, 0.0),
+			CgVec3::new(0.0, 2.0, -15.0),
+			CgVec3::new(0.0, 2.0, -15.0),
 		];
 
-		let monster_pos = pos[kb_random_u32(0, 3) as usize];
+		let monster_pos = pos[kb_random_u32(0, 7) as usize];
 		let mut monster = GameMob::new(&monster_pos, &mut self.monster_model.as_ref().unwrap(), &mut self.collision_manager);
 		let monster_actors = monster.get_actors();
 		monster_actors[0].set_render_group(&KbRenderGroupType::WorldCustom, &Some(self.monster_render_group));
@@ -86,10 +90,7 @@ impl Example3DGame {
 	}
 
 	fn spawn_barrel(&mut self, renderer: &mut KbRenderer<'_>) {
-		let pos = [
-			CgVec3::new(0.0, 0.0, 0.0),
-		];
-		let barrel_pos = pos[0];//kb_random_u32(0, 3) as usize];
+		let barrel_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(-15.0, 0.0, 15.0));
 		let smoke_pos = barrel_pos + CgVec3::new(0.0, 3.5, 0.0);
 
 		// Smoke
@@ -112,10 +113,7 @@ impl Example3DGame {
 	}
 
 	fn spawn_shotgun(&mut self, renderer: &mut KbRenderer<'_>) {
-		let pos = [
-			CgVec3::new(9.0, 0.0, -4.0),
-		];
-		let shotgun_pos = pos[0];//kb_random_u32(0, 3) as usize];
+		let shotgun_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(-15.0, 0.0, 15.0));
 
 		let mut shotgun = GameProp::new(&GamePropType::Shotgun, &shotgun_pos, self.shotgun_model.as_ref().unwrap(), &mut self.collision_manager, [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE]);
 		let shotgun_actors = shotgun.get_actors();
@@ -435,6 +433,7 @@ impl KbGameEngine for Example3DGame {
 		if input_manager.down_arrow_pressed {
 			camera_rot.y += y_radians
 		}
+		camera_rot.y = camera_rot.y.clamp(-60.0, 75.0);
 
 		self.game_camera.set_rotation(&camera_rot);
 		renderer.set_camera(&self.game_camera);
@@ -546,31 +545,39 @@ impl KbGameEngine for Example3DGame {
 
 		// Tick monster
 		if self.pause_monsters == false {
+			let speed_multiplier = {
+				let t = (self.score as f32/ 20.0).clamp(0.0, 1.0);
+				(t * 10.0) + 5.0
+			};
 			let monster_iter = self.mobs.iter_mut();
 			for monster in monster_iter {
-				monster.tick(camera_pos, &mut self.collision_manager, &game_config);
+				monster.tick(camera_pos, speed_multiplier, &mut self.collision_manager, &game_config);
 				renderer.add_or_update_actor(&monster.get_actors()[0]);
 				renderer.add_or_update_actor(&monster.get_actors()[1]);
 			}
 		}
 
-		if self.monster_spawn_timer.elapsed().as_secs_f32() > 2.0 {
+		let spawn_timer = {
+			let t = 1.0 - (self.score as f32/ 20.0).clamp(0.0, 1.0);
+			t + 1.0
+		};
+		if self.monster_spawn_timer.elapsed().as_secs_f32() > spawn_timer {
 			self.monster_spawn_timer = Instant::now();
 			self.spawn_monster(renderer);
 		}
 		
-		if self.shotgun_spawn_timer.elapsed().as_secs_f32() > 20.0 {
-			if self.props.iter().filter(|&p| p.get_prop_type() == GamePropType::Shotgun).count() == 0 {
-				self.shotgun_spawn_timer = Instant::now();
-				self.spawn_shotgun(renderer);
-			}
+		let shotgun_count = self.props.iter().filter(|&p| p.get_prop_type() == GamePropType::Shotgun).count();
+		if shotgun_count > 0 {
+			self.shotgun_spawn_timer = Instant::now();
+		} else if self.shotgun_spawn_timer.elapsed().as_secs_f32() > 20.0 {			
+			self.spawn_shotgun(renderer);
 		}
 
-		if self.barrel_spawn_timer.elapsed().as_secs_f32() > 20.0 {
-			if self.props.iter().filter(|&p| p.get_prop_type() == GamePropType::Barrel).count() == 0 {
-				self.barrel_spawn_timer = Instant::now();
-				self.spawn_barrel(renderer);
-			}
+		let barrel_count = self.props.iter().filter(|&p| p.get_prop_type() == GamePropType::Barrel).count();
+		if barrel_count > 0 {
+			self.barrel_spawn_timer = Instant::now();
+		} else if self.barrel_spawn_timer.elapsed().as_secs_f32() > 20.0 {			
+			self.spawn_barrel(renderer);
 		}
 
 		let mut num_attacking = 0;
@@ -585,8 +592,8 @@ impl KbGameEngine for Example3DGame {
 			if self.next_harm_time < 0.0 {
 				self.next_harm_time = elapsed_time + 1.0;
 			} else {
-				renderer.set_postprocess_mode(&KbPostProcessMode::ScanLines);
 				if elapsed_time > self.next_harm_time {
+					renderer.set_postprocess_mode(&KbPostProcessMode::ScanLines);
 					self.next_harm_time = elapsed_time + 1.0;
 					self.score = (self.score - 1).max(0);
 				}
@@ -594,8 +601,6 @@ impl KbGameEngine for Example3DGame {
 		} else {
 			renderer.set_postprocess_mode(&KbPostProcessMode::Passthrough);
 		}
-
-
 
 		// UI
 		{
