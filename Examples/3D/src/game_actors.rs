@@ -1,5 +1,5 @@
-use cgmath::{InnerSpace, Rotation, SquareMatrix};
 use instant::Instant;
+use cgmath::{InnerSpace, Rotation, SquareMatrix};
 
 use kb_engine3::{kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*, kb_resource::*, 
 	kb_utils::*, log};
@@ -22,6 +22,9 @@ pub struct GamePlayer {
 	hands_actor: KbActor,
 	outline_actors: Vec<KbActor>,
 	hand_bone_offset: CgVec3,
+
+	recoil_radians: cgmath::Rad<f32>,
+	recoil_offset: f32,
 
 	next_weapon_model: KbModelHandle,
 	has_shotgun: bool,
@@ -70,6 +73,8 @@ impl GamePlayer {
 			ammo_count: PISTOL_AMMO_MAX,
 			hands_model: hands_model.clone(),
 			hand_bone_offset: CG_VEC3_ZERO,
+			recoil_offset: 0.0,
+			recoil_radians: cgmath::Rad::from(cgmath::Rad::from(cgmath::Deg(0.0))),
 		}
 	}
 
@@ -96,15 +101,12 @@ impl GamePlayer {
 	}
 
 	pub fn tick(&mut self, input_manager: &KbInputManager, game_camera: &KbCamera, _game_config: &KbConfig) -> (GamePlayerState, GamePlayerState) {
-		let mut recoil_rad = cgmath::Rad::from(cgmath::Deg(0.0));
-
 		let ret_val: (GamePlayerState, GamePlayerState);
 		match self.current_state {
 			GamePlayerState::Idle => {
 				ret_val = (GamePlayerState::Idle, self.tick_idle(&input_manager));
 			}
 			GamePlayerState::Shooting => {
-				recoil_rad = cgmath::Rad::from(cgmath::Deg(5.0));
 				ret_val = (GamePlayerState::Shooting, self.tick_shooting(&game_camera));
 			}
 			GamePlayerState::StartReloading => {
@@ -125,15 +127,15 @@ impl GamePlayer {
 		let hand_rot;
 
 		if self.has_shotgun == false {
-			hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.7) + (right_dir * 0.6);
+			hand_pos = game_camera.get_position() + (view_dir * 0.9) + (up_dir * 0.75) + (right_dir * 0.5) + (view_dir * self.recoil_offset);
 			let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0) ); 
-			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad) * CgMat3::from_angle_y(hand_fix_rad)); 
+			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(self.recoil_radians) * CgMat3::from_angle_y(hand_fix_rad)); 
 		} else {
 			hand_pos = game_camera.get_position() + (view_dir * 0.5) + (up_dir * 1.0) + (right_dir * 0.4);
-			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(recoil_rad)); 
+			hand_rot = cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(self.recoil_radians)); 
 
 		}
-		hand_pos += self.hand_bone_offset;
+		hand_pos += -up_dir * self.hand_bone_offset.y;
 
 		self.hands_actor.set_position(&(hand_pos));
 		self.hands_actor.set_rotation(&hand_rot);
@@ -158,6 +160,20 @@ impl GamePlayer {
 	}
 
 	fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
+		let shoot_state_length = 0.3;
+		let recoil_time = 0.016;
+
+		let elasped_state_time = self.current_state_time.elapsed().as_secs_f32();
+		if elasped_state_time <= recoil_time {
+			let t = elasped_state_time / recoil_time;
+			self.recoil_radians = cgmath::Rad::from(cgmath::Deg(5.0 * t));
+			self.recoil_offset = t * -0.1;
+		} else {
+			let t = 1.0 - (elasped_state_time - recoil_time) / (shoot_state_length - recoil_time);
+			self.recoil_radians = cgmath::Rad::from(cgmath::Deg(5.0 * t));
+			self.recoil_offset = t * -0.1;
+		}
+
 		if self.current_state_time.elapsed().as_secs_f32() > 0.3  {
 			if self.ammo_count == 0 {
 				self.set_state(GamePlayerState::StartReloading);
@@ -332,6 +348,8 @@ impl GameMob {
 			} else {
 				self.current_state = GameMobState::Attacking;
 			}
+
+			let vec_to_player = CgVec3::new(vec_to_player.x, 0.0, vec_to_player.z).normalize();
 			monster_actor.set_rotation(&CgQuat::look_at(vec_to_player, -CG_VEC3_UP));
 		}
 		let monster_pos = self.monster_actors[0].get_position();
@@ -364,11 +382,11 @@ impl GameProp {
 		let extents = {
 			match prop_type {
 				GamePropType::Shotgun => {
-					CgVec3::new(1.0, 1.0, 1.0)
+					CgVec3::new(1.5, 1.5, 1.5)
 				}
 				
 				GamePropType::Barrel => {
-					CgVec3::new(0.75, 4.25, 0.75)
+					CgVec3::new(1.1, 4.0, 1.1)
 				}
 			}
 		};

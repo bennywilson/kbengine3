@@ -43,7 +43,7 @@ impl Example2DGame {
 				start_x = start_x * -1.0;
 				vel_x = vel_x * -1.0;
 			}
-			let y_pos: f32 = kb_random_f32(0.0, 0.75);
+			let y_pos: f32 = kb_random_f32(0.0, 0.75) - 0.35;
 
 			// Create Enemy
 			self.game_objects.push(GameObject { 
@@ -134,7 +134,7 @@ impl KbGameEngine for Example2DGame {
 
 		// Create Player
 		self.game_objects.push(GameObject { 
-			position: (0.0, 0.0, CHARACTER_Z).into(),
+			position: (0.0, -0.35, CHARACTER_Z).into(),
 			scale: (0.15, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -153,7 +153,7 @@ impl KbGameEngine for Example2DGame {
 	
 		// Sky
 		self.game_objects.push(GameObject { 
-			position: (0.0, 0.0, SKY_Z).into(),
+			position: (0.0, -0.35, SKY_Z).into(),
 			scale: (2.0, 2.0, 1.0).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -172,7 +172,7 @@ impl KbGameEngine for Example2DGame {
 
 		// Sun
 		self.game_objects.push(GameObject { 
-			position: (-0.5, 1.0, SUN_Z).into(),
+			position: (-0.5, 1.0 - 0.35, SUN_Z).into(),
 			scale: (0.15, 0.15, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -194,14 +194,14 @@ impl KbGameEngine for Example2DGame {
 		while i < 10 {
 
 			let rand_x = kb_random_f32(-2.0, 2.0);
-			let rand_y = kb_random_f32(0.8, 1.1);
+			let rand_y = kb_random_f32(0.8, 1.1) - 0.35;
 			let scale_x = kb_random_f32(0.17, 0.3);
 			let scale_y = kb_random_f32(0.13, 0.17);
 			let x_speed = kb_random_f32(0.03, 0.05);
 
 			// Cloud
 			self.game_objects.push(GameObject { 
-				position: (rand_x,rand_y, CLOUD_Z).into(),
+				position: (rand_x, rand_y, CLOUD_Z).into(),
 				scale: (scale_x, scale_y, 0.15).into(),
 				direction: (1.0, 0.0, 0.0).into(),
 				velocity: (0.0, 0.0, 0.0).into(),
@@ -231,7 +231,7 @@ impl KbGameEngine for Example2DGame {
 
 		// Hills
 		self.game_objects.push(GameObject { 
-			position: (0.0, 0.75, HILL_Z).into(),
+			position: (0.0, 0.75 - 0.35, HILL_Z).into(),
 			scale: (2.0, 1.6, 0.15).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -253,7 +253,7 @@ impl KbGameEngine for Example2DGame {
 			let building_width = kb_random_f32(0.12, 0.20);
 			let building_height = kb_random_f32(0.25, 0.5);
 			self.game_objects.push(GameObject { 
-				position: (x, building_height, BUILDING_Z - (building_height * 3.0)).into(),
+				position: (x, building_height - 0.35, BUILDING_Z - (building_height * 3.0)).into(),
 				scale: (building_width, building_height, 1.0).into(),
 				direction: (1.0, 0.0, 0.0).into(),
 				velocity: (0.0, 0.0, 0.0).into(),
@@ -278,7 +278,7 @@ impl KbGameEngine for Example2DGame {
 			let tree_width = kb_random_f32(0.08, 0.15);
 			let tree_height = kb_random_f32(0.16, 0.2);
 			self.game_objects.push(GameObject { 
-				position: (x, tree_height, BUILDING_Z + 1.0).into(),
+				position: (x, tree_height - 0.35, BUILDING_Z + 1.0).into(),
 				scale: (tree_width, tree_height, 1.0).into(),
 				direction: (1.0, 0.0, 0.0).into(),
 				velocity: (0.0, 0.0, 0.0).into(),
@@ -298,7 +298,7 @@ impl KbGameEngine for Example2DGame {
 		}
 		// Roads
 		self.game_objects.push(GameObject { 
-			position: (1.0, -0.5, BUILDING_Z + 2.0).into(),
+			position: (1.0, -0.5 - 0.35, BUILDING_Z + 2.0).into(),
 			scale: (1.0, 0.5, 1.0).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),
@@ -315,7 +315,7 @@ impl KbGameEngine for Example2DGame {
 			is_enemy: false
 		});
 		self.game_objects.push(GameObject { 
-			position: (-1.0, -0.5, BUILDING_Z + 2.0).into(),
+			position: (-1.0, -0.5 - 0.35, BUILDING_Z + 2.0).into(),
 			scale: (1.0, 0.5, 1.0).into(),
 			direction: (1.0, 0.0, 0.0).into(),
 			velocity: (0.0, 0.0, 0.0).into(),

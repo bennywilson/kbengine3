@@ -274,7 +274,7 @@ impl KbSpriteRenderGroup {
         let u_scale = 1.0 / 8.0;
         let v_scale = 1.0 / 8.0;
         let extra_scale = 1.0;
-        let extra_offset: CgVec3 = CgVec3::new(0.0, -0.35, 0.0);
+        let extra_offset: CgVec3 = CgVec3::new(0.0, 0.0, 0.0);
 
         let game_object_iter = game_objects.iter();
         for game_object in game_object_iter {

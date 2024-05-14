@@ -185,26 +185,18 @@ impl KbGameEngine for Example3DGame {
 			game_config.sun_color = CgVec4::new(0.8, 0.58, 0.24, 0.0);		
 		}
 
-		// self.game_objects order is hard-coded.  Indexes 0-3 contain the cross hair
-		let positions = [
-			CgVec3::new(0.0, 0.5, 0.0),
-			CgVec3::new(0.0, 0.3, 0.0),
-			CgVec3::new(0.1, 0.4, 0.0),
-			CgVec3::new(-0.1, 0.4, 0.0)
-		];
-		let sprites = [40, 40, 41, 41];
-		let scale = CgVec3::new(0.035, 0.035, 1.0);
-		for i in 0..4 {
+		// self.game_objects order is hard-coded.  Indices 0-3 contain the cross hair sprites
+		for _ in 0..4 {
 			self.game_objects.push(GameObject { 
-				position: positions[i],
-				scale,
+				position: CG_VEC3_ZERO,
+				scale: CG_VEC3_ONE,
 				direction: (1.0, 0.0, 0.0).into(),
 				velocity: (0.0, 0.0, 0.0).into(),
 				object_type: GameObjectType::Background,
 				object_state: GameObjectState::Idle,
 				next_attack_time: 0.0,
 				texture_index: 1,
-				sprite_index: sprites[i],
+				sprite_index: 40,
 				anim_frame: 0,
 				life_start_time: Instant::now(),
 				state_start_time: Instant::now(),
@@ -448,32 +440,35 @@ impl KbGameEngine for Example3DGame {
 		}
 
 		let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
-		let start = {
+		let muzzle_flash_pos = {
 			if has_shotgun {
 				hands.get_position() + view_dir * 3.0 + right_dir * 0.5 + CgVec3::new(0.0, 0.75, 0.0)
 			} else {
 				hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0)
 			}
 		};
-
-		self.vfx_manager.tick(&start, renderer, game_config);
+		self.vfx_manager.tick(&muzzle_flash_pos, renderer, game_config);
 
 		if cur_state != GamePlayerState::Shooting && next_state == GamePlayerState::Shooting {
-			let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
-			let start = hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0);
+			let (_, view_dir, _) = self.game_camera.calculate_view_matrix();
+			let trace_start_pos = self.game_camera.get_position();
 			let num_shots = if self.player.as_ref().unwrap().has_shotgun() == true { 8 } else { 1 };
 
 			// Muzzle Flash
 			let scale = if has_shotgun { CgVec3::new(2.0, 2.0, 2.0) } else { CgVec3::new(1.0, 1.0, 1.0) };
-			self.vfx_manager.spawn_muzzle_flash(&start, &scale, renderer);
+			self.vfx_manager.spawn_muzzle_flash(&muzzle_flash_pos, &scale, renderer);
 
 			for i in 0..num_shots {
-				let mut end = self.game_camera.get_position() + view_dir * 1000.0;
-				if i > 0 {
-					end += kb_random_vec3(CgVec3::new(-1.0, -1.0, -1.0,), CgVec3::new(1.0, 1.0, 1.0));
-				}
+				let trace_end_pos = {
+					let end = trace_start_pos + view_dir * 10000.0;
+					if i > 0 {
+						end + kb_random_vec3(CgVec3::new(-2100.0, -2100.0, -2100.0,), CgVec3::new(2100.0, 2100.0, 2100.0))
+					} else {
+						end
+					}
+				};
 
-				let (hit_t, handle, hit_loc, _) = self.collision_manager.cast_ray(&start, &end);
+				let (hit_t, handle, hit_loc, _) = self.collision_manager.cast_ray(&trace_start_pos, &trace_end_pos);
 				let found_hit = hit_t >= 0.0 && hit_t < 1.0;
 				let mut mob_killed = false;
 
@@ -538,7 +533,7 @@ impl KbGameEngine for Example3DGame {
 				}
 
 				if self.debug_collision {
-					renderer.add_line(&start, &end, &color, 0.05, 0.33, &game_config);
+					renderer.add_line(&trace_start_pos, &trace_end_pos, &color, 0.05, 0.33, &game_config);
 				}
 			}
 		}
@@ -611,19 +606,19 @@ impl KbGameEngine for Example3DGame {
 			let (positions, sprites, scale) = {
 				if player.has_shotgun() == false {
 					([
-						CgVec3::new(0.0, 0.5, 0.0),
-						CgVec3::new(0.0, 0.3, 0.0),
-						CgVec3::new(0.1, 0.4, 0.0),
-						CgVec3::new(-0.1, 0.4, 0.0)
+						CgVec3::new(0.0, 0.1, 0.0),
+						CgVec3::new(0.0, -0.1, 0.0),
+						CgVec3::new(0.1, 0.0, 0.0),
+						CgVec3::new(-0.1, 0.0, 0.0)
 					],
 					[40, 40, 41, 41],
 					CgVec3::new(0.035, 0.035, 1.0))
 				} else {
 					([
-						CgVec3::new(-0.11, 0.55, 0.0),
-						CgVec3::new(0.11, 0.55, 0.0),
-						CgVec3::new(-0.11, 0.35, 0.0),
-						CgVec3::new(0.11, 0.35, 0.0)
+						CgVec3::new(-0.11, 0.11, 0.0),
+						CgVec3::new(0.11, 0.11, 0.0),
+						CgVec3::new(-0.11, -0.11, 0.0),
+						CgVec3::new(0.11, -0.11, 0.0)
 					],
 					[48, 49, 56, 57],
 					CgVec3::new(0.065, 0.065, 0.065))
@@ -639,10 +634,10 @@ impl KbGameEngine for Example3DGame {
 			self.game_objects.truncate(4);
 
 			let ammo_count = player.get_ammo_count();
-			let mut position = CgVec3::new(-1.7, -0.45, 0.0);
+			let mut position = CgVec3::new(-1.7, -0.80, 0.0);
 			let scale = CgVec3::new(0.1, 0.1, 0.1);
 			let sprite_index = if player.has_shotgun() { 50 } else { 42 };
-
+			let bullet_spacing = if player.has_shotgun() { 0.1 } else { 0.08 };
 			for _ in 0..ammo_count {
 				self.game_objects.push(
 					GameObject{
@@ -663,7 +658,7 @@ impl KbGameEngine for Example3DGame {
 						is_enemy: false
 					}
 				);
-				position.x += 0.08;
+				position.x += bullet_spacing;
 			}
 		}
 

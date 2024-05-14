@@ -507,11 +507,11 @@ impl GameObject {
 
         // Apply Gravity
         if f32::abs(self.gravity_scale) > 0.001 {
-            if self.position.y > 0.0 {
+            if self.position.y > -0.35 {
                 self.velocity.y -= delta_time * self.gravity_scale;
-            } else if self.position.y < 0.0 {
+            } else if self.position.y < -0.35 {
                 self.velocity.y = 0.0;
-                self.position.y = 0.0;
+                self.position.y = -0.35;
                 self.set_state(GameObjectState::Idle);
             }
         }
