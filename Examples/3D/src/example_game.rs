@@ -626,7 +626,7 @@ impl KbGameEngine for Example3DGame {
                 if found_hit {
                     let hit_loc = hit_loc.unwrap();
                     self.mobs.retain_mut(|mob| {
-                        if *mob.get_collision_handle() == *handle.as_ref().unwrap() {
+                        if mob.get_collision_handle() == *handle.as_ref().unwrap() {
                             mob_killed = mob.take_damage(&mut self.collision_manager, renderer);
                             self.score += 1;
 

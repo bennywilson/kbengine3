@@ -166,15 +166,18 @@ impl GameVfxManager {
         let num_floor_decals = kb_random_u32(3, 7);
         for _ in 0..num_floor_decals {
             let mut decal_actor = KbActor::new();
-            let mut ground_pos =
-                mob_pos + kb_random_vec3(CgVec3::new(-3.0, 0.0, -3.0), CgVec3::new(3.0, 0.0, 3.0));
+
+            let mut ground_pos = mob_pos + kb_random_vec3(CgVec3::new(-3.0, 0.0, -3.0), CgVec3::new(3.0, 0.0, 3.0));
             ground_pos.y = 0.05;
             decal_actor.set_position(&ground_pos);
+
             let scale = kb_random_f32(1.0, 5.0);
             decal_actor.set_scale(&CgVec3::new(scale, scale, scale));
+
             let decal_rotation = cgmath::Rad::from(cgmath::Deg(kb_random_f32(0.0, 360.0)));
             let rotation = cgmath::Quaternion::from(CgMat3::from_angle_y(decal_rotation));
             decal_actor.set_rotation(&rotation);
+
             decal_actor.set_model(self.decal_model.as_ref().unwrap());
             decal_actor.set_render_group(
                 &KbRenderGroupType::WorldCustom,
@@ -196,17 +199,18 @@ impl GameVfxManager {
             let rot_1 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
             let rot_2 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
             let rot_3 = cgmath::Rad::from(cgmath::Deg(kb_random_f32(-15.0, 15.0)));
-
             let rotation = cgmath::Quaternion::from(
                 CgMat3::from_angle_x(rot_1)
                     * CgMat3::from_angle_y(rot_2)
                     * CgMat3::from_angle_z(rot_3),
             );
             let mut splat_dir = rotation * view_dir * 15.0;
+
             let (t, _, decal_hit_loc, _) = collision_manager.cast_ray(mob_pos, &splat_dir);
             if (0.0..1.0).contains(&t) {
                 splat_dir.y += kb_random_f32(-decal_position_range.x, decal_position_range.x);
 
+                // The world is a cube that extends from approximately (-20.0, -20.0, -20.0) to (20.0, 20.0, 20.0)
                 let (pos, rotation) = {
                     let decal_hit_loc = decal_hit_loc.unwrap();
                     if decal_hit_loc.x.abs() > decal_hit_loc.z.abs() {
@@ -229,9 +233,11 @@ impl GameVfxManager {
                 };
 
                 let mut decal_actor = KbActor::new();
+
                 decal_actor.set_position(&pos);
                 let scale = kb_random_f32(1.0, 5.0);
                 decal_actor.set_scale(&CgVec3::new(scale, scale, scale));
+
                 let decal_fix = cgmath::Rad::from(cgmath::Deg(90.0));
                 let decal_rotation = cgmath::Rad::from(cgmath::Deg(rotation));
                 let spin = cgmath::Rad::from(cgmath::Deg(kb_random_f32(0.0, 360.0)));
@@ -241,12 +247,14 @@ impl GameVfxManager {
                         * CgMat3::from_angle_y(spin),
                 );
                 decal_actor.set_rotation(&rotation);
+
                 decal_actor.set_model(self.decal_model.as_ref().unwrap());
                 decal_actor.set_render_group(
                     &KbRenderGroupType::WorldCustom,
                     &Some(self.decal_render_group),
                 );
                 renderer.add_or_update_actor(&decal_actor);
+
                 let decal = GameDecal {
                     actor: decal_actor,
                     start_time: game_config.start_time.elapsed().as_secs_f32()

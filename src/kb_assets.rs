@@ -214,7 +214,7 @@ impl KbAssetManager {
     ) -> KbTextureHandle {
         let mappings = &mut self.texture_mappings;
         match mappings.names_to_handles.get(file_path) {
-            Some(handle) => return handle.clone(),
+            Some(handle) => return *handle,
             _ => {}
         }
 

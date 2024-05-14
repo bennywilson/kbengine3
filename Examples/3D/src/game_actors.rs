@@ -7,7 +7,7 @@ use kb_engine3::{
 };
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GamePlayerState {
     None,
     Idle,
@@ -23,8 +23,8 @@ pub struct GamePlayer {
     hands_model: KbModelHandle,
     hands_actor: KbActor,
     outline_actors: Vec<KbActor>,
-    hand_bone_offset: CgVec3,
 
+    hand_bone_offset: CgVec3,
     recoil_radians: cgmath::Rad<f32>,
     recoil_offset: f32,
 
@@ -39,9 +39,6 @@ pub const GLOBAL_SCALE: CgVec3 = CgVec3::new(0.3, 0.3, 0.3);
 
 impl GamePlayer {
     pub async fn new(hands_model: &KbModelHandle) -> Self {
-        let current_state = GamePlayerState::Idle;
-        let current_state_time = Instant::now();
-
         let mut hands_actor = KbActor::new();
         hands_actor.set_position(&CgVec3::new(5.0, 1.0, 3.0));
         hands_actor.set_scale(&GLOBAL_SCALE);
@@ -49,32 +46,33 @@ impl GamePlayer {
         hands_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
         let mut outline_actors = Vec::<KbActor>::new();
-
         let mut push = 0.0035;
         let num_steps = 10;
         for i in 0..num_steps + 1 {
             let mut outline_actor = KbActor::new();
             outline_actor.set_position(&[5.0, 1.0, 3.0].into());
             outline_actor.set_scale(&GLOBAL_SCALE);
+
             let alpha = 1.0 - (i as f32 / num_steps as f32);
             let alpha = (alpha).clamp(0.0, 1.0);
             outline_actor.set_color(CgVec4::new(0.1, 0.1, 0.1, alpha));
             outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75));
             outline_actor.set_model(hands_model);
             outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
+
             outline_actors.push(outline_actor);
             push += 0.0035;
         }
 
         GamePlayer {
-            current_state,
-            current_state_time,
+            current_state: GamePlayerState::Idle,
+            current_state_time: Instant::now(),
             hands_actor,
             outline_actors,
             has_shotgun: false,
-            next_weapon_model: hands_model.clone(),
+            next_weapon_model: *hands_model,
             ammo_count: PISTOL_AMMO_MAX,
-            hands_model: hands_model.clone(),
+            hands_model: *hands_model,
             hand_bone_offset: CG_VEC3_ZERO,
             recoil_offset: 0.0,
             recoil_radians: cgmath::Rad::from(cgmath::Deg(0.0)),
@@ -86,13 +84,13 @@ impl GamePlayer {
     }
 
     pub fn set_state(&mut self, new_state: GamePlayerState) {
-        self.current_state = new_state.clone();
+        self.current_state = new_state;
         self.current_state_time = Instant::now();
     }
 
     pub fn give_shotgun(&mut self, model_handle: &KbModelHandle) {
         self.set_state(GamePlayerState::StartReloading);
-        self.next_weapon_model = model_handle.clone();
+        self.next_weapon_model = *model_handle;
     }
 
     pub fn has_shotgun(&self) -> bool {
@@ -137,7 +135,6 @@ impl GamePlayer {
         let (view_matrix, view_dir, right_dir) = game_camera.calculate_view_matrix();
         let up_dir = view_dir.cross(right_dir).normalize();
         let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
-
         let mut hand_pos;
         let hand_rot;
 
@@ -154,8 +151,11 @@ impl GamePlayer {
                     * CgMat3::from_angle_y(hand_fix_rad),
             );
         } else {
-            hand_pos =
-                game_camera.get_position() + (view_dir * 0.5) + (up_dir * 1.0) + (right_dir * 0.4);
+            hand_pos = game_camera.get_position()
+                + (view_dir * 0.5)
+                + (up_dir * 1.0)
+                + (right_dir * 0.4)
+                + (view_dir * self.recoil_offset);
             hand_rot =
                 cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(self.recoil_radians));
         }
@@ -173,7 +173,6 @@ impl GamePlayer {
         ret_val
     }
 
-    // Returns a state change if any.
     fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
         if self.current_state_time.elapsed().as_secs_f32() > 0.1 && input_manager.fire_pressed {
             self.set_state(GamePlayerState::Shooting);
@@ -185,18 +184,24 @@ impl GamePlayer {
 
     fn tick_shooting(&mut self, _game_camera: &KbCamera) -> GamePlayerState {
         let shoot_state_length = 0.3;
-        let recoil_time = 0.016;
+        let recoil_time = 0.001;
 
         let elasped_state_time = self.current_state_time.elapsed().as_secs_f32();
-        if elasped_state_time <= recoil_time {
-            let t = elasped_state_time / recoil_time;
-            self.recoil_radians = cgmath::Rad::from(cgmath::Deg(5.0 * t));
-            self.recoil_offset = t * -0.1;
+        let t = if elasped_state_time <= recoil_time {
+            elasped_state_time / recoil_time
         } else {
-            let t = 1.0 - (elasped_state_time - recoil_time) / (shoot_state_length - recoil_time);
-            self.recoil_radians = cgmath::Rad::from(cgmath::Deg(5.0 * t));
-            self.recoil_offset = t * -0.1;
-        }
+            1.0 - (elasped_state_time - recoil_time) / (shoot_state_length - recoil_time)
+        };
+
+        let (max_angle, max_offset) = {
+            if self.has_shotgun() {
+                (7.0, -0.3)
+            } else {
+                (8.0, -0.1)
+            }
+        };
+        self.recoil_radians = cgmath::Rad::from(cgmath::Deg(max_angle * t));
+        self.recoil_offset = t * max_offset;
 
         if self.current_state_time.elapsed().as_secs_f32() > 0.3 {
             if self.ammo_count == 0 {
@@ -214,26 +219,18 @@ impl GamePlayer {
         let reload_duration = 0.85;
         let one_over_duration = 1.0 / reload_duration;
         let half_duration = reload_duration * 0.5;
-        let bottom_y = -3.0;
+        let hand_lower_distance = -3.0;
 
         let cur_state_time = self.current_state_time.elapsed().as_secs_f32();
         if cur_state_time < half_duration {
-            self.hand_bone_offset.y =
-                (bottom_y * cur_state_time * one_over_duration).clamp(bottom_y, 0.0);
+            self.hand_bone_offset.y = (hand_lower_distance * cur_state_time * one_over_duration)
+                .clamp(hand_lower_distance, 0.0);
         } else {
-            self.hand_bone_offset.y = bottom_y;
+            self.hand_bone_offset.y = hand_lower_distance;
 
             self.hands_actor.set_model(&self.next_weapon_model);
             for i in 0..11 {
                 self.outline_actors[i].set_model(&self.next_weapon_model);
-            }
-
-            if self.next_weapon_model != self.hands_model {
-                self.ammo_count = SHOTGUN_AMMO_MAX;
-                self.has_shotgun = true;
-            } else {
-                self.ammo_count = PISTOL_AMMO_MAX;
-                self.has_shotgun = false;
             }
 
             let start_push = if self.has_shotgun { 0.01 } else { 0.0035 };
@@ -245,7 +242,15 @@ impl GamePlayer {
                 push += 0.0035;
             }
 
-            self.next_weapon_model = self.hands_model.clone();
+            if self.next_weapon_model != self.hands_model {
+                self.ammo_count = SHOTGUN_AMMO_MAX;
+                self.has_shotgun = true;
+            } else {
+                self.ammo_count = PISTOL_AMMO_MAX;
+                self.has_shotgun = false;
+            }
+
+            self.next_weapon_model = self.hands_model;
             self.set_state(GamePlayerState::FinishReloading);
             return GamePlayerState::FinishReloading;
         }
@@ -257,13 +262,13 @@ impl GamePlayer {
         let reload_duration = 0.85;
         let one_over_duration = 1.0 / reload_duration;
         let half_duration = reload_duration * 0.5;
-        let bottom_y = -3.0;
+        let hand_lower_distance = -3.0;
 
         let cur_state_time = self.current_state_time.elapsed().as_secs_f32();
         if cur_state_time < half_duration {
             self.hand_bone_offset.y =
-                (bottom_y * (half_duration - cur_state_time) * one_over_duration)
-                    .clamp(bottom_y, 0.0);
+                (hand_lower_distance * (half_duration - cur_state_time) * one_over_duration)
+                    .clamp(hand_lower_distance, 0.0);
         } else {
             self.hand_bone_offset.y = 0.0;
             self.set_state(GamePlayerState::Idle);
@@ -274,26 +279,21 @@ impl GamePlayer {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GameMobState {
     Idle,
     Chasing,
     Attacking,
-    Dying,
-    Dead,
 }
 
-#[allow(dead_code)]
 pub struct GameMob {
     monster_actors: Vec<KbActor>,
     collision_handle: KbCollisionHandle,
 
     current_state: GameMobState,
-    current_state_time: Instant,
+    _current_state_time: Instant,
 }
 
-#[allow(dead_code)]
 impl GameMob {
     pub fn new(
         position: &CgVec3,
@@ -307,7 +307,6 @@ impl GameMob {
         monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(render_group));
         monster_actor.set_scale(&(CgVec3::new(3.0, 3.0, 3.0) * GLOBAL_SCALE.x));
         monster_actor.set_model(model_handle);
-        let mut monster_actors = Vec::<KbActor>::new();
 
         let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
             position: monster_actor.get_position(),
@@ -316,10 +315,9 @@ impl GameMob {
         });
         let collision_handle = collision_manager.add_collision(&collision_box);
 
-        let current_state = GameMobState::Idle;
-        let current_state_time = Instant::now();
-
+        let mut monster_actors = Vec::<KbActor>::new();
         monster_actors.push(monster_actor);
+
         let mut monster_outline = KbActor::new();
         monster_outline.set_position(position);
         monster_outline
@@ -338,20 +336,21 @@ impl GameMob {
         GameMob {
             monster_actors,
             collision_handle,
-            current_state,
-            current_state_time,
+            current_state: GameMobState::Idle,
+            _current_state_time: Instant::now(),
         }
     }
 
-    pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
-        &mut self.monster_actors
+    pub fn get_actors(&mut self) -> &Vec<KbActor> {
+        &self.monster_actors
     }
 
     pub fn get_state(&self) -> GameMobState {
         self.current_state.clone()
     }
-    pub fn get_collision_handle(&self) -> &KbCollisionHandle {
-        &self.collision_handle
+
+    pub fn get_collision_handle(&self) -> KbCollisionHandle {
+        self.collision_handle
     }
 
     pub fn take_damage(
@@ -379,15 +378,14 @@ impl GameMob {
         {
             let monster_actor = &mut self.monster_actors[0];
             if dist_to_player > 5.0 {
-                collision_manager.remove_collision(&self.collision_handle); // hack. Don't collide with self
+                collision_manager.remove_collision(&self.collision_handle); // hack remove self collision temporarily so ray cast doesn't iot.
                 let move_vec = vec_to_player * game_config.delta_time * speed_multiplier;
                 let (t, _, _, blocks) =
                     collision_manager.cast_ray(&monster_actor.get_position(), &move_vec);
 
                 let block = blocks.unwrap_or(true);
                 if !(0.0..1.0).contains(&t) || !block {
-                    let new_pos = monster_actor.get_position() + move_vec;
-                    monster_actor.set_position(&new_pos);
+                    monster_actor.set_position(&(monster_actor.get_position() + move_vec));
                 }
                 let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
                     position: monster_actor.get_position(),
@@ -415,20 +413,18 @@ impl GameMob {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum GamePropType {
     Shotgun,
     Barrel,
 }
 
-#[allow(dead_code)]
 pub struct GameProp {
     actors: Vec<KbActor>,
     collision_handle: KbCollisionHandle,
     prop_type: GamePropType,
     particle_handles: [KbParticleHandle; 2],
-    start_time: Instant,
+    _start_time: Instant,
 }
 
 impl GameProp {
@@ -452,9 +448,7 @@ impl GameProp {
             extents,
             block: false,
         });
-
         let collision_handle = collision_manager.add_collision(&collision_box);
-        let start_time = Instant::now();
 
         let mut actors = Vec::<KbActor>::new();
         let mut actor = KbActor::new();
@@ -489,7 +483,7 @@ impl GameProp {
             collision_handle,
             prop_type: *prop_type,
             particle_handles,
-            start_time,
+            _start_time: Instant::now(),
         }
     }
 
@@ -515,7 +509,7 @@ impl GameProp {
     }
 
     pub fn get_collision_handle(&self) -> KbCollisionHandle {
-        self.collision_handle.clone()
+        self.collision_handle
     }
 
     pub fn get_prop_type(&self) -> GamePropType {

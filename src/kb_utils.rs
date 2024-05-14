@@ -69,7 +69,7 @@ macro_rules! PERF_SCOPE {
 #[macro_export]
 macro_rules! make_kb_handle {
     ($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
-        #[derive(Clone, Hash)]
+        #[derive(Clone, Copy, Hash)]
         pub struct $handle_type {
             index: u32,
         }
