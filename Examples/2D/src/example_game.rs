@@ -69,7 +69,7 @@ impl Example2DGame {
 	fn update_projectiles(&mut self) {
 		let mut i = 0;
 		while i < self.game_objects.len() {
-			if matches!(self.game_objects[i].object_type, GameObjectType::Projectile) == false {
+			if !matches!(self.game_objects[i].object_type, GameObjectType::Projectile) {
 				i = i + 1;
 				continue;
 			}
