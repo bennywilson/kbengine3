@@ -172,7 +172,7 @@ impl KbParticleActor {
             let end_scale = kb_random_vec3(params.min_end_scale, params.max_end_scale);
             let scale = start_scale;
             let rotation_rate = kb_random_f32(params.min_start_rotation_rate, params.max_start_spawn_rate);
-            let rotation = 0.0;
+            let rotation = kb_random_f32(0.0, 100.0);
 
             let particle = KbParticle {
                 position,

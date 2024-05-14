@@ -90,7 +90,7 @@ impl Example3DGame {
 	}
 
 	fn spawn_barrel(&mut self, renderer: &mut KbRenderer<'_>) {
-		let barrel_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(-15.0, 0.0, 15.0));
+		let barrel_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(15.0, 0.0, 15.0));
 		let smoke_pos = barrel_pos + CgVec3::new(0.0, 3.5, 0.0);
 
 		// Smoke
@@ -113,7 +113,7 @@ impl Example3DGame {
 	}
 
 	fn spawn_shotgun(&mut self, renderer: &mut KbRenderer<'_>) {
-		let shotgun_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(-15.0, 0.0, 15.0));
+		let shotgun_pos = kb_random_vec3(CgVec3::new(-15.0, 0.0, -15.0), CgVec3::new(15.0, 0.0, 15.0));
 
 		let mut shotgun = GameProp::new(&GamePropType::Shotgun, &shotgun_pos, self.shotgun_model.as_ref().unwrap(), &mut self.collision_manager, [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE]);
 		let shotgun_actors = shotgun.get_actors();
@@ -442,9 +442,9 @@ impl KbGameEngine for Example3DGame {
 		let (_, view_dir, right_dir) = self.game_camera.calculate_view_matrix();
 		let muzzle_flash_pos = {
 			if has_shotgun {
-				hands.get_position() + view_dir * 3.0 + right_dir * 0.5 + CgVec3::new(0.0, 0.75, 0.0)
+				hands.get_position() + view_dir * 3.0 + right_dir * 0.3 + CgVec3::new(0.0, 0.75, 0.0)
 			} else {
-				hands.get_position() + view_dir * 1.5 + right_dir * 0.5 + CgVec3::new(0.0, 0.5, 0.0)
+				hands.get_position() + view_dir * 1.5 + right_dir * 0.3 + CgVec3::new(0.0, 0.5, 0.0)
 			}
 		};
 		self.vfx_manager.tick(&muzzle_flash_pos, renderer, game_config);
