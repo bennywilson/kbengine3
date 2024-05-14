@@ -3,7 +3,7 @@ use instant::Instant;
 
 use kb_engine3::{
     kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*,
-    kb_resource::*, kb_utils::*, log,
+    kb_resource::*, kb_utils::*,
 };
 
 #[allow(dead_code)]
@@ -35,26 +35,27 @@ pub struct GamePlayer {
 
 const PISTOL_AMMO_MAX: u32 = 8;
 const SHOTGUN_AMMO_MAX: u32 = 4;
+pub const GLOBAL_SCALE: CgVec3 = CgVec3::new(0.3, 0.3, 0.3);
 
 impl GamePlayer {
     pub async fn new(hands_model: &KbModelHandle) -> Self {
-        log!("Creating Player");
         let current_state = GamePlayerState::Idle;
         let current_state_time = Instant::now();
+
         let mut hands_actor = KbActor::new();
-        hands_actor.set_position(&[5.0, 1.0, 3.0].into());
-        hands_actor.set_scale(&[1.0, 1.0, 1.0].into());
+        hands_actor.set_position(&CgVec3::new(5.0, 1.0, 3.0));
+        hands_actor.set_scale(&GLOBAL_SCALE);
         hands_actor.set_model(hands_model);
         hands_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
 
         let mut outline_actors = Vec::<KbActor>::new();
 
-        let mut push = 0.001;
+        let mut push = 0.0035;
         let num_steps = 10;
         for i in 0..num_steps + 1 {
             let mut outline_actor = KbActor::new();
             outline_actor.set_position(&[5.0, 1.0, 3.0].into());
-            outline_actor.set_scale(&CG_VEC3_ONE);
+            outline_actor.set_scale(&GLOBAL_SCALE);
             let alpha = 1.0 - (i as f32 / num_steps as f32);
             let alpha = (alpha).clamp(0.0, 1.0);
             outline_actor.set_color(CgVec4::new(0.1, 0.1, 0.1, alpha));
@@ -62,7 +63,7 @@ impl GamePlayer {
             outline_actor.set_model(hands_model);
             outline_actor.set_render_group(&KbRenderGroupType::Foreground, &None);
             outline_actors.push(outline_actor);
-            push += 0.001;
+            push += 0.0035;
         }
 
         GamePlayer {
@@ -235,13 +236,13 @@ impl GamePlayer {
                 self.has_shotgun = false;
             }
 
-            let start_push = if self.has_shotgun { 0.01 } else { 0.0013 };
+            let start_push = if self.has_shotgun { 0.01 } else { 0.0035 };
             let mut push = start_push;
             self.hands_actor
                 .set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75));
             for outline_actor in &mut self.outline_actors {
                 outline_actor.set_custom_data_1(CgVec4::new(push, 0.75, 0.75, 0.75));
-                push += 0.0013;
+                push += 0.0035;
             }
 
             self.next_weapon_model = self.hands_model.clone();
@@ -297,11 +298,14 @@ impl GameMob {
     pub fn new(
         position: &CgVec3,
         model_handle: &KbModelHandle,
+        render_group: usize,
+        outline_render_group: usize,
         collision_manager: &mut KbCollisionManager,
     ) -> Self {
         let mut monster_actor = KbActor::new();
         monster_actor.set_position(position);
-        monster_actor.set_scale(&[3.0, 3.0, 3.0].into());
+        monster_actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(render_group));
+        monster_actor.set_scale(&(CgVec3::new(3.0, 3.0, 3.0) * GLOBAL_SCALE.x));
         monster_actor.set_model(model_handle);
         let mut monster_actors = Vec::<KbActor>::new();
 
@@ -318,8 +322,17 @@ impl GameMob {
         monster_actors.push(monster_actor);
         let mut monster_outline = KbActor::new();
         monster_outline.set_position(position);
-        monster_outline.set_scale(&[3.0, 3.0, 3.0].into());
+        monster_outline
+            .set_render_group(&KbRenderGroupType::WorldCustom, &Some(outline_render_group));
+        monster_outline.set_scale(&(CgVec3::new(3.0, 3.0, 3.0) * GLOBAL_SCALE.x));
         monster_outline.set_model(model_handle);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        monster_outline.set_custom_data_1(CgVec4::new(0.045, 3.0, 3.0, 3.0));
+
+        #[cfg(target_arch = "wasm32")]
+        monster_outline.set_custom_data_1(CgVec4::new(0.045, 7.0, 7.0, 7.0));
+
         monster_actors.push(monster_outline);
 
         GameMob {
@@ -423,13 +436,13 @@ impl GameProp {
         prop_type: &GamePropType,
         position: &CgVec3,
         model_handle: &KbModelHandle,
+        outline_render_group: usize,
         collision_manager: &mut KbCollisionManager,
         particle_handles: [KbParticleHandle; 2],
     ) -> Self {
         let extents = {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
-
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
             }
         };
@@ -447,12 +460,28 @@ impl GameProp {
         let mut actor = KbActor::new();
         actor.set_position(position);
         actor.set_model(model_handle);
+        actor.set_scale(&GLOBAL_SCALE);
         actors.push(actor);
 
         // Outline
         let mut actor = KbActor::new();
         actor.set_position(position);
         actor.set_model(model_handle);
+        actor.set_scale(&GLOBAL_SCALE);
+        actor.set_render_group(&KbRenderGroupType::WorldCustom, &Some(outline_render_group));
+
+        let push = {
+            match prop_type {
+                GamePropType::Shotgun => 0.21,
+                GamePropType::Barrel => 0.21,
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        actor.set_custom_data_1(CgVec4::new(push, 0.05, 0.05, 0.05));
+
+        #[cfg(target_arch = "wasm32")]
+        actor.set_custom_data_1(CgVec4::new(push, 0.17, 0.17, 0.17));
+
         actors.push(actor);
 
         GameProp {

@@ -6,9 +6,7 @@ use kb_engine3::{
     kb_renderer::*, kb_resource::*, kb_utils::*, log,
 };
 
-use crate::game_actors::GamePlayerState;
-use crate::game_actors::*;
-use crate::game_vfx::*;
+use crate::{game_actors::*, game_vfx::*};
 
 pub const CAMERA_MOVE_RATE: f32 = 10.0;
 pub const CAMERA_ROTATION_RATE: f32 = 150.0;
@@ -24,31 +22,28 @@ pub struct Example3DGame {
     game_camera: KbCamera,
 
     collision_manager: KbCollisionManager,
-
     vfx_manager: GameVfxManager,
 
-    barrel_model: Option<KbModelHandle>,
-    shotgun_model: Option<KbModelHandle>,
-    monster_model: Option<KbModelHandle>,
+    barrel_model: KbModelHandle,
+    shotgun_model: KbModelHandle,
+    monster_model: KbModelHandle,
 
     monster_render_group: usize,
-    monster_spawn_timer: Instant,
-
-    barrel_spawn_timer: Instant,
-    shotgun_spawn_timer: Instant,
-
     outline_render_group: usize,
     decal_render_group: usize,
 
-    crosshair_error: f32,
-
-    invert_y: bool,
-    debug_collision: bool,
-    pause_monsters: bool,
+    monster_spawn_timer: Instant,
+    barrel_spawn_timer: Instant,
+    shotgun_spawn_timer: Instant,
 
     score: i32,
     high_score: i32,
     next_harm_time: f32,
+
+    crosshair_error: f32,
+    invert_y: bool,
+    debug_collision: bool,
+    pause_monsters: bool,
 }
 
 impl Example3DGame {
@@ -75,27 +70,14 @@ impl Example3DGame {
         let monster_pos = pos[kb_random_u32(0, 7) as usize];
         let mut monster = GameMob::new(
             &monster_pos,
-            self.monster_model.as_ref().unwrap(),
+            &self.monster_model,
+            self.monster_render_group,
+            self.outline_render_group,
             &mut self.collision_manager,
         );
+
         let monster_actors = monster.get_actors();
-        monster_actors[0].set_render_group(
-            &KbRenderGroupType::WorldCustom,
-            &Some(self.monster_render_group),
-        );
         renderer.add_or_update_actor(&monster_actors[0]);
-
-        monster_actors[1].set_render_group(
-            &KbRenderGroupType::WorldCustom,
-            &Some(self.outline_render_group),
-        );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        monster_actors[1].set_custom_data_1(CgVec4::new(0.01, 3.0, 3.0, 3.0));
-
-        #[cfg(target_arch = "wasm32")]
-        monster_actors[1].set_custom_data_1(CgVec4::new(0.01, 7.0, 7.0, 7.0));
-
         renderer.add_or_update_actor(&monster_actors[1]);
 
         self.mobs.push(monster);
@@ -113,22 +95,13 @@ impl Example3DGame {
         let mut barrel = GameProp::new(
             &GamePropType::Barrel,
             &barrel_pos,
-            self.barrel_model.as_ref().unwrap(),
+            &self.barrel_model,
+            self.outline_render_group,
             &mut self.collision_manager,
             [smoke_handle_1, smoke_handle_2],
         );
+
         let barrel_actors = barrel.get_actors();
-        barrel_actors[1].set_render_group(
-            &KbRenderGroupType::WorldCustom,
-            &Some(self.outline_render_group),
-        );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        barrel_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.1, 0.1, 0.1));
-
-        #[cfg(target_arch = "wasm32")]
-        barrel_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.351, 00.351, 0.351));
-
         for actor in barrel_actors {
             renderer.add_or_update_actor(actor);
         }
@@ -142,7 +115,8 @@ impl Example3DGame {
         let mut shotgun = GameProp::new(
             &GamePropType::Shotgun,
             &shotgun_pos,
-            self.shotgun_model.as_ref().unwrap(),
+            &self.shotgun_model,
+            self.outline_render_group,
             &mut self.collision_manager,
             [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
         );
@@ -151,12 +125,6 @@ impl Example3DGame {
             &KbRenderGroupType::WorldCustom,
             &Some(self.outline_render_group),
         );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        shotgun_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.1, 0.1, 0.1));
-
-        #[cfg(target_arch = "wasm32")]
-        shotgun_actors[1].set_custom_data_1(CgVec4::new(0.07, 0.351, 0.351, 0.351));
 
         for actor in shotgun_actors {
             renderer.add_or_update_actor(actor);
@@ -180,9 +148,9 @@ impl KbGameEngine for Example3DGame {
             game_objects,
             game_camera,
             vfx_manager: GameVfxManager::new(),
-            barrel_model: None,
-            shotgun_model: None,
-            monster_model: None,
+            barrel_model: KbModelHandle::make_invalid(),
+            shotgun_model: KbModelHandle::make_invalid(),
+            monster_model: KbModelHandle::make_invalid(),
             monster_render_group: usize::MAX,
             monster_spawn_timer: Instant::now(),
             shotgun_spawn_timer: Instant::now(),
@@ -251,8 +219,8 @@ impl KbGameEngine for Example3DGame {
         renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M] ");
         renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
 
-        self.barrel_model = Some(renderer.load_model("game_assets/models/barrel.glb").await);
-        self.shotgun_model = Some(renderer.load_model("game_assets/models/shotgun.glb").await);
+        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+        self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
 
         self.decal_render_group = renderer
             .add_custom_render_group(
@@ -307,13 +275,13 @@ impl KbGameEngine for Example3DGame {
             )
             .await;
         self.monster_render_group = monster_render_group;
-        self.monster_model = Some(monster_model);
+        self.monster_model = monster_model;
 
         // World objects
         let level_model = renderer.load_model("game_assets/models/level.glb").await;
         let mut actor = KbActor::new();
         actor.set_position(&[0.0, 0.0, 0.0].into());
-        actor.set_scale(&[10.0, 19.0, 10.0].into());
+        actor.set_scale(&(CgVec3::new(10.0, 19.0, 10.0) * GLOBAL_SCALE.x));
         actor.set_model(&level_model);
         renderer.add_or_update_actor(&actor);
         self.world_actors.push(actor);
@@ -372,7 +340,7 @@ impl KbGameEngine for Example3DGame {
             CgMat3::from_angle_z(pinky_rot_z) * CgMat3::from_angle_x(pinky_rot_x),
         );
         actor.set_rotation(&pinky_rot);
-        actor.set_scale(&[1.0, 1.0, 1.0].into());
+        actor.set_scale(&GLOBAL_SCALE);
         actor.set_model(&pinky_model);
         renderer.add_or_update_actor(&actor);
         self.world_actors.push(actor);
@@ -380,14 +348,14 @@ impl KbGameEngine for Example3DGame {
         let mut actor = KbActor::new();
         actor.set_position(&[16.5, 0.5, 6.0].into());
         actor.set_rotation(&pinky_rot);
-        actor.set_scale(&[1.0, 1.0, 1.0].into());
+        actor.set_scale(&GLOBAL_SCALE);
         actor.set_model(&pinky_model);
 
         #[cfg(not(target_arch = "wasm32"))]
-        actor.set_custom_data_1(CgVec4::new(0.05, 0.1, 0.1, 0.1));
+        actor.set_custom_data_1(CgVec4::new(0.25, 0.025, 0.025, 0.025));
 
         #[cfg(target_arch = "wasm32")]
-        actor.set_custom_data_1(CgVec4::new(0.05, 0.351, 00.351, 0.351));
+        actor.set_custom_data_1(CgVec4::new(0.25, 0.08, 0.08, 0.08));
 
         actor.set_render_group(
             &KbRenderGroupType::WorldCustom,
@@ -547,7 +515,7 @@ impl KbGameEngine for Example3DGame {
                         self.player
                             .as_mut()
                             .unwrap()
-                            .give_shotgun(self.shotgun_model.as_ref().unwrap());
+                            .give_shotgun(&self.shotgun_model);
                         return false;
                     }
                     true

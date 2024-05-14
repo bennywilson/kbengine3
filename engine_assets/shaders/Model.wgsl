@@ -38,7 +38,7 @@ fn vs_main(
 
     out.tex_coords = model.tex_coords;
 
-    var pos: vec3<f32> = model.position.xyz * 0.3;
+    var pos: vec3<f32> = model.position.xyz;
     var normal = vec4<f32>(model.normal.xyz, 0.0);
     out.normal = (model_uniform.inv_world * normal).xyz;
 

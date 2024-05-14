@@ -488,8 +488,8 @@ impl GameVfxManager {
             min_burst_count: 1,
             max_burst_count: 1,
 
-            min_particle_life: 0.1,
-            max_particle_life: 0.15,
+            min_particle_life: 0.05,
+            max_particle_life: 0.09,
 
             _min_actor_life: 1.0,
             _max_actor_life: 1.0,
