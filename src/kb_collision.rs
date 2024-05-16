@@ -158,6 +158,10 @@ impl KbCollisionManager {
         (closest_hit, Some(closest_handle), hit_loc, blocks)
     }
 
+    pub fn num_collision_objects(&self) -> usize {
+        self.collision_objects.handles_to_assets.len()
+    }
+
     pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
         let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
 

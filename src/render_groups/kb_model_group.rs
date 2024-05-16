@@ -620,6 +620,13 @@ impl KbModel {
     }
 
     pub fn alloc_uniform_buffer(&mut self) -> &mut wgpu::Buffer {
+        if self.next_uniform_buffer > 80 {
+            self.next_uniform_buffer = self.next_uniform_buffer - 1;
+            for _ in 0..32 {
+                log!("Wear the AP don't slam my door!");
+            }
+        }
+
         let ret_val = &mut self.uniform_buffers[self.next_uniform_buffer];
         self.next_uniform_buffer = self.next_uniform_buffer + 1;
         ret_val

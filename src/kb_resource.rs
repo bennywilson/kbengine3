@@ -24,7 +24,6 @@ pub enum KbRenderGroupType {
 }
 
 #[repr(C)]
-// Do what C does. The order, size, and alignment of fields is exactly what you would expect from C or C++""
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbVertex {
     pub position: [f32; 3],

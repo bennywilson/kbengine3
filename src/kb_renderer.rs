@@ -30,9 +30,13 @@ pub struct KbRenderer<'a> {
 
     asset_manager: KbAssetManager,
     actor_map: HashMap<u32, KbActor>,
+
     particle_map: HashMap<KbParticleHandle, KbParticleActor>,
     next_particle_id: KbParticleHandle,
+    active_particles: usize,
+
     debug_lines: Vec<KbLine>,
+
     game_camera: KbCamera,
     postprocess_mode: KbPostProcessMode,
     frame_times: Vec<f32>,
@@ -91,6 +95,8 @@ impl<'a> KbRenderer<'a> {
             actor_map: HashMap::<u32, KbActor>::new(),
             particle_map: HashMap::<KbParticleHandle, KbParticleActor>::new(),
             next_particle_id: INVALID_PARTICLE_HANDLE,
+            active_particles: 0,
+
             debug_lines,
 
             game_camera: KbCamera::new(),
@@ -205,7 +211,7 @@ impl<'a> KbRenderer<'a> {
                     FPS: {:.0} \n\
                     Frame time: {:.2} ms\n\
                     Back End: {:?}\n\
-                    Graphics: {}\n\n\n
+                    Graphics: {}\n\n\
                     {}\n",
                     self.game_debug_msg,
                     frame_rate,
@@ -519,10 +525,12 @@ impl<'a> KbRenderer<'a> {
     }
 
     pub fn update_particles(&mut self, game_config: &KbConfig) {
-        let particle_iter = self.particle_map.iter_mut();
-        for particle in particle_iter {
+        self.active_particles = 0;
+        //  let particle_iter = self.particle_map.iter_mut();
+        for particle in &mut self.particle_map {
             if particle.1.is_active() {
                 particle.1.tick(game_config);
+                self.active_particles += 1;
             }
         }
     }
@@ -600,5 +608,9 @@ impl<'a> KbRenderer<'a> {
 
     pub fn set_postprocess_mode(&mut self, new_mode: &KbPostProcessMode) {
         self.postprocess_mode = new_mode.clone();
+    }
+
+    pub fn num_active_particles(&self) -> usize {
+        self.active_particles
     }
 }

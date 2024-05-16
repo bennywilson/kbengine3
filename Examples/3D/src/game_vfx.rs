@@ -5,6 +5,8 @@ use kb_engine3::{
 
 use crate::game_actors::*;
 
+const MAX_DECALS: usize = 16;
+
 pub struct GameVfxManager {
     pooled_gib_particles: Vec<KbParticleHandle>,
     next_pooled_gib: usize,
@@ -22,6 +24,7 @@ pub struct GameVfxManager {
     next_barrel_explosion: usize,
 
     decals: Vec<GameDecal>,
+    num_active_decals: usize,
     decal_model: Option<KbModelHandle>,
     decal_render_group: usize,
 }
@@ -45,6 +48,7 @@ impl GameVfxManager {
             next_barrel_explosion: 0,
 
             decals: Vec::<GameDecal>::new(),
+            num_active_decals: 0,
             decal_model: None,
             decal_render_group: usize::MAX,
         }
@@ -138,6 +142,7 @@ impl GameVfxManager {
         }
 
         // Decals
+        self.num_active_decals = 0;
         let elapsed_time = game_config.start_time.elapsed().as_secs_f32();
         self.decals.retain_mut(|d| {
             if elapsed_time > d.start_time + 2.0 {
@@ -148,6 +153,7 @@ impl GameVfxManager {
             d.actor
                 .set_color(0.5 * CgVec4::new(alpha, alpha, alpha, alpha));
             renderer.add_or_update_actor(&d.actor);
+            self.num_active_decals += 1;
             true
         });
     }
@@ -162,12 +168,17 @@ impl GameVfxManager {
     ) {
         self.spawn_gibs(mob_pos, renderer);
 
+        if self.decals.len() > MAX_DECALS {
+            return;
+        }
+
         // Floor decals
         let num_floor_decals = kb_random_u32(3, 7);
         for _ in 0..num_floor_decals {
             let mut decal_actor = KbActor::new();
 
-            let mut ground_pos = mob_pos + kb_random_vec3(CgVec3::new(-3.0, 0.0, -3.0), CgVec3::new(3.0, 0.0, 3.0));
+            let mut ground_pos =
+                mob_pos + kb_random_vec3(CgVec3::new(-3.0, 0.0, -3.0), CgVec3::new(3.0, 0.0, 3.0));
             ground_pos.y = 0.05;
             decal_actor.set_position(&ground_pos);
 
@@ -640,5 +651,9 @@ impl GameVfxManager {
                 .await;
             self.pooled_barrel_explosions.push(particle_handle);
         }
+    }
+
+    pub fn num_active_decals(&self) -> usize {
+        self.num_active_decals
     }
 }

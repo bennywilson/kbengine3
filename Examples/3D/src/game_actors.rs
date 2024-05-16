@@ -135,33 +135,29 @@ impl GamePlayer {
         let (view_matrix, view_dir, right_dir) = game_camera.calculate_view_matrix();
         let up_dir = view_dir.cross(right_dir).normalize();
         let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
-        let mut hand_pos;
-        let hand_rot;
 
-        if !self.has_shotgun {
-            hand_pos = game_camera.get_position()
-                + (view_dir * 0.9)
-                + (up_dir * 0.75)
-                + (right_dir * 0.5)
-                + (view_dir * self.recoil_offset);
-            let hand_fix_rad = cgmath::Rad::from(cgmath::Deg(85.0));
-            hand_rot = cgmath::Quaternion::from(
+        let (hand_pos, hand_rot) = {
+            let offsets = if !self.has_shotgun {
+                [0.9, 0.75, 0.5, 85.0]
+            } else {
+                [0.5, 1.0, 0.4, 0.0]
+            };
+            let hand_pos = game_camera.get_position()
+                + view_dir * offsets[0]
+                + up_dir * offsets[1]
+                + right_dir * offsets[2]
+                + view_dir * self.recoil_offset
+                + -up_dir * self.hand_bone_offset.y;
+
+            let hand_rot = cgmath::Quaternion::from(
                 hand_mat3
                     * CgMat3::from_angle_x(self.recoil_radians)
-                    * CgMat3::from_angle_y(hand_fix_rad),
+                    * CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(offsets[3]))),
             );
-        } else {
-            hand_pos = game_camera.get_position()
-                + (view_dir * 0.5)
-                + (up_dir * 1.0)
-                + (right_dir * 0.4)
-                + (view_dir * self.recoil_offset);
-            hand_rot =
-                cgmath::Quaternion::from(hand_mat3 * CgMat3::from_angle_x(self.recoil_radians));
-        }
-        hand_pos += -up_dir * self.hand_bone_offset.y;
+            (hand_pos, hand_rot)
+        };
 
-        self.hands_actor.set_position(&(hand_pos));
+        self.hands_actor.set_position(&hand_pos);
         self.hands_actor.set_rotation(&hand_rot);
 
         let outline_iter = self.outline_actors.iter_mut();

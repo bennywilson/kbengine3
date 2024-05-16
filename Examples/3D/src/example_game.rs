@@ -863,5 +863,14 @@ impl KbGameEngine for Example3DGame {
         if self.debug_collision {
             self.collision_manager.debug_draw(renderer, game_config);
         }
+
+        let num_collision_obj = self.collision_manager.num_collision_objects();
+        let num_active_particles = renderer.num_active_particles();
+        let num_active_decals = self.vfx_manager.num_active_decals();
+
+        let debug_msg = format!("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M]\n\
+            # colliion objs = {}, # active particles {}, # acticve decals {}", num_collision_obj, num_active_particles, num_active_decals);
+
+        renderer.set_debug_game_msg(&debug_msg);
     }
 }
