@@ -112,6 +112,8 @@ macro_rules! make_kb_handle {
     };
 }
 
+pub type CgVec2 = cgmath::Vector2<f32>;
+
 pub type CgVec3 = cgmath::Vector3<f32>;
 pub const CG_VEC3_ZERO: CgVec3 = CgVec3::new(0.0, 0.0, 0.0);
 pub const CG_VEC3_ONE: CgVec3 = CgVec3::new(1.0, 1.0, 1.0);
@@ -139,4 +141,8 @@ pub fn cgmat4_to_cgmat3(mat4: &CgMat4) -> CgMat3 {
     CgMat3::new(
         mat4.x.x, mat4.x.y, mat4.x.z, mat4.y.x, mat4.y.y, mat4.y.z, mat4.z.x, mat4.z.y, mat4.z.z,
     )
+}
+
+pub fn cgvec3_remove_y(vec: CgVec3) -> CgVec2 {
+    CgVec2::new(vec.x, vec.z)
 }

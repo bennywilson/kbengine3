@@ -223,9 +223,8 @@ impl KbLineRenderGroup {
             bytemuck::cast_slice(&[uniform_data]),
         );
 
-        let line_iter = lines.iter();
         let mut vertices = Vec::<KbVertex>::new();
-        for line in line_iter {
+        for line in lines {
             let center_pos = (line.end + line.start) * 0.5;
             let right_vec = center_pos - game_camera.get_position();
             let forward_vec = (line.end - line.start).normalize();

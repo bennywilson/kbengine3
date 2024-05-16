@@ -306,8 +306,7 @@ impl KbSpriteRenderGroup {
         let extra_scale = 1.0;
         let extra_offset: CgVec3 = CgVec3::new(0.0, 0.0, 0.0);
 
-        let game_object_iter = game_objects.iter();
-        for game_object in game_object_iter {
+        for game_object in game_objects {
             PERF_SCOPE!("Creating instances");
             let game_object_position = game_object.position + extra_offset;
             let sprite_index = game_object.sprite_index + game_object.anim_frame;

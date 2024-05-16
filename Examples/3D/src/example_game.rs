@@ -667,11 +667,9 @@ impl KbGameEngine for Example3DGame {
 
                     // Radius Damage
                     if barrel_exploded {
-                        explode_pos.y = 0.0;
                         self.mobs.retain_mut(|mob| {
-                            let mut mob_pos = mob.get_actors()[0].get_position();
-                            mob_pos.y = 0.0;
-                            let magnitude = (mob_pos - explode_pos).magnitude();
+                            let mob_pos = mob.get_actors()[0].get_position();
+                            let magnitude = cgvec3_remove_y(mob_pos - explode_pos).magnitude();
                             if magnitude < 15.0 {
                                 mob.take_damage(&mut self.collision_manager, renderer);
                                 self.score += 1;
@@ -715,8 +713,7 @@ impl KbGameEngine for Example3DGame {
                 let t = (self.score as f32 / 20.0).clamp(0.0, 1.0);
                 (t * 10.0) + 5.0
             };
-            let monster_iter = self.mobs.iter_mut();
-            for monster in monster_iter {
+            for monster in &mut self.mobs {
                 monster.tick(
                     camera_pos,
                     speed_multiplier,

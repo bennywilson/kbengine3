@@ -1036,9 +1036,7 @@ impl KbModelRenderGroup {
         // Iterate over actors and add their uniform info to their corresponding KbModels
         let mut models_to_render = Vec::<KbModelHandle>::new();
         let actor_iter = actors.iter();
-        let mut i = -1;
         for actor_key_value in actor_iter {
-            i = i + 1;
             let (actor_render_group, group_handle) = actor_key_value.1.get_render_group();
             if actor_render_group != render_group {
                 continue;
@@ -1117,8 +1115,7 @@ impl KbModelRenderGroup {
 
         // Render KbModels now that uniforms are set
         let model_mappings = asset_manager.get_model_mappings();
-        let model_iter = models_to_render.iter_mut();
-        for model_handle in model_iter {
+        for model_handle in &mut models_to_render {
             let model = &model_mappings[&model_handle];
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -1136,8 +1133,7 @@ impl KbModelRenderGroup {
             .queue
             .submit(std::iter::once(command_encoder.finish()));
 
-        let model_iter = models_to_render.iter_mut();
-        for model_handle in model_iter {
+        for model_handle in &mut models_to_render {
             let model = &mut model_mappings.get_mut(&model_handle).unwrap();
             model.free_uniform_buffers();
         }

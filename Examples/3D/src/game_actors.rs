@@ -134,8 +134,6 @@ impl GamePlayer {
 
         let (view_matrix, view_dir, right_dir) = game_camera.calculate_view_matrix();
         let up_dir = view_dir.cross(right_dir).normalize();
-        let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
-
         let (hand_pos, hand_rot) = {
             let offsets = if !self.has_shotgun {
                 [0.9, 0.75, 0.5, 85.0]
@@ -149,6 +147,7 @@ impl GamePlayer {
                 + view_dir * self.recoil_offset
                 + -up_dir * self.hand_bone_offset.y;
 
+            let hand_mat3 = cgmat4_to_cgmat3(&view_matrix).invert().unwrap();
             let hand_rot = cgmath::Quaternion::from(
                 hand_mat3
                     * CgMat3::from_angle_x(self.recoil_radians)
@@ -160,8 +159,7 @@ impl GamePlayer {
         self.hands_actor.set_position(&hand_pos);
         self.hands_actor.set_rotation(&hand_rot);
 
-        let outline_iter = self.outline_actors.iter_mut();
-        for outline in outline_iter {
+        for outline in &mut self.outline_actors {
             outline.set_position(&hand_pos);
             outline.set_rotation(&hand_rot);
         }

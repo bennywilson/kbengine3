@@ -110,8 +110,8 @@ impl KbCollisionManager {
         let mut closest_hit = f32::MAX;
         let mut closest_handle = KbCollisionHandle::make_invalid();
         let mut blocks = None;
-        let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
-        for (handle, value) in collision_iter {
+
+        for (handle, value) in &mut self.collision_objects.handles_to_assets {
             match value {
                 KbCollisionShape::Sphere(_s) => {}
 
@@ -163,9 +163,7 @@ impl KbCollisionManager {
     }
 
     pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
-        let collision_iter = self.collision_objects.handles_to_assets.iter_mut();
-
-        for (_, value) in collision_iter {
+        for (_, value) in &mut self.collision_objects.handles_to_assets {
             match value {
                 KbCollisionShape::Sphere(_s) => {}
 
