@@ -216,9 +216,6 @@ impl KbGameEngine for Example3DGame {
             });
         }
 
-        renderer.set_debug_game_msg("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M] ");
-        renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
-
         self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
         self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
 
@@ -727,7 +724,11 @@ impl KbGameEngine for Example3DGame {
 
         let spawn_timer = {
             let t = 1.0 - (self.score as f32 / 20.0).clamp(0.0, 1.0);
-            t + 1.0
+            if self.score == 0 {
+                t + 5.0
+            } else {
+                t + 1.0
+            }
         };
         if self.monster_spawn_timer.elapsed().as_secs_f32() > spawn_timer {
             self.monster_spawn_timer = Instant::now();
@@ -865,9 +866,9 @@ impl KbGameEngine for Example3DGame {
         let num_active_particles = renderer.num_active_particles();
         let num_active_decals = self.vfx_manager.num_active_decals();
 
-        let debug_msg = format!("Move: [W][A][S][D]   Look: [Arrow Keys]   Shoot: [Space]     Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M]\n\
-            # colliion objs = {}, # active particles {}, # acticve decals {}", num_collision_obj, num_active_particles, num_active_decals);
-
+        let debug_msg = format!("Move: [W][A][S][D]    Look: [Arrow Keys]    Shoot: [Space]\nToggle VSync: [V]   Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M]\n\
+            # collision objs = {}, # active particles {}, # active decals {}", num_collision_obj, num_active_particles, num_active_decals);
         renderer.set_debug_game_msg(&debug_msg);
+        renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));
     }
 }

@@ -207,7 +207,8 @@ impl<'a> KbRenderer<'a> {
         let frame_time_string = {
             if self.display_debug_msg {
                 format!(
-                    "Press [H] to disable Help.   Keys [1]-[4] change postprocess fx.   {}\n\n\
+                    "Press [H] to disable Help.\n\
+                    {}\n\n\
                     FPS: {:.0} \n\
                     Frame time: {:.2} ms\n\
                     Back End: {:?}\n\
@@ -228,12 +229,16 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        let section = TextSection::default().add_text(Text::new(&frame_time_string).with_color([
-            self.debug_msg_color.x,
-            self.debug_msg_color.y,
-            self.debug_msg_color.z,
-            self.debug_msg_color.w,
-        ]));
+        let section = TextSection::default().add_text(
+            Text::new(&frame_time_string)
+                .with_color([
+                    self.debug_msg_color.x,
+                    self.debug_msg_color.y,
+                    self.debug_msg_color.z,
+                    self.debug_msg_color.w,
+                ])
+                .with_scale(24.0 * 1.0)
+        ).with_screen_position((10.0, 10.0));
         device_resources.brush.resize_view(
             game_config.window_width as f32,
             game_config.window_height as f32,

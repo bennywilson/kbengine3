@@ -13,7 +13,7 @@ pub struct KbConfig {
     pub foreground_fov: f32,
     pub graphics_backend: wgpu::Backends,
     pub graphics_power_pref: wgpu::PowerPreference,
-    pub _vsync: bool,
+    pub vsync: bool,
 
     // Dynamic
     pub start_time: instant::Instant,
@@ -81,7 +81,7 @@ impl KbConfig {
         };
 
         let json_val = json_file["vsync"].as_bool();
-        let _vsync = match json_val {
+        let vsync = match json_val {
             Some(val) => val,
             None => true,
         };
@@ -96,7 +96,7 @@ impl KbConfig {
             foreground_fov: 50.0,
             graphics_backend,
             graphics_power_pref,
-            _vsync,
+            vsync,
 
             start_time: instant::Instant::now(),
             delta_time: 0.0,

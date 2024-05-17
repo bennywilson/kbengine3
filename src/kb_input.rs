@@ -22,16 +22,13 @@ pub struct KbInputManager {
     pub up_pressed: bool,
     pub down_pressed: bool,
     pub fire_pressed: bool,
-    pub one_pressed: bool,
-    pub two_pressed: bool,
-    pub three_pressed: bool,
-    pub four_pressed: bool,
     pub space_pressed: bool,
 
     pub key_i: KbButtonState,
     pub key_y: KbButtonState,
     pub key_m: KbButtonState,
     pub key_h: KbButtonState,
+    pub key_v: KbButtonState,
 }
 
 #[allow(dead_code)]
@@ -62,22 +59,6 @@ impl KbInputManager {
             }
             PhysicalKey::Code(KeyCode::Space) => {
                 self.fire_pressed = pressed;
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit1) => {
-                self.one_pressed = pressed;
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit2) => {
-                self.two_pressed = pressed;
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit3) => {
-                self.three_pressed = pressed;
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit4) => {
-                self.four_pressed = pressed;
                 true
             }
             PhysicalKey::Code(KeyCode::ArrowUp) => {
@@ -136,6 +117,16 @@ impl KbInputManager {
                 }
                 true
             }
+            PhysicalKey::Code(KeyCode::KeyV) => {
+                if pressed {
+                    if self.key_v == KbButtonState::None {
+                        self.key_v = KbButtonState::JustPressed;
+                    }
+                } else {
+                    self.key_v = KbButtonState::None;
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -152,6 +143,9 @@ impl KbInputManager {
         }
         if self.key_h == KbButtonState::JustPressed {
             self.key_h = KbButtonState::Down;
+        }
+        if self.key_v == KbButtonState::JustPressed {
+            self.key_v = KbButtonState::Down;
         }
     }
 
@@ -189,5 +183,9 @@ impl KbInputManager {
 
     pub fn key_y(&self) -> KbButtonState {
         self.key_y.clone()
+    }
+
+    pub fn key_v(&self) -> KbButtonState {
+        self.key_v.clone()
     }
 }

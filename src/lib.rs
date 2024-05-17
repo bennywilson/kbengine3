@@ -1,10 +1,10 @@
 use std::sync::Arc;
+use winit::event::StartCause;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-
 pub mod kb_assets;
 pub mod kb_collision;
 pub mod kb_config;
@@ -38,7 +38,9 @@ where
     env_logger::init();
 
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
+    let one_micro = core::time::Duration::from_micros(1);
+    let control_flow = ControlFlow::wait_duration(one_micro);
+    event_loop.set_control_flow(control_flow);
 
     #[cfg(target_arch = "wasm32")]
     let window = Arc::new({
@@ -79,6 +81,8 @@ where
         .initialize_world(&mut game_renderer, &mut game_config)
         .await;
 
+    let mut frame_timer = instant::Instant::now();
+    let mut hack_wait = 0;
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::EventLoopExtWebSys;
@@ -86,16 +90,16 @@ where
             let _ = &mut game_renderer;
             let _ = &game_config;
             match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == game_renderer.window_id() => match event {
-                    WindowEvent::RedrawRequested => {
+                Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                    hack_wait += 1;
+                    if hack_wait > 6 {
                         game_engine.tick_frame(
                             &mut game_renderer,
                             &mut input_manager,
                             &mut game_config,
                         );
+                    }
+                    if hack_wait > 8 {
                         let render_result = game_renderer
                             .render_frame(&game_engine.get_game_objects(), &game_config);
                         match render_result {
@@ -108,6 +112,48 @@ where
                             Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                             Err(e) => {
                                 eprintln!("{:?}", e)
+                            }
+                        }
+                    }
+
+                    let elapsed_frame_time = frame_timer.elapsed().as_secs_f32();
+                    let delay = {
+                        if elapsed_frame_time <= 12000.0 {
+                            12000.0 - elapsed_frame_time
+                        } else {
+                            0.0
+                        }
+                    };
+                    frame_timer = instant::Instant::now();
+                    let delay = core::time::Duration::from_micros(delay as u64);
+                    let new_control_flow = ControlFlow::wait_duration(delay);
+                    control_flow.set_control_flow(new_control_flow);
+                }
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == game_renderer.window_id() => match event {
+                    WindowEvent::RedrawRequested => {
+                        if game_config.vsync == false {
+                            game_engine.tick_frame(
+                                &mut game_renderer,
+                                &mut input_manager,
+                                &mut game_config,
+                            );
+
+                            let render_result = game_renderer
+                                .render_frame(&game_engine.get_game_objects(), &game_config);
+                            match render_result {
+                                Ok(_) => {}
+                                Err(wgpu::SurfaceError::Lost) => {
+                                    let _ = async {
+                                        game_renderer.resize(&game_config).await;
+                                    };
+                                }
+                                Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
+                                Err(e) => {
+                                    eprintln!("{:?}", e)
+                                }
                             }
                         }
                     }
@@ -135,17 +181,15 @@ where
                             game_renderer.enable_help_text();
                         }
 
-                        game_config.postprocess_mode = {
-                            if input_manager.one_pressed {
-                                KbPostProcessMode::Passthrough
-                            } else if input_manager.two_pressed {
-                                KbPostProcessMode::Desaturation
-                            } else if input_manager.three_pressed {
-                                KbPostProcessMode::ScanLines
-                            } else if input_manager.four_pressed {
-                                KbPostProcessMode::Warp
+                        if input_manager.key_v() == KbButtonState::JustPressed {
+                            game_config.vsync = !game_config.vsync;
+
+                            if game_config.vsync {
+                                let one_micro = core::time::Duration::from_micros(1);
+                                control_flow
+                                    .set_control_flow(ControlFlow::wait_duration(one_micro));
                             } else {
-                                game_config.postprocess_mode.clone()
+                                control_flow.set_control_flow(ControlFlow::Poll);
                             }
                         }
                     }
@@ -162,76 +206,120 @@ where
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let _ = event_loop.run(|event, control_flow| match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == game_renderer.window_id() => match event {
-                WindowEvent::RedrawRequested => {
-                    game_engine.tick_frame(
-                        &mut game_renderer,
-                        &mut input_manager,
-                        &mut game_config,
-                    );
-                    let render_result =
-                        game_renderer.render_frame(&game_engine.get_game_objects(), &game_config);
-                    match render_result {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
+        let _ = event_loop.run(move |event, control_flow| {
+            let _ = &mut game_renderer;
+            let _ = &game_config;
+            match event {
+                Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                    hack_wait += 1;
+                    if hack_wait > 6 {
+                        game_engine.tick_frame(
+                            &mut game_renderer,
+                            &mut input_manager,
+                            &mut game_config,
+                        );
+                    }
+                    if hack_wait > 8 {
+                        let render_result = game_renderer
+                            .render_frame(&game_engine.get_game_objects(), &game_config);
+                        match render_result {
+                            Ok(_) => {}
+                            Err(wgpu::SurfaceError::Lost) => {
+                                let _ = async {
+                                    game_renderer.resize(&game_config).await;
+                                };
+                            }
+                            Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
+                            Err(e) => {
+                                eprintln!("{:?}", e)
+                            }
+                        }
+                    }
+
+                    let elapsed_frame_time = frame_timer.elapsed().as_secs_f32();
+                    let delay = {
+                        if elapsed_frame_time <= 12000.0 {
+                            12000.0 - elapsed_frame_time
+                        } else {
+                            0.0
+                        }
+                    };
+                    frame_timer = instant::Instant::now();
+                    let delay = core::time::Duration::from_micros(delay as u64);
+                    let new_control_flow = ControlFlow::wait_duration(delay);
+                    control_flow.set_control_flow(new_control_flow);
+                }
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == game_renderer.window_id() => match event {
+                    WindowEvent::RedrawRequested => {
+                        if game_config.vsync == false {
+                            game_engine.tick_frame(
+                                &mut game_renderer,
+                                &mut input_manager,
+                                &mut game_config,
+                            );
+
+                            let render_result = game_renderer
+                                .render_frame(&game_engine.get_game_objects(), &game_config);
+                            match render_result {
+                                Ok(_) => {}
+                                Err(wgpu::SurfaceError::Lost) => {
+                                    let _ = async {
+                                        game_renderer.resize(&game_config).await;
+                                    };
+                                }
+                                Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
+                                Err(e) => {
+                                    eprintln!("{:?}", e)
+                                }
+                            }
+                        }
+                    }
+
+                    WindowEvent::CloseRequested => control_flow.exit(),
+
+                    WindowEvent::Resized(physical_size) => {
+                        if physical_size.width > 0 && physical_size.height > 0 {
+                            game_config.window_width = physical_size.width;
+                            game_config.window_height = physical_size.height;
                             let _ = async {
                                 game_renderer.resize(&game_config).await;
                             };
                         }
-                        Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
-                        Err(e) => {
-                            eprintln!("{:?}", e)
+                    }
+
+                    WindowEvent::KeyboardInput {
+                        device_id: _,
+                        event,
+                        is_synthetic: _,
+                    } => {
+                        input_manager.update(event.physical_key, event.state);
+
+                        if input_manager.key_h() == KbButtonState::JustPressed {
+                            game_renderer.enable_help_text();
+                        }
+
+                        if input_manager.key_v() == KbButtonState::JustPressed {
+                            game_config.vsync = !game_config.vsync;
+
+                            if game_config.vsync {
+                                let one_micro = core::time::Duration::from_micros(1);
+                                control_flow
+                                    .set_control_flow(ControlFlow::wait_duration(one_micro));
+                            } else {
+                                control_flow.set_control_flow(ControlFlow::Poll);
+                            }
                         }
                     }
+
+                    _ => {}
+                },
+
+                _ => {
+                    window.request_redraw();
                 }
-
-                WindowEvent::CloseRequested => control_flow.exit(),
-
-                WindowEvent::Resized(physical_size) => {
-                    if physical_size.width > 0 && physical_size.height > 0 {
-                        game_config.window_width = physical_size.width;
-                        game_config.window_height = physical_size.height;
-                        let _ = async {
-                            game_renderer.resize(&game_config).await;
-                        };
-                    }
-                }
-
-                WindowEvent::KeyboardInput {
-                    device_id: _,
-                    event,
-                    is_synthetic: _,
-                } => {
-                    input_manager.update(event.physical_key, event.state);
-
-                    if input_manager.key_h() == KbButtonState::JustPressed {
-                        game_renderer.enable_help_text();
-                    }
-
-                    game_config.postprocess_mode = {
-                        if input_manager.one_pressed {
-                            KbPostProcessMode::Passthrough
-                        } else if input_manager.two_pressed {
-                            KbPostProcessMode::Desaturation
-                        } else if input_manager.three_pressed {
-                            KbPostProcessMode::ScanLines
-                        } else if input_manager.four_pressed {
-                            KbPostProcessMode::Warp
-                        } else {
-                            game_config.postprocess_mode.clone()
-                        }
-                    }
-                }
-
-                _ => {}
-            },
-
-            _ => {
-                window.request_redraw();
             }
         });
     }

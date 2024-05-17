@@ -337,7 +337,7 @@ impl KbGameEngine for Example2DGame {
 		&self.game_objects
 	}
 
-	fn tick_frame_internal(&mut self, _game_renderer: &mut KbRenderer, input_manager: &KbInputManager, _game_config: &KbConfig) {
+	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &KbInputManager, _game_config: &KbConfig) {
 		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
         self.current_frame_time = Instant::now();
 
@@ -393,5 +393,8 @@ impl KbGameEngine for Example2DGame {
 		for game_object in game_object_iter {
 			game_object.update(_delta_time_secs);
 		}
+
+		let debug_msg = format!("Move: [W][A][S][D]    Shoot: [Space]\nToggle VSync: [V]");
+        renderer.set_debug_game_msg(&debug_msg);
 	}
 }
