@@ -43,3 +43,8 @@ web-sys = { version = "0.3.69", features = [
     "Element",
     "Location",
 ]}
+
+[features]
+wasm_include_2d = [] # feature has no explicit dependencies
+wasm_include_3d = [] # feature has no explicit dependencies
+wasm_include_key = [] # feature has no explicit dependencies

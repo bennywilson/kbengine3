@@ -64,18 +64,26 @@ impl KbSpriteRenderGroup {
                 label: Some("kbSpritePipeline: texture_bind_group_layout"),
             });
 
+        #[cfg(feature = "wasm_include_key")]
+        let sprite_tex_handle = asset_manager
+            .load_texture("/game_assets/textures/atlas.png", &device_resources)
+            .await;
+
+        #[cfg(not(feature = "wasm_include_key"))]
         let sprite_tex_handle = asset_manager
             .load_texture(
                 "/engine_assets/textures/sprite_sheet.png",
                 &device_resources,
             )
             .await;
+
         let postprocess_tex_handle = asset_manager
             .load_texture(
                 "/engine_assets/textures/postprocess_filter.png",
                 &device_resources,
             )
             .await;
+
         let sprite_tex = asset_manager.get_texture(&sprite_tex_handle);
         let postprocess_tex = asset_manager.get_texture(&postprocess_tex_handle);
         let tex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -282,7 +290,6 @@ impl KbSpriteRenderGroup {
     pub fn render(
         &mut self,
         render_pass_type: KbRenderPassType,
-        should_clear: bool,
         device_resources: &mut KbDeviceResources,
         game_config: &KbConfig,
         game_objects: &Vec<GameObject>,
@@ -339,32 +346,14 @@ impl KbSpriteRenderGroup {
             bytemuck::cast_slice(frame_instances.as_slice()),
         );
 
-        let color_attachment = {
-            if should_clear {
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.12,
-                            g: 0.01,
-                            b: 0.35,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            } else {
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &device_resources.render_textures[0].view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            }
-        };
+        let color_attachment = Some(wgpu::RenderPassColorAttachment {
+            view: &device_resources.render_textures[0].view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        });
 
         let label = format!("Sprite {:?}", render_pass_type);
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

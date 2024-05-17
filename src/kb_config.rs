@@ -13,13 +13,14 @@ pub struct KbConfig {
     pub foreground_fov: f32,
     pub graphics_backend: wgpu::Backends,
     pub graphics_power_pref: wgpu::PowerPreference,
-    pub _vsync: bool,
+    pub vsync: bool,
 
     // Dynamic
     pub start_time: instant::Instant,
     pub delta_time: f32,
     pub last_frame_time: f32,
     pub postprocess_mode: KbPostProcessMode,
+    pub sunbeams_enabled: bool,
 
     pub clear_color: CgVec4,
     pub sun_color: CgVec4,
@@ -65,6 +66,7 @@ impl KbConfig {
                 "dx12" => wgpu::Backends::DX12,
                 "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
                 "vulkan" => wgpu::Backends::VULKAN,
+                "gl" => wgpu::Backends::GL,
                 _ => wgpu::Backends::all(),
             },
             None => wgpu::Backends::all(),
@@ -81,9 +83,14 @@ impl KbConfig {
         };
 
         let json_val = json_file["vsync"].as_bool();
-        let _vsync = match json_val {
+        let vsync = match json_val {
             Some(val) => val,
             None => true,
+        };
+
+        let sunbeams_enabled = match json_file["sunbeams"].as_bool() {
+            Some(val) => val,
+            None => false,
         };
 
         KbConfig {
@@ -96,12 +103,13 @@ impl KbConfig {
             foreground_fov: 50.0,
             graphics_backend,
             graphics_power_pref,
-            _vsync,
+            vsync,
 
             start_time: instant::Instant::now(),
             delta_time: 0.0,
             last_frame_time: 0.0,
             postprocess_mode: KbPostProcessMode::Passthrough,
+            sunbeams_enabled,
             clear_color: CG_VEC4_ZERO,
             sun_color: CgVec4::new(1.0, 1.0, 1.0, 1.0),
         }

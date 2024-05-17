@@ -168,7 +168,9 @@ impl GamePlayer {
     }
 
     fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
-        if self.current_state_time.elapsed().as_secs_f32() > 0.1 && input_manager.fire_pressed {
+        if self.current_state_time.elapsed().as_secs_f32() > 0.1
+            && input_manager.get_key_state("space").is_down()
+        {
             self.set_state(GamePlayerState::Shooting);
             self.ammo_count -= 1;
             return GamePlayerState::Shooting;
