@@ -20,6 +20,7 @@ pub struct KbConfig {
     pub delta_time: f32,
     pub last_frame_time: f32,
     pub postprocess_mode: KbPostProcessMode,
+    pub sunbeams_enabled: bool,
 
     pub clear_color: CgVec4,
     pub sun_color: CgVec4,
@@ -65,6 +66,7 @@ impl KbConfig {
                 "dx12" => wgpu::Backends::DX12,
                 "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
                 "vulkan" => wgpu::Backends::VULKAN,
+                "gl" => wgpu::Backends::GL,
                 _ => wgpu::Backends::all(),
             },
             None => wgpu::Backends::all(),
@@ -86,6 +88,11 @@ impl KbConfig {
             None => true,
         };
 
+        let sunbeams_enabled = match json_file["sunbeams"].as_bool() {
+            Some(val) => val,
+            None => false,
+        };
+
         KbConfig {
             enemy_spawn_delay,
             enemy_move_speed,
@@ -102,6 +109,7 @@ impl KbConfig {
             delta_time: 0.0,
             last_frame_time: 0.0,
             postprocess_mode: KbPostProcessMode::Passthrough,
+            sunbeams_enabled,
             clear_color: CG_VEC4_ZERO,
             sun_color: CgVec4::new(1.0, 1.0, 1.0, 1.0),
         }

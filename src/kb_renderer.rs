@@ -229,16 +229,18 @@ impl<'a> KbRenderer<'a> {
             }
         };
 
-        let section = TextSection::default().add_text(
-            Text::new(&frame_time_string)
-                .with_color([
-                    self.debug_msg_color.x,
-                    self.debug_msg_color.y,
-                    self.debug_msg_color.z,
-                    self.debug_msg_color.w,
-                ])
-                .with_scale(24.0 * 1.0)
-        ).with_screen_position((10.0, 10.0));
+        let section = TextSection::default()
+            .add_text(
+                Text::new(&frame_time_string)
+                    .with_color([
+                        self.debug_msg_color.x,
+                        self.debug_msg_color.y,
+                        self.debug_msg_color.z,
+                        self.debug_msg_color.w,
+                    ])
+                    .with_scale(24.0 * 1.0),
+            )
+            .with_screen_position((10.0, 10.0));
         device_resources.brush.resize_view(
             game_config.window_width as f32,
             game_config.window_height as f32,
@@ -279,31 +281,29 @@ impl<'a> KbRenderer<'a> {
 
         let (final_tex, final_view) = self.begin_frame();
 
+        PERF_SCOPE!("World Opaque");
+        self.model_render_group.render(
+            &KbRenderGroupType::World,
+            None,
+            &mut self.device_resources,
+            &mut self.asset_manager,
+            &self.game_camera,
+            &mut self.actor_map,
+            game_config,
+        );
         if self.actor_map.len() > 0 {
-            PERF_SCOPE!("World Opaque");
-            self.model_render_group.render(
-                &KbRenderGroupType::World,
-                None,
-                &mut self.device_resources,
-                &mut self.asset_manager,
-                &self.game_camera,
-                &mut self.actor_map,
-                game_config,
-            );
-            {
-                PERF_SCOPE!("World Custom");
-                for i in 0..self.custom_world_render_groups.len() {
-                    let render_group = &mut self.custom_world_render_groups[i];
-                    render_group.render(
-                        &KbRenderGroupType::WorldCustom,
-                        Some(i),
-                        &mut self.device_resources,
-                        &mut self.asset_manager,
-                        &self.game_camera,
-                        &mut self.actor_map,
-                        game_config,
-                    );
-                }
+            PERF_SCOPE!("World Custom");
+            for i in 0..self.custom_world_render_groups.len() {
+                let render_group = &mut self.custom_world_render_groups[i];
+                render_group.render(
+                    &KbRenderGroupType::WorldCustom,
+                    Some(i),
+                    &mut self.device_resources,
+                    &mut self.asset_manager,
+                    &self.game_camera,
+                    &mut self.actor_map,
+                    game_config,
+                );
             }
         }
 
@@ -336,7 +336,7 @@ impl<'a> KbRenderer<'a> {
             );
         }
 
-        {
+        if game_config.sunbeams_enabled {
             self.sunbeam_render_group.render(
                 &mut self.device_resources,
                 &self.game_camera,
@@ -375,33 +375,33 @@ impl<'a> KbRenderer<'a> {
         let (game_render_objs, skybox_render_objs, cloud_render_objs) =
             self.get_sorted_render_objects(game_objects);
 
-        {
+        if skybox_render_objs.len() > 0 {
             PERF_SCOPE!("Sprite Pass Sky");
+
             self.sprite_render_group.render(
                 KbRenderPassType::Opaque,
-                false,
                 &mut self.device_resources,
                 game_config,
                 &skybox_render_objs,
             );
         }
 
-        {
+        if cloud_render_objs.len() > 0 {
             PERF_SCOPE!("Sprite Pass Clouds");
+
             self.sprite_render_group.render(
                 KbRenderPassType::Transparent,
-                false,
                 &mut self.device_resources,
                 game_config,
                 &cloud_render_objs,
             );
         }
 
-        {
+        if game_render_objs.len() > 0 {
             PERF_SCOPE!("2D Game Objects");
+
             self.sprite_render_group.render(
                 KbRenderPassType::Opaque,
-                false,
                 &mut self.device_resources,
                 game_config,
                 &game_render_objs,

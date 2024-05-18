@@ -33,15 +33,15 @@ impl Example2DGame {
 		let game_time = self.game_start_time.elapsed().as_secs_f32();
 		if game_time > self.next_enemy_spawn_time {
 			self.next_enemy_spawn_time  = game_time + self.enemy_spawn_delay;
-			self.num_enemies = self.num_enemies + 1;
+			self.num_enemies += 1;
 			
 			let mut start_x = 2.0;
 			let mut vel_x = -self.enemy_speed;
 
 			let randnum = kb_random_u32(1, 2);
 		    if randnum == 2 {
-				start_x = start_x * -1.0;
-				vel_x = vel_x * -1.0;
+				start_x *= -1.0;
+				vel_x *= -1.0;
 			}
 			let y_pos: f32 = kb_random_f32(0.0, 0.75) - 0.35;
 
@@ -70,7 +70,7 @@ impl Example2DGame {
 		let mut i = 0;
 		while i < self.game_objects.len() {
 			if !matches!(self.game_objects[i].object_type, GameObjectType::Projectile) {
-				i = i + 1;
+				i += 1;
 				continue;
 			}
 
@@ -79,13 +79,13 @@ impl Example2DGame {
 
 				// Don't hit other projectiles
 				if i == j || matches!(self.game_objects[j].object_type, GameObjectType::Projectile) {
-					j = j + 1;
+					j += 1;
 					continue;
 				}
 
 				// Allegiance test
 				if self.game_objects[i].is_enemy == self.game_objects[j].is_enemy {
-					j = j + 1;
+					j += 1;
 					continue;
 				}
 
@@ -100,11 +100,11 @@ impl Example2DGame {
 					}
 					break;
 				}
-				j = j + 1;
+				j += 1;
 
 			}
 
-			i = i + 1;
+			i += 1;
 		}
 	}
 }
@@ -217,15 +217,10 @@ impl KbGameEngine for Example2DGame {
 				is_enemy: false
 			});
 
-			match self.game_objects.last_mut() {
-				Some(game_obj) => {
-					game_obj.set_velocity(Vector3::<f32>::new(x_speed, 0.0, 0.0));
-				}
-
-				None => ()
-			
-			}
-			i = i + 1;
+			if let Some(game_obj) = self.game_objects.last_mut() {
+                 game_obj.set_velocity(Vector3::<f32>::new(x_speed, 0.0, 0.0));
+            }
+			i += 1;
 		}
 
 		// Hills
@@ -268,7 +263,7 @@ impl KbGameEngine for Example2DGame {
 				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			});
-			x = x + kb_random_f32(0.2, 0.3);
+			x += kb_random_f32(0.2, 0.3);
 		}
 
 		// Trees
@@ -293,7 +288,7 @@ impl KbGameEngine for Example2DGame {
 				random_val: kb_random_f32(0.0, 1000.0),
 				is_enemy: false
 			});
-			x = x + kb_random_f32(0.12, 0.19);
+			x += kb_random_f32(0.12, 0.19);
 		}
 		// Roads
 		self.game_objects.push(GameObject { 
@@ -343,17 +338,17 @@ impl KbGameEngine for Example2DGame {
 		// Player Movement
         let mut move_vec:cgmath::Vector3<f32> = (0.0, 0.0, 0.0).into();
 
-        if input_manager.left_pressed() {
+        if input_manager.get_key_state("a").is_down() {
             move_vec = Vector3::new(-1.0, 0.0, 0.0);
 			self.game_objects[0].direction.x = -1.0;
         }
 
-        if input_manager.right_pressed() {
+        if input_manager.get_key_state("d").is_down() {
            move_vec = Vector3::new(1.0, 0.0, 0.0);
 		   self.game_objects[0].direction.x = 1.0;
 		}
 
-        if input_manager.up_pressed {
+        if input_manager.get_key_state("w").is_down() {
             move_vec.y = 1.0;
         }
 
@@ -363,7 +358,7 @@ impl KbGameEngine for Example2DGame {
 		self.update_projectiles();
 
 		// Player Action
-		if input_manager.fire_pressed() && self.game_objects[0].start_attack() {
+		if input_manager.get_key_state("space").is_down() && self.game_objects[0].start_attack() {
 			let direction = self.game_objects[0].direction;
 			let velocity = if direction.x > 0.0 { (5.0, 0.0, 0.0).into() } else { (-5.0, 0.0, 0.0).into() };
 			let new_projectile = GameObject { 
@@ -393,7 +388,7 @@ impl KbGameEngine for Example2DGame {
 			game_object.update(_delta_time_secs);
 		}
 
-		let debug_msg = format!("Move: [W][A][S][D]    Shoot: [Space]\nToggle VSync: [V]");
+		let debug_msg = "Move: [W][A][S][D]    Shoot: [Space]\nToggle VSync: [V]".to_string();
         renderer.set_debug_game_msg(&debug_msg);
 	}
 }

@@ -483,19 +483,19 @@ impl KbGameEngine for Example3DGame {
 
         // Movement
         let mut move_vec = CG_VEC3_ZERO;
-        if input_manager.up_pressed {
+        if input_manager.get_key_state("w").is_down() {
             move_vec += forward_dir
         }
 
-        if input_manager.down_pressed {
+        if input_manager.get_key_state("s").is_down() {
             move_vec += -forward_dir;
         }
 
-        if input_manager.right_pressed {
+        if input_manager.get_key_state("d").is_down() {
             move_vec += right_dir;
         }
 
-        if input_manager.left_pressed {
+        if input_manager.get_key_state("a").is_down() {
             move_vec += -right_dir;
         }
 
@@ -537,17 +537,17 @@ impl KbGameEngine for Example3DGame {
         } else {
             delta_time * CAMERA_ROTATION_RATE
         };
-        if input_manager.left_arrow_pressed {
+
+        if input_manager.get_key_state("left_arrow").is_down() {
             camera_rot.x += x_radians;
         }
-        if input_manager.right_arrow_pressed {
+        if input_manager.get_key_state("right_arrow").is_down() {
             camera_rot.x -= x_radians;
         }
-
-        if input_manager.up_arrow_pressed {
+        if input_manager.get_key_state("up_arrow").is_down() {
             camera_rot.y -= y_radians;
         }
-        if input_manager.down_arrow_pressed {
+        if input_manager.get_key_state("down_arrow").is_down() {
             camera_rot.y += y_radians
         }
         camera_rot.y = camera_rot.y.clamp(-60.0, 75.0);

@@ -6,12 +6,9 @@
     "window_width": 1366,
     "window_height": 768,
 
-    "_comment": "Valid values 'graphics_back_end' are default vulkan or dx12",
     "graphics_back_end": "default",
-
-    "_comment2": "Valid values for 'graphics_power_pref' are default, low, and high",
     "graphics_power_pref": "default",
 
-    "_comment3": "Valid values for 'vsync' are true and false",
-    "vsync": true
+    "vsync": true,
+    "sunbeams": false
 }
