@@ -9,7 +9,7 @@ getrandom = { version = "0.2", features = ["js"] }
 instant = { version = "0.1.12", features = [ "wasm-bindgen"] }
 pollster = "0.3"
 
-kb_engine3 = { path = "../../" }
+kb_engine3 = { path = "../../", features = ["wasm_include_3d"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4.42"
