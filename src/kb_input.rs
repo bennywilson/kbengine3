@@ -40,12 +40,22 @@ pub struct KbInputManager {
     pub key_m: KbButtonState,
     pub key_h: KbButtonState,
     pub key_v: KbButtonState,
+
+    pub touch: KbButtonState,
 }
 
 #[allow(dead_code)]
 impl KbInputManager {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn update_touch(&mut self, phase: winit::event::TouchPhase) {
+        if phase == winit::event::TouchPhase::Started {
+            self.touch = KbButtonState::JustPressed
+        } else if phase == winit::event::TouchPhase::Cancelled || phase == winit::event::TouchPhase::Ended {
+            self.touch = KbButtonState::None
+        }
     }
 
     pub fn update(&mut self, key: PhysicalKey, state: ElementState) -> bool {
@@ -239,6 +249,10 @@ impl KbInputManager {
         if self.key_space == KbButtonState::JustPressed {
             self.key_space = KbButtonState::Down;
         }
+
+        if self.touch == KbButtonState::JustPressed {
+            self.touch = KbButtonState::Down;
+        }
     }
 
     pub fn key_h(&self) -> KbButtonState {
@@ -288,6 +302,7 @@ impl KbInputManager {
             "up_arrow" => self.key_arrow_up.clone(),
             "down_arrow" => self.key_arrow_down.clone(),
             "space" => self.key_space.clone(),
+            "touch" => self.touch.clone(),
             _ => KbButtonState::None,
         };
 

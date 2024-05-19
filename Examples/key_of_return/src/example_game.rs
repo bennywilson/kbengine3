@@ -1,27 +1,21 @@
 use instant::Instant;
 
-use kb_engine3::{
-    kb_config::*, kb_engine::*, kb_game_object::*, kb_input::*, kb_renderer::*, kb_utils::*, log,
-};
+use kb_engine3::{log, kb_config::*, kb_engine::*, kb_input::*, kb_game_object::*, kb_renderer::*, kb_utils::*};
 
 #[allow(dead_code)]
 pub struct KeyOfReturn {
-    pub game_objects: Vec<GameObject>,
-    game_start_time: Instant,
-    current_frame_time: Instant,
+	pub game_objects: Vec<GameObject>,
+	game_start_time:  Instant,
+	current_frame_time:  Instant,
 
     timeline_index: i32,
 }
 
-impl KeyOfReturn {}
+impl KeyOfReturn {
 
-pub fn create_sprite(
-    pos: (f32, f32, f32),
-    _rot: f32,
-    scale: (f32, f32),
-    sprite_index: i32,
-    tiles: (i32, u32),
-) -> GameObject {
+}
+
+pub fn create_sprite(pos: (f32, f32, f32), _rot: f32, scale: (f32, f32), sprite_index: i32, tiles: (i32, u32)) -> GameObject {
     GameObject {
         position: CgVec3::new(pos.0, pos.1, pos.2),
         scale: CgVec3::new(scale.0, scale.1, 1.0),
@@ -38,38 +32,34 @@ pub fn create_sprite(
         state_start_time: Instant::now(),
         gravity_scale: 0.0,
         random_val: 0.0,
-        is_enemy: false,
+        is_enemy: false
     }
 }
 
 impl KbGameEngine for KeyOfReturn {
-    fn new(_game_config: &KbConfig) -> Self {
-        log!("GameEngine::new() caled...");
+	fn new(_game_config: &KbConfig) -> Self {
+		log!("GameEngine::new() caled...");
 
-        let cur_time = Instant::now();
+		let cur_time = Instant::now();
 
-        Self {
-            game_objects: Vec::<GameObject>::new(),
-            game_start_time: cur_time,
-            current_frame_time: cur_time,
+		Self {
+			game_objects: Vec::<GameObject>::new(),
+			game_start_time:  cur_time,
+			current_frame_time : cur_time,
             timeline_index: 0,
-        }
+		}
     }
 
-    async fn initialize_world(
-        &mut self,
-        renderer: &mut KbRenderer<'_>,
-        game_config: &mut KbConfig,
-    ) {
-        log!("GameEngine::initialize_world() caled...");
+	async fn initialize_world(&mut self, renderer: &mut KbRenderer<'_>, game_config: &mut KbConfig ) {
+		log!("GameEngine::initialize_world() caled...");
 
-        game_config.clear_color = CgVec4::new(0.0, 0.0, 0.0, 1.0);
+		game_config.clear_color = CgVec4::new(0.0, 0.0, 0.0, 1.0);
 
         let key = create_sprite((-1.5, 0.5, 1.0), 0.0, (0.15, 0.15), 0, (1, 1));
-        self.game_objects.push(key);
+		self.game_objects.push(key);
 
         let flag = create_sprite((1.5, 0.5, 1.0), 0.0, (0.15, 0.15), 1, (1, 1));
-        self.game_objects.push(flag);
+		self.game_objects.push(flag);
 
         let info_sprite = create_sprite((-0.9, -0.5, 1.0), 0.0, (0.3, 0.3), 2, (2, 2));
         self.game_objects.push(info_sprite);
@@ -80,7 +70,7 @@ impl KbGameEngine for KeyOfReturn {
         let map_dot = create_sprite((-0.21, 0.5, 1.0), 0.0, (0.03, 0.03), 8, (1, 1));
         self.game_objects.push(map_dot);
 
-        let particle_smoke_params = KbParticleParams {
+		let particle_smoke_params = KbParticleParams {
             texture_file: "/game_assets/fx/smoke_t.png".to_string(),
             blend_mode: KbParticleBlendMode::AlphaBlend,
 
@@ -175,22 +165,17 @@ impl KbGameEngine for KeyOfReturn {
         let _ = renderer
             .add_particle_actor(&particle_transform, &particle_ember_params, true)
             .await;
-    }
+	}
 
-    fn get_game_objects(&self) -> &Vec<GameObject> {
-        &self.game_objects
-    }
+	fn get_game_objects(&self) -> &Vec<GameObject> {
+		&self.game_objects
+	}
 
-    fn tick_frame_internal(
-        &mut self,
-        renderer: &mut KbRenderer,
-        input_manager: &KbInputManager,
-        game_config: &KbConfig,
-    ) {
-        let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
+	fn tick_frame_internal(&mut self, renderer: &mut KbRenderer, input_manager: &KbInputManager, game_config: &KbConfig) {
+		let _delta_time_secs = self.current_frame_time.elapsed().as_secs_f32();
         self.current_frame_time = Instant::now();
 
-        renderer.add_line(
+		renderer.add_line(
             &CgVec3::new(-15.5, 9.0, 0.0),
             &CgVec3::new(-15.5, -9.0, 0.0),
             &CgVec4::new(1.0, 1.0, 1.0, 0.0),
@@ -198,16 +183,17 @@ impl KbGameEngine for KeyOfReturn {
             0.01,
             game_config,
         );
-        let debug_msg = "Use arrows to scroll through timeline".to_string();
+		let debug_msg = "Use arrows to scroll through timeline".to_string();
         renderer.set_debug_game_msg(&debug_msg);
 
-        if input_manager.key_arrow_down() == KbButtonState::JustPressed {
+        if input_manager.get_key_state("down_arrow").just_pressed() ||
+            input_manager.get_key_state("touch").just_pressed() {
             self.timeline_index += 1;
             if self.timeline_index > 2 {
                 self.timeline_index = 0;
             }
         }
-        if input_manager.key_arrow_up() == KbButtonState::JustPressed {
+        if input_manager.get_key_state("up_arrow").just_pressed() {
             self.timeline_index -= 1;
             if self.timeline_index < 0 {
                 self.timeline_index = 2;
@@ -265,7 +251,7 @@ impl KbGameEngine for KeyOfReturn {
 
         let mut camera = KbCamera::new();
         camera.set_position(&CgVec3::new(0.0, 0.0, 15.0));
-        camera.set_rotation(&CgVec3::new(0.0, 90.0, 0.0));
+        camera.set_rotation(&CgVec3::new(0.0, 180.0, 0.0));
         renderer.set_camera(&camera);
-    }
+	}
 }

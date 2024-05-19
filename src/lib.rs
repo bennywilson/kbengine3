@@ -169,7 +169,10 @@ where
                             };
                         }
                     }
-
+                    WindowEvent::Touch(winit::event::Touch { phase, location, id, .. }) => {
+                       // let winit::dpi::LogicalPosition { x, y } = location;
+                        input_manager.update_touch(*phase);
+                    }
                     WindowEvent::KeyboardInput {
                         device_id: _,
                         event,

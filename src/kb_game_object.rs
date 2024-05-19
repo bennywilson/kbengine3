@@ -453,7 +453,7 @@ impl KbCamera {
 
         let heading_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.y));
         let heading_mat = CgMat4::from_angle_x(heading_rad);
-        let view_mat = heading_mat * pitch_mat;
+        let view_mat = pitch_mat * heading_mat;
         //let view_mat = cgmath::Matrix4::from(self.get_rotation());
         let right_dir = -CgVec3::new(view_mat.x.x, view_mat.x.y, view_mat.x.z);
         let view_dir = CgVec3::new(view_mat.z.x, view_mat.z.y, view_mat.z.z);
