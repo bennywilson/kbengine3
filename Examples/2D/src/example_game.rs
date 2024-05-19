@@ -371,17 +371,43 @@ impl KbGameEngine for Example2DGame {
         // Player Movement
         let mut move_vec: cgmath::Vector3<f32> = (0.0, 0.0, 0.0).into();
 
-        if input_manager.get_key_state("a").is_down() {
+        let mut swipe_left = false;
+        let mut swipe_right = false;
+        let mut jump = false;
+        let mut shoot = false;
+
+        let touch_map_iter = input_manager.get_touch_map().iter();
+        let touches = input_manager.get_touch_map();
+        for touch_pair in touch_map_iter {
+            let touch = &touch_pair.1;
+            if touch.touch_state.is_down() && touch.start_pos.0 < 500.0 {
+                if touch.current_pos.0 < touch.start_pos.0 - 8.0 {
+                    swipe_left = true;
+                } else if touch.current_pos.0 > touch.start_pos.0 + 8.0 {
+                    swipe_right = true;
+                }
+
+                if touch.current_pos.1 < touch.start_pos.1 - 16.0 {
+                    jump = true;
+                }
+            }
+
+            if touch.touch_state.is_down() && touch.start_pos.0 > 500.0 {
+                shoot = true;
+            }
+        }
+
+        if input_manager.get_key_state("a").is_down() || swipe_left {
             move_vec = Vector3::new(-1.0, 0.0, 0.0);
             self.game_objects[0].direction.x = -1.0;
         }
 
-        if input_manager.get_key_state("d").is_down() {
+        if input_manager.get_key_state("d").is_down() || swipe_right {
             move_vec = Vector3::new(1.0, 0.0, 0.0);
             self.game_objects[0].direction.x = 1.0;
         }
 
-        if input_manager.get_key_state("w").is_down() {
+        if input_manager.get_key_state("w").is_down() || jump {
             move_vec.y = 1.0;
         }
 
@@ -391,7 +417,9 @@ impl KbGameEngine for Example2DGame {
         self.update_projectiles();
 
         // Player Action
-        if input_manager.get_key_state("space").is_down() && self.game_objects[0].start_attack() {
+        if (shoot || input_manager.get_key_state("space").is_down())
+            && self.game_objects[0].start_attack()
+        {
             let direction = self.game_objects[0].direction;
             let velocity = if direction.x > 0.0 {
                 (5.0, 0.0, 0.0).into()
