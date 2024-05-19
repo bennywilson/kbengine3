@@ -213,6 +213,7 @@ impl KbGameEngine for Example3DGame {
                 gravity_scale: 0.0,
                 random_val: kb_random_f32(0.0, 1000.0),
                 is_enemy: false,
+                uv_tiles: (1.0, 1.0),
             });
         }
 
@@ -840,6 +841,7 @@ impl KbGameEngine for Example3DGame {
                     gravity_scale: 0.0,
                     random_val: kb_random_f32(0.0, 1000.0),
                     is_enemy: false,
+                    uv_tiles: (1.0, 1.0),
                 });
                 position.x += bullet_spacing;
             }
