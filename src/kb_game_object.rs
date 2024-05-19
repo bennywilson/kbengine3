@@ -448,11 +448,11 @@ impl KbCamera {
         let cam_pos = self.get_position();
         let eye: CgPoint = CgPoint::new(cam_pos.x, cam_pos.y, cam_pos.z);
 
-        let heading_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.x));
-        let heading_mat = CgMat4::from_angle_y(heading_rad);
+        let pitch_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.x));
+        let pitch_mat = CgMat4::from_angle_y(pitch_rad);
 
-        let pitch_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.y));
-        let pitch_mat = CgMat4::from_angle_x(pitch_rad);
+        let heading_rad = cgmath::Rad::from(cgmath::Deg(self.rotation.y));
+        let heading_mat = CgMat4::from_angle_x(heading_rad);
         let view_mat = heading_mat * pitch_mat;
         //let view_mat = cgmath::Matrix4::from(self.get_rotation());
         let right_dir = -CgVec3::new(view_mat.x.x, view_mat.x.y, view_mat.x.z);
@@ -495,6 +495,7 @@ pub struct GameObject {
     pub next_attack_time: f32,
     pub texture_index: i32,
     pub sprite_index: i32,
+    pub uv_tiles: (f32, f32),
     pub anim_frame: i32,
     pub life_start_time: Instant,
     pub state_start_time: Instant,
@@ -522,6 +523,7 @@ impl GameObject {
             next_attack_time: 0.0,
             texture_index: 0,
             sprite_index,
+            uv_tiles: (1.0, 1.0),
             anim_frame: 0,
             life_start_time: Instant::now(),
             state_start_time: Instant::now(),

@@ -335,7 +335,12 @@ impl KbSpriteRenderGroup {
                     game_object.scale.x * extra_scale,
                     game_object.scale.y * extra_scale,
                 ],
-                uv_scale_bias: [u_scale * mul, v_scale, u_offset, v_offset],
+                uv_scale_bias: [
+                    u_scale * mul * game_object.uv_tiles.0,
+                    v_scale * game_object.uv_tiles.1,
+                    u_offset,
+                    v_offset,
+                ],
                 per_instance_data: [game_object.random_val, 0.0, 0.0, 0.0],
             };
             frame_instances.push(new_instance);
