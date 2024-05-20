@@ -848,15 +848,15 @@ impl KbGameEngine for Example3DGame {
         }
 
         // Debug
-        if input_manager.key_i() == KbButtonState::JustPressed {
+        if input_manager.get_key_state("i") == KbButtonState::JustPressed {
             self.debug_collision = !self.debug_collision;
         }
 
-        if input_manager.key_y() == KbButtonState::JustPressed {
+        if input_manager.get_key_state("y") == KbButtonState::JustPressed {
             self.invert_y = !self.invert_y;
         }
 
-        if input_manager.key_m() == KbButtonState::JustPressed {
+        if input_manager.get_key_state("m") == KbButtonState::JustPressed {
             self.pause_monsters = !self.pause_monsters;
         }
 

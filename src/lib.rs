@@ -169,9 +169,14 @@ where
                             };
                         }
                     }
-                    WindowEvent::Touch(winit::event::Touch { phase, location, id, .. }) => {
-                       // let winit::dpi::LogicalPosition { x, y } = location;
-                        input_manager.update_touch(*phase);
+                    WindowEvent::Touch(winit::event::Touch {
+                        phase,
+                        location,
+                        id,
+                        ..
+                    }) => {
+                        // let winit::dpi::LogicalPosition { x, y } = location;
+                        input_manager.update_touch(*phase, *id, location.clone());
                     }
                     WindowEvent::KeyboardInput {
                         device_id: _,
@@ -180,11 +185,11 @@ where
                     } => {
                         input_manager.update(event.physical_key, event.state);
 
-                        if input_manager.key_h() == KbButtonState::JustPressed {
+                        if input_manager.get_key_state("h").just_pressed() {
                             game_renderer.enable_help_text();
                         }
 
-                        if input_manager.key_v() == KbButtonState::JustPressed {
+                        if input_manager.get_key_state("v").just_pressed() {
                             game_config.vsync = !game_config.vsync;
 
                             if game_config.vsync {
@@ -300,11 +305,11 @@ where
                     } => {
                         input_manager.update(event.physical_key, event.state);
 
-                        if input_manager.key_h() == KbButtonState::JustPressed {
+                        if input_manager.get_key_state("h").just_pressed() {
                             game_renderer.enable_help_text();
                         }
 
-                        if input_manager.key_v() == KbButtonState::JustPressed {
+                        if input_manager.get_key_state("v").just_pressed() {
                             game_config.vsync = !game_config.vsync;
 
                             if game_config.vsync {

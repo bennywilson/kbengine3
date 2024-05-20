@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use winit::{
     event::ElementState,
     keyboard::{KeyCode, PhysicalKey},
@@ -22,6 +24,14 @@ impl KbButtonState {
 }
 
 #[derive(Debug, Default)]
+pub struct KbTouchInfo {
+    pub start_pos: (f64, f64),
+    pub current_pos: (f64, f64),
+    pub frame_delta: (f64, f64),
+    pub touch_state: KbButtonState,
+}
+
+#[derive(Debug, Default)]
 pub struct KbInputManager {
     pub key_space: KbButtonState,
 
@@ -41,7 +51,7 @@ pub struct KbInputManager {
     pub key_h: KbButtonState,
     pub key_v: KbButtonState,
 
-    pub touch: KbButtonState,
+    pub touch_id_to_info: HashMap<u64, KbTouchInfo>,
 }
 
 #[allow(dead_code)]
@@ -50,11 +60,30 @@ impl KbInputManager {
         Default::default()
     }
 
-    pub fn update_touch(&mut self, phase: winit::event::TouchPhase) {
+    pub fn update_touch(
+        &mut self,
+        phase: winit::event::TouchPhase,
+        id: u64,
+        location: winit::dpi::PhysicalPosition<f64>,
+    ) {
         if phase == winit::event::TouchPhase::Started {
-            self.touch = KbButtonState::JustPressed
-        } else if phase == winit::event::TouchPhase::Cancelled || phase == winit::event::TouchPhase::Ended {
-            self.touch = KbButtonState::None
+            let touch_info = KbTouchInfo {
+                start_pos: location.into(),
+                current_pos: location.into(),
+                frame_delta: (0.0, 0.0),
+                touch_state: KbButtonState::JustPressed,
+            };
+            self.touch_id_to_info.insert(id, touch_info);
+        } else if phase == winit::event::TouchPhase::Cancelled
+            || phase == winit::event::TouchPhase::Ended
+        {
+            self.touch_id_to_info.remove(&id);
+        } else if phase == winit::event::TouchPhase::Moved {
+            let touch_info = &mut self.touch_id_to_info.get_mut(&id).unwrap();
+            touch_info.frame_delta.0 = touch_info.current_pos.0 - location.x;
+            touch_info.frame_delta.1 = touch_info.current_pos.1 - location.y;
+            touch_info.current_pos.0 = location.x;
+            touch_info.current_pos.1 = location.y;
         }
     }
 
@@ -250,45 +279,11 @@ impl KbInputManager {
             self.key_space = KbButtonState::Down;
         }
 
-        if self.touch == KbButtonState::JustPressed {
-            self.touch = KbButtonState::Down;
+        for touch in &mut self.touch_id_to_info {
+            touch.1.frame_delta.0 = 0.0;
+            touch.1.frame_delta.1 = 0.0;
+            touch.1.touch_state = KbButtonState::Down;
         }
-    }
-
-    pub fn key_h(&self) -> KbButtonState {
-        self.key_h.clone()
-    }
-
-    pub fn key_i(&self) -> KbButtonState {
-        self.key_i.clone()
-    }
-
-    pub fn key_m(&self) -> KbButtonState {
-        self.key_m.clone()
-    }
-
-    pub fn key_y(&self) -> KbButtonState {
-        self.key_y.clone()
-    }
-
-    pub fn key_v(&self) -> KbButtonState {
-        self.key_v.clone()
-    }
-
-    pub fn key_arrow_up(&self) -> KbButtonState {
-        self.key_arrow_up.clone()
-    }
-
-    pub fn key_arrow_down(&self) -> KbButtonState {
-        self.key_arrow_down.clone()
-    }
-
-    pub fn key_arrow_left(&self) -> KbButtonState {
-        self.key_arrow_left.clone()
-    }
-
-    pub fn key_arrow_right(&self) -> KbButtonState {
-        self.key_arrow_right.clone()
     }
 
     pub fn get_key_state(&self, key: &str) -> KbButtonState {
@@ -302,10 +297,13 @@ impl KbInputManager {
             "up_arrow" => self.key_arrow_up.clone(),
             "down_arrow" => self.key_arrow_down.clone(),
             "space" => self.key_space.clone(),
-            "touch" => self.touch.clone(),
             _ => KbButtonState::None,
         };
 
         button_state
+    }
+
+    pub fn get_touch_map(&self) -> &HashMap<u64, KbTouchInfo> {
+        &self.touch_id_to_info
     }
 }

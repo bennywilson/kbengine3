@@ -10,5 +10,5 @@
     "graphics_power_pref": "default",
 
     "vsync": true,
-    "sunbeams": false
+    "sunbeams": true
 }
