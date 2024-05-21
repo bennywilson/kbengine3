@@ -93,6 +93,18 @@ impl KbAssetManager {
                 "model.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/model.wgsl").to_string(),
             );
+            file_to_byte_buffer.insert(
+                "scorch_t.png".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
+            );
+            file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
+                "bullet_hole.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+            );
             file_to_string_buffer.insert(
                 "particle.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
@@ -130,6 +142,14 @@ impl KbAssetManager {
         #[cfg(feature = "wasm_include_3d")]
         {
             file_to_string_buffer.insert(
+                "bullet_hole.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
                 "cloud_sprite.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
             );
@@ -160,6 +180,10 @@ impl KbAssetManager {
             file_to_byte_buffer.insert(
                 "smoke_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "scorch_t.png".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
             );
             file_to_byte_buffer.insert(
                 "muzzle_flash_t.png".to_string(),
@@ -193,6 +217,10 @@ impl KbAssetManager {
             file_to_byte_buffer.insert(
                 "pinky.glb".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "sign.glb".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/models/sign.glb").to_vec(),
             );
             file_to_byte_buffer.insert(
                 "sky_dome.glb".to_string(),
@@ -257,6 +285,10 @@ impl KbAssetManager {
 
         #[cfg(feature = "wasm_include_key")]
         {
+            file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+            );
             file_to_byte_buffer.insert(
                 "postprocess_filter.png".to_string(),
                 include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
@@ -502,6 +534,7 @@ impl KbAssetManager {
         &mut self,
         file_path: &str,
         mut device_resource: &mut KbDeviceResources<'_>,
+        use_holes: bool,
     ) -> KbModelHandle {
         let new_model = {
             #[cfg(not(target_arch = "wasm32"))]
@@ -530,7 +563,7 @@ impl KbAssetManager {
                     }
                 };
                 let bytes = load_binary(&final_file_path).await.unwrap();
-                KbModel::from_bytes(&bytes, &mut device_resource, self).await
+                KbModel::from_bytes(&bytes, &mut device_resource, self, use_holes).await
             }
             #[cfg(target_arch = "wasm32")]
             {
@@ -542,7 +575,7 @@ impl KbAssetManager {
                     self.file_to_byte_buffer.len()
                 );
                 let byte_buffer = self.file_to_byte_buffer.get(file_name).unwrap().clone(); // cloning here.
-                KbModel::from_bytes(&byte_buffer, &mut device_resource, self).await
+                KbModel::from_bytes(&byte_buffer, &mut device_resource, self, use_holes).await
             }
         };
         log!("Model loaded");

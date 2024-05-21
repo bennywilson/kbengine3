@@ -414,15 +414,17 @@ impl GameMob {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum GamePropType {
     Shotgun,
     Barrel,
+    Sign,
 }
 
+#[derive(Debug)]
 pub struct GameProp {
     actors: Vec<KbActor>,
-    collision_handle: KbCollisionHandle,
+    pub collision_handle: KbCollisionHandle,
     prop_type: GamePropType,
     particle_handles: [KbParticleHandle; 2],
     _start_time: Instant,
@@ -437,15 +439,21 @@ impl GameProp {
         collision_manager: &mut KbCollisionManager,
         particle_handles: [KbParticleHandle; 2],
     ) -> Self {
+        let mut coll_pos = *position;
+
         let extents = {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
+                GamePropType::Sign => {
+                    coll_pos = CgVec3::new(0.0, 0.0, 0.0);
+                    CgVec3::new(9.5, 10.0, 0.3)
+                }
             }
         };
 
         let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-            position: *position,
+            position: coll_pos,
             extents,
             block: false,
         });
@@ -469,6 +477,7 @@ impl GameProp {
             match prop_type {
                 GamePropType::Shotgun => 0.21,
                 GamePropType::Barrel => 0.21,
+                GamePropType::Sign => 0.21,
             }
         };
 

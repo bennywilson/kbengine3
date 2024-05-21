@@ -24,11 +24,13 @@ pub struct KbConfig {
 
     pub clear_color: CgVec4,
     pub sun_color: CgVec4,
+    pub sun_beam_pos_scale: CgVec4,
+    pub bullet_holes: bool,
 }
 
 impl KbConfig {
     pub fn new(config_file_text: &str) -> Self {
-        let json_file = json::parse(&config_file_text).unwrap();
+        let mut json_file = json::parse(&config_file_text).unwrap();
 
         let json_val = json_file["enemy_spawn_delay"].as_f32();
         let enemy_spawn_delay = match json_val {
@@ -60,16 +62,26 @@ impl KbConfig {
             None => 720,
         };
 
-        let json_val = json_file["graphics_back_end"].as_str();
-        let graphics_backend = match json_val {
-            Some(val) => match val {
-                "dx12" => wgpu::Backends::DX12,
-                "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
-                "vulkan" => wgpu::Backends::VULKAN,
-                "gl" => wgpu::Backends::GL,
-                _ => wgpu::Backends::all(),
-            },
-            None => wgpu::Backends::all(),
+        let graphics_backend = {
+            #[cfg(target_arch = "wasm32")]
+            {
+                wgpu::Backends::GL
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let json_val = json_file["graphics_power_pref"].as_str();
+                match json_val {
+                    Some(val) => match val {
+                        "dx12" => wgpu::Backends::DX12,
+                        "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
+                        "vulkan" => wgpu::Backends::VULKAN,
+                        "gl" => wgpu::Backends::GL,
+                        _ => wgpu::Backends::all(),
+                    },
+                    None => wgpu::Backends::BROWSER_WEBGPU,
+                }
+            }
         };
 
         let json_val = json_file["graphics_power_pref"].as_str();
@@ -93,6 +105,24 @@ impl KbConfig {
             None => false,
         };
 
+        let sun_beam_pos_scale = {
+            if json_file["sun_beam_pos_scale"].is_array() {
+                let x = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
+                let y = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
+                let z = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
+                let w = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
+                CgVec4::new(x, y, z, w)
+            } else {
+                CgVec4::new(500.0, 550.0, 500.0, 1550.0)
+            }
+        };
+
+        let json_val = json_file["bullet_holes"].as_bool();
+        let bullet_holes = match json_val {
+            Some(val) => val,
+            None => false,
+        };
+
         KbConfig {
             enemy_spawn_delay,
             enemy_move_speed,
@@ -112,6 +142,8 @@ impl KbConfig {
             sunbeams_enabled,
             clear_color: CG_VEC4_ZERO,
             sun_color: CgVec4::new(1.0, 1.0, 1.0, 1.0),
+            sun_beam_pos_scale,
+            bullet_holes,
         }
     }
 

@@ -18,6 +18,7 @@ pub enum KbBlendMode {
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum KbRenderGroupType {
     World,
+    WorldHole,
     WorldCustom,
     Foreground,
     ForegroundCustom,
@@ -500,7 +501,7 @@ impl<'a> KbDeviceResources<'a> {
 
         log!("  Creating Font");
         let brush =
-            BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/Bold.ttf"))
+            BrushBuilder::using_font_bytes(include_bytes!("../engine_assets/fonts/bold.ttf"))
                 .unwrap()
                 .build(
                     &device,

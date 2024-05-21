@@ -24,6 +24,7 @@ pub struct Example3DGame {
     collision_manager: KbCollisionManager,
     vfx_manager: GameVfxManager,
 
+    sign_prop: Option<GameProp>,
     barrel_model: KbModelHandle,
     shotgun_model: KbModelHandle,
     monster_model: KbModelHandle,
@@ -44,6 +45,8 @@ pub struct Example3DGame {
     invert_y: bool,
     debug_collision: bool,
     pause_monsters: bool,
+
+    post_process_override: KbPostProcessMode,
 }
 
 impl Example3DGame {
@@ -131,6 +134,47 @@ impl Example3DGame {
         }
         self.props.push(shotgun);
     }
+
+    fn spawn_sign(&mut self, renderer: &mut KbRenderer<'_>, model_handle: &KbModelHandle) {
+        {
+            let sign_pos = CgVec3::new(0.0, 0.0, 0.0);
+
+            let mut sign = GameProp::new(
+                &GamePropType::Sign,
+                &sign_pos,
+                model_handle,
+                self.outline_render_group,
+                &mut self.collision_manager,
+                [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
+            );
+            let sign_actors = sign.get_actors();
+            sign_actors[0].set_render_group(
+                &KbRenderGroupType::WorldHole,
+                &Some(self.outline_render_group),
+            );
+            sign_actors[1].set_render_group(
+                &KbRenderGroupType::WorldCustom,
+                &Some(self.outline_render_group),
+            );
+
+            // hack
+            renderer.add_bullet_hole(
+                &sign_actors[0],
+                &CgVec3::new(99999999.0, 9999999.0, 9999999.0),
+                &CgVec3::new(0.0, 1.0, 0.0),
+            );
+
+            let rotation = cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(
+                cgmath::Deg(90.0),
+            )));
+            for actor in sign_actors {
+                actor.set_rotation(&rotation);
+                renderer.add_or_update_actor(actor);
+            }
+
+            self.sign_prop = Some(sign);
+        }
+    }
 }
 
 impl KbGameEngine for Example3DGame {
@@ -148,6 +192,7 @@ impl KbGameEngine for Example3DGame {
             game_objects,
             game_camera,
             vfx_manager: GameVfxManager::new(),
+            sign_prop: None,
             barrel_model: KbModelHandle::make_invalid(),
             shotgun_model: KbModelHandle::make_invalid(),
             monster_model: KbModelHandle::make_invalid(),
@@ -166,6 +211,7 @@ impl KbGameEngine for Example3DGame {
             score: 0,
             high_score: 0,
             next_harm_time: -1.0,
+            post_process_override: KbPostProcessMode::Passthrough,
         }
     }
 
@@ -174,7 +220,7 @@ impl KbGameEngine for Example3DGame {
         renderer: &mut KbRenderer<'_>,
         game_config: &mut KbConfig,
     ) {
-        log!("GameEngine::initialize_world() caled...");
+        log!("GameEngine::initialize_world()...");
         game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 1.0);
         game_config.sun_color = CgVec4::new(0.8 * 0.8, 0.58 * 0.58, 0.24 * 0.24, 0.0);
 
@@ -277,8 +323,23 @@ impl KbGameEngine for Example3DGame {
             uv_tiles: (1.0, 1.0),
         });
 
-        self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
-        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+        self.shotgun_model = renderer
+            .load_model("game_assets/models/shotgun.glb", false)
+            .await;
+        self.barrel_model = renderer
+            .load_model("game_assets/models/barrel.glb", false)
+            .await;
+
+        let sign_model = renderer
+            .load_model("game_assets/models/sign.glb", true)
+            .await;
+
+        if game_config.bullet_holes {
+            game_config.sun_beam_pos_scale = [0.0, 300.0, 500.0, 1550.0].into();
+            self.spawn_sign(renderer, &sign_model);
+        } else {
+            game_config.sun_beam_pos_scale = [500.0, 550.0, 500.0, 1550.0].into();
+        }
 
         self.decal_render_group = renderer
             .add_custom_render_group(
@@ -307,7 +368,9 @@ impl KbGameEngine for Example3DGame {
                 )
                 .await,
         );
-        let hands_model = renderer.load_model("game_assets/models/fp_hands.glb").await;
+        let hands_model = renderer
+            .load_model("game_assets/models/fp_hands.glb", false)
+            .await;
         let mut player = GamePlayer::new(&hands_model).await;
 
         let (hands, hands_outlines) = player.get_actors();
@@ -324,7 +387,9 @@ impl KbGameEngine for Example3DGame {
         self.player = Some(player);
 
         // Monster
-        let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
+        let monster_model = renderer
+            .load_model("game_assets/models/monster.glb", false)
+            .await;
         let monster_render_group = renderer
             .add_custom_render_group(
                 &KbRenderGroupType::WorldCustom,
@@ -336,7 +401,9 @@ impl KbGameEngine for Example3DGame {
         self.monster_model = monster_model;
 
         // World objects
-        let level_model = renderer.load_model("game_assets/models/level.glb").await;
+        let level_model = renderer
+            .load_model("game_assets/models/level.glb", false)
+            .await;
         let mut actor = KbActor::new();
         actor.set_position(&[0.0, 0.0, 0.0].into());
         actor.set_scale(&(CgVec3::new(10.0, 19.0, 10.0) * GLOBAL_SCALE.x));
@@ -344,7 +411,9 @@ impl KbGameEngine for Example3DGame {
         renderer.add_or_update_actor(&actor);
         self.world_actors.push(actor);
 
-        let sky_model = renderer.load_model("game_assets/models/sky_dome.glb").await;
+        let sky_model = renderer
+            .load_model("game_assets/models/sky_dome.glb", false)
+            .await;
         {
             let sky_render_group = Some(
                 renderer
@@ -389,7 +458,9 @@ impl KbGameEngine for Example3DGame {
                 "game_assets/shaders/first_person_outline.wgsl",
             )
             .await;
-        let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
+        let pinky_model = renderer
+            .load_model("game_assets/models/pinky.glb", false)
+            .await;
         let mut actor = KbActor::new();
         actor.set_position(&[16.5, 0.5, 6.0].into());
         let pinky_rot_x = cgmath::Rad::from(cgmath::Deg(90.0));
@@ -581,6 +652,14 @@ impl KbGameEngine for Example3DGame {
             {
                 renderer.enable_help_text();
             }
+
+            // Help
+            if touch.start_pos.0 < 300.0
+                && touch.start_pos.1 < 300.0
+                && touch.touch_state.just_pressed()
+            {
+                renderer.enable_help_text();
+            }
         }
 
         if input_manager.get_key_state("w").is_down() {
@@ -599,7 +678,12 @@ impl KbGameEngine for Example3DGame {
             move_vec += -right_dir;
         }
 
-        move_vec = move_vec.normalize() * delta_time * CAMERA_MOVE_RATE;
+        move_vec = move_vec.normalize();
+        if input_manager.get_key_state("left_shift").is_down() {
+            move_vec *= 0.45;
+        }
+        move_vec *= delta_time * CAMERA_MOVE_RATE;
+
         if move_vec.magnitude2() > 0.001 {
             let trace_start = CgVec3::new(camera_pos.x, 0.25, camera_pos.z);
             let (t, handle, _, _) = self.collision_manager.cast_ray(&trace_start, &move_vec);
@@ -720,6 +804,18 @@ impl KbGameEngine for Example3DGame {
                 } else {
                     CgVec4::new(0.0, 0.0, 1.0, 1.0)
                 };
+
+                if found_hit && self.sign_prop.is_some() {
+                    let sign_prop = self.sign_prop.as_mut().unwrap();
+                    if sign_prop.collision_handle == handle.unwrap() {
+                        let trace_dir = (trace_end_pos - trace_start_pos).normalize();
+                        renderer.add_bullet_hole(
+                            &sign_prop.get_actors()[0],
+                            &hit_loc.unwrap(),
+                            &trace_dir,
+                        );
+                    }
+                }
                 if found_hit {
                     let hit_loc = hit_loc.unwrap();
                     self.mobs.retain_mut(|mob| {
@@ -825,9 +921,9 @@ impl KbGameEngine for Example3DGame {
         let spawn_timer = {
             let t = 1.0 - (self.score as f32 / 20.0).clamp(0.0, 1.0);
             if self.score == 0 {
-                t + 5.0
+                t + game_config.enemy_spawn_delay + 5.0
             } else {
-                t + 1.0
+                t + game_config.enemy_spawn_delay + 1.0
             }
         };
         if self.monster_spawn_timer.elapsed().as_secs_f32() > spawn_timer {
@@ -876,12 +972,16 @@ impl KbGameEngine for Example3DGame {
         } else {
             renderer.set_postprocess_mode(&KbPostProcessMode::Passthrough);
         }
+        
+        if !matches!(self.post_process_override, KbPostProcessMode::Passthrough) {
+            renderer.set_postprocess_mode(&self.post_process_override);
+        }
 
         // UI
         {
             self.high_score = self.high_score.max(self.score);
-            let hud_msg = format!("Score: {}  High Score: {}", self.score, self.high_score);
-            renderer.set_hud_msg(&hud_msg);
+          //  let hud_msg = format!("-/+ to change post-processes", self.score, self.high_score);
+            renderer.set_hud_msg(&"-/+ to change post-processes");
             let player = self.player.as_ref().unwrap();
             let (positions, sprites, scale) = {
                 if !player.has_shotgun() {
@@ -966,6 +1066,15 @@ impl KbGameEngine for Example3DGame {
 
         if input_manager.get_key_state("m").just_pressed() {
             self.pause_monsters = !self.pause_monsters;
+        }
+
+        if input_manager.get_key_state("+").just_pressed() {
+            self.post_process_override = match self.post_process_override {
+                KbPostProcessMode::Passthrough => KbPostProcessMode::Desaturation,
+                KbPostProcessMode::Desaturation => KbPostProcessMode::ScanLines,
+                KbPostProcessMode::ScanLines => KbPostProcessMode::Warp,
+                KbPostProcessMode::Warp => KbPostProcessMode::Passthrough,
+            }
         }
 
         if self.debug_collision {

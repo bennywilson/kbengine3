@@ -41,7 +41,7 @@ impl KbActorTransform {
     }
 }
 
-#[derive(Clone, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct KbParticleHandle {
     pub index: u32,
 }
@@ -303,7 +303,7 @@ impl KbParticleActor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct KbActor {
     pub id: u32,
     position: CgVec3,
