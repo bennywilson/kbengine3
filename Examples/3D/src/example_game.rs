@@ -175,25 +175,8 @@ impl KbGameEngine for Example3DGame {
         game_config: &mut KbConfig,
     ) {
         log!("GameEngine::initialize_world() caled...");
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 0.0);
-            game_config.sun_color = CgVec4::new(0.8 * 0.8, 0.58 * 0.58, 0.24 * 0.24, 0.0);
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            use cgmath::num_traits::Pow;
-            let color_fix: f32 = 1.0 / 2.2;
-            game_config.clear_color = CgVec4::new(
-                0.87_f32.pow(color_fix),
-                0.58_f32.pow(color_fix),
-                0.24_f32.pow(color_fix),
-                0.0,
-            );
-            game_config.sun_color = CgVec4::new(0.8, 0.58, 0.24, 0.0);
-        }
+        game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 1.0);
+        game_config.sun_color = CgVec4::new(0.8 * 0.8, 0.58 * 0.58, 0.24 * 0.24, 0.0);
 
         // self.game_objects order is hard-coded.  Indices 0-3 contain the cross hair sprites
         for _ in 0..4 {
@@ -217,8 +200,8 @@ impl KbGameEngine for Example3DGame {
             });
         }
 
-        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
         self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
+        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
 
         self.decal_render_group = renderer
             .add_custom_render_group(
@@ -349,10 +332,7 @@ impl KbGameEngine for Example3DGame {
         actor.set_scale(&GLOBAL_SCALE);
         actor.set_model(&pinky_model);
 
-        #[cfg(not(target_arch = "wasm32"))]
-        actor.set_custom_data_1(CgVec4::new(0.25, 0.025, 0.025, 0.025));
-
-        #[cfg(target_arch = "wasm32")]
+        //  #[cfg(target_arch = "wasm32")]
         actor.set_custom_data_1(CgVec4::new(0.25, 0.08, 0.08, 0.08));
 
         actor.set_render_group(
@@ -482,21 +462,61 @@ impl KbGameEngine for Example3DGame {
         let camera_pos = self.game_camera.get_position();
         let mut camera_rot = self.game_camera.get_rotation();
 
+        let mut move_forward = false;
+        let mut move_backward = false;
+        let mut move_left = false;
+        let mut move_right = false;
+        let mut look_up = false;
+        let mut look_down = false;
+        let mut look_left = false;
+        let mut look_right = false;
+
+        let touch_map_iter = input_manager.get_touch_map().iter();
+        for touch_pair in touch_map_iter {
+            let touch = &touch_pair.1;
+            if touch.touch_state.is_down() && touch.start_pos.0 < 500.0 {
+                if touch.current_pos.0 < touch.start_pos.0 - 8.0 {
+                    move_right = true;
+                } else if touch.current_pos.0 > touch.start_pos.0 + 8.0 {
+                    move_left = true;
+                }
+                if touch.current_pos.1 < touch.start_pos.1 - 8.0 {
+                    move_forward = true;
+                } else if touch.current_pos.1 > touch.start_pos.1 + 8.0 {
+                    move_backward = true;
+                }
+            }
+
+            if touch.start_pos.1 > 500.0 && touch.touch_state.is_down() && touch.start_pos.0 > 500.0
+            {
+                if touch.current_pos.0 < touch.start_pos.0 - 32.0 {
+                    look_left = true;
+                } else if touch.current_pos.0 > touch.start_pos.0 + 32.0 {
+                    look_right = true;
+                }
+                if touch.current_pos.1 < touch.start_pos.1 - 32.0 {
+                    look_up = true;
+                } else if touch.current_pos.1 > touch.start_pos.1 + 32.0 {
+                    look_down = true;
+                }
+            }
+        }
+
         // Movement
         let mut move_vec = CG_VEC3_ZERO;
-        if input_manager.get_key_state("w").is_down() {
+        if input_manager.get_key_state("w").is_down() || move_forward {
             move_vec += forward_dir
         }
 
-        if input_manager.get_key_state("s").is_down() {
+        if input_manager.get_key_state("s").is_down() || move_backward {
             move_vec += -forward_dir;
         }
 
-        if input_manager.get_key_state("d").is_down() {
+        if input_manager.get_key_state("d").is_down() || move_left {
             move_vec += right_dir;
         }
 
-        if input_manager.get_key_state("a").is_down() {
+        if input_manager.get_key_state("a").is_down() || move_right {
             move_vec += -right_dir;
         }
 
@@ -539,16 +559,16 @@ impl KbGameEngine for Example3DGame {
             delta_time * CAMERA_ROTATION_RATE
         };
 
-        if input_manager.get_key_state("left_arrow").is_down() {
+        if input_manager.get_key_state("left_arrow").is_down() || look_left {
             camera_rot.x += x_radians;
         }
-        if input_manager.get_key_state("right_arrow").is_down() {
+        if input_manager.get_key_state("right_arrow").is_down() || look_right {
             camera_rot.x -= x_radians;
         }
-        if input_manager.get_key_state("up_arrow").is_down() {
+        if input_manager.get_key_state("up_arrow").is_down() || look_up {
             camera_rot.y -= y_radians;
         }
-        if input_manager.get_key_state("down_arrow").is_down() {
+        if input_manager.get_key_state("down_arrow").is_down() || look_down {
             camera_rot.y += y_radians
         }
         camera_rot.y = camera_rot.y.clamp(-60.0, 75.0);
@@ -848,15 +868,15 @@ impl KbGameEngine for Example3DGame {
         }
 
         // Debug
-        if input_manager.get_key_state("i") == KbButtonState::JustPressed {
+        if input_manager.get_key_state("i").just_pressed() {
             self.debug_collision = !self.debug_collision;
         }
 
-        if input_manager.get_key_state("y") == KbButtonState::JustPressed {
+        if input_manager.get_key_state("y").just_pressed() {
             self.invert_y = !self.invert_y;
         }
 
-        if input_manager.get_key_state("m") == KbButtonState::JustPressed {
+        if input_manager.get_key_state("m").just_pressed() {
             self.pause_monsters = !self.pause_monsters;
         }
 

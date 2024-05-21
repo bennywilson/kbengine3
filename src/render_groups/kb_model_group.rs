@@ -1022,16 +1022,6 @@ impl KbModelRenderGroup {
             0.1,
             10000.0,
         );
-        let fragment_texture_fix = {
-            #[cfg(target_arch = "wasm32")]
-            {
-                1.0 / 2.2
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                1.0
-            }
-        };
 
         // Iterate over actors and add their uniform info to their corresponding KbModels
         let mut models_to_render = Vec::<KbModelHandle>::new();
@@ -1087,7 +1077,7 @@ impl KbModelRenderGroup {
                 0.0,
             ];
             uniform_data.time[0] = game_config.start_time.elapsed().as_secs_f32();
-            uniform_data.time[1] = fragment_texture_fix;
+            uniform_data.time[1] = 1.0;
             uniform_data.model_color = [
                 actor.get_color().x,
                 actor.get_color().y,
@@ -1188,16 +1178,6 @@ impl KbModelRenderGroup {
             1000000.0,
         );
         let view_proj_matrix = proj_matrix * view_matrix;
-        let fragment_texture_fix = {
-            #[cfg(target_arch = "wasm32")]
-            {
-                1.0 / 2.2
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                1.0
-            }
-        };
 
         match blend_mode {
             KbParticleBlendMode::AlphaBlend => {
@@ -1242,7 +1222,7 @@ impl KbModelRenderGroup {
                 0.0,
             ];
             uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
-            uniform.time[1] = fragment_texture_fix;
+            uniform.time[1] = 1.0;
             uniform.custom_data_1 = [0.0, 0.0, 0.0, 0.0];
             uniform.model_color = [1.0, 1.0, 1.0, 1.0];
             device_resources.queue.write_buffer(

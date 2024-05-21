@@ -61,9 +61,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    outColor.r = pow(outColor.r, sprite_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, sprite_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, sprite_uniform.time_colorpow_.y);
-
     return outColor;
 }

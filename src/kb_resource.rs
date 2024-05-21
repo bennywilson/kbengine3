@@ -462,13 +462,22 @@ impl<'a> KbDeviceResources<'a> {
             .await
             .unwrap();
 
-        let surface_config = surface
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .filter(|f| f.is_srgb())
+            .next()
+            .unwrap_or(surface_caps.formats[0]);
+        let mut surface_config = surface
             .get_default_config(
                 &adapter,
                 game_config.window_width,
                 game_config.window_height,
             )
             .unwrap();
+        surface_config.format = surface_format;
         surface.configure(&device, &surface_config);
 
         let max_instances = game_config.max_render_instances;

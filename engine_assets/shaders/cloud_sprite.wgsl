@@ -110,9 +110,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var edge_alpha: f32 = min( edge_alpha_x, edge_alpha_y );
     var cloud_alpha: f32 = textureSample(t_noise, s_diffuse, uvs).b * 1.61 * smoothstep(0.0, 0.6, noise_color);
     outColor.a = cloud_alpha - (outColor.r * 0.6);//smoothstep(0.0, 1.0, cloud_alpha);
-
-    outColor.r = pow(outColor.r, sprite_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, sprite_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, sprite_uniform.time_colorpow_.y);
     return outColor;
 }

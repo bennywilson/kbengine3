@@ -395,16 +395,6 @@ impl KbSpriteRenderGroup {
         ]; //[self.game_config.window_width as f32, self.game_config.window_height as f32, (self.game_config.window_height as f32) / (self.game_config.window_width as f32), 0.0]));
         self.uniform.time[0] = game_config.start_time.elapsed().as_secs_f32();
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.uniform.time[1] = 1.0 / 2.2;
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.uniform.time[1] = 1.0;
-        }
-
         render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
         render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

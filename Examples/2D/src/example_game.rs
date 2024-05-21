@@ -377,7 +377,6 @@ impl KbGameEngine for Example2DGame {
         let mut shoot = false;
 
         let touch_map_iter = input_manager.get_touch_map().iter();
-        let touches = input_manager.get_touch_map();
         for touch_pair in touch_map_iter {
             let touch = &touch_pair.1;
             if touch.touch_state.is_down() && touch.start_pos.0 < 500.0 {

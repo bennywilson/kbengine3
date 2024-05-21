@@ -6,9 +6,9 @@
     "window_width": 1366,
     "window_height": 768,
 
-    "graphics_back_end": "default",
+    "graphics_back_end": "gl",
     "graphics_power_pref": "default",
 
-    "vsync": true,
+    "vsync": false,
     "sunbeams": true
 }

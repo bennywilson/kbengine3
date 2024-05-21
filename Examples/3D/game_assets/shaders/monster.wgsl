@@ -81,9 +81,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     outColor.z = albedo.z;
     outColor.w = max(max(albedo.x, albedo.y), albedo.z);
 
-    outColor.r = pow(outColor.r, model_uniform.time_colorpow_.y);
-    outColor.g = pow(outColor.g, model_uniform.time_colorpow_.y);
-    outColor.b = pow(outColor.b, model_uniform.time_colorpow_.y);
-
     return outColor;
 }

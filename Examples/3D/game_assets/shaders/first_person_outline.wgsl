@@ -70,8 +70,5 @@ var t_noise: texture_2d<f32>;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var outColor: vec3<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords).xyz * model_uniform.model_color.xyz;
     var tint = model_uniform.custom_data_1.yzw;
-    outColor.r = tint.r * pow(outColor.r, model_uniform.time_colorpow_.y);
-    outColor.g = tint.g * pow(outColor.g, model_uniform.time_colorpow_.y);
-    outColor.b = tint.b * pow(outColor.b, model_uniform.time_colorpow_.y);
-    return vec4<f32>(outColor.xyz, model_uniform.model_color.a);
+    return vec4<f32>(tint * outColor.xyz, model_uniform.model_color.a);
 }

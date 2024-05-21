@@ -13,5 +13,5 @@
     "graphics_power_pref": "default",
 
     "_comment3": "Valid values for 'vsync' are true and false",
-    "vsync": true
+    "vsync": false
 }
