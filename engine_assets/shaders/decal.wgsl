@@ -69,9 +69,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     albedo.b *= model_uniform.model_color.b;
 
     var outColor: vec4<f32>;
-    outColor.r = pow(albedo.r, model_uniform.time_colorpow_.y) * 0.5;
-    outColor.g = pow(albedo.g, model_uniform.time_colorpow_.y) * 0.5;
-    outColor.b = pow(albedo.b, model_uniform.time_colorpow_.y) * 0.5;
+    outColor.r *= 0.5;
+    outColor.g *= 0.5;
+    outColor.b *= 0.5;
     outColor.a = albedo.a;
     return outColor;
 }

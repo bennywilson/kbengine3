@@ -168,8 +168,17 @@ impl GamePlayer {
     }
 
     fn tick_idle(&mut self, input_manager: &KbInputManager) -> GamePlayerState {
+        let touch_map_iter = input_manager.get_touch_map().iter();
+        let mut fire = false;
+        for touch_pair in touch_map_iter {
+            let touch = &touch_pair.1;
+            if touch.start_pos.1 < 570.0 && touch.start_pos.0 > 500.0 {
+                fire = true;
+                break;
+            }
+        }
         if self.current_state_time.elapsed().as_secs_f32() > 0.1
-            && input_manager.get_key_state("space").is_down()
+            && (input_manager.get_key_state("space").is_down() || fire)
         {
             self.set_state(GamePlayerState::Shooting);
             self.ammo_count -= 1;
@@ -321,10 +330,6 @@ impl GameMob {
         monster_outline.set_scale(&(CgVec3::new(3.0, 3.0, 3.0) * GLOBAL_SCALE.x));
         monster_outline.set_model(model_handle);
 
-        #[cfg(not(target_arch = "wasm32"))]
-        monster_outline.set_custom_data_1(CgVec4::new(0.045, 3.0, 3.0, 3.0));
-
-        #[cfg(target_arch = "wasm32")]
         monster_outline.set_custom_data_1(CgVec4::new(0.045, 7.0, 7.0, 7.0));
 
         monster_actors.push(monster_outline);
@@ -466,10 +471,7 @@ impl GameProp {
                 GamePropType::Barrel => 0.21,
             }
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        actor.set_custom_data_1(CgVec4::new(push, 0.05, 0.05, 0.05));
 
-        #[cfg(target_arch = "wasm32")]
         actor.set_custom_data_1(CgVec4::new(push, 0.17, 0.17, 0.17));
 
         actors.push(actor);
