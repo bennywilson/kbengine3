@@ -200,6 +200,45 @@ impl KbGameEngine for Example3DGame {
             });
         }
 
+        // Index 4 and 5 are the virtual thumb sticks
+        self.game_objects.push(GameObject {
+            position: CgVec3::new(1.5, -0.75, 0.0),
+            scale: CgVec3::new(0.2, 0.2, 1.0),
+            direction: (1.0, 0.0, 0.0).into(),
+            velocity: (0.0, 0.0, 0.0).into(),
+            object_type: GameObjectType::Background,
+            object_state: GameObjectState::Idle,
+            next_attack_time: 0.0,
+            texture_index: 1,
+            sprite_index: 43,
+            anim_frame: 0,
+            life_start_time: Instant::now(),
+            state_start_time: Instant::now(),
+            gravity_scale: 0.0,
+            random_val: kb_random_f32(0.0, 1000.0),
+            is_enemy: false,
+            uv_tiles: (2.0, 2.0),
+        });
+
+        self.game_objects.push(GameObject {
+            position: CgVec3::new(- 1.5, -0.75, 0.0),
+            scale: CgVec3::new(0.2, 0.2, 1.0),
+            direction: (1.0, 0.0, 0.0).into(),
+            velocity: (0.0, 0.0, 0.0).into(),
+            object_type: GameObjectType::Background,
+            object_state: GameObjectState::Idle,
+            next_attack_time: 0.0,
+            texture_index: 1,
+            sprite_index: 45,
+            anim_frame: 0,
+            life_start_time: Instant::now(),
+            state_start_time: Instant::now(),
+            gravity_scale: 0.0,
+            random_val: kb_random_f32(0.0, 1000.0),
+            is_enemy: false,
+            uv_tiles: (2.0, 2.0),
+        });
+
         self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
         self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
 
@@ -474,6 +513,8 @@ impl KbGameEngine for Example3DGame {
         let touch_map_iter = input_manager.get_touch_map().iter();
         for touch_pair in touch_map_iter {
             let touch = &touch_pair.1;
+
+            // Left thumb
             if touch.touch_state.is_down() && touch.start_pos.0 < 500.0 {
                 if touch.current_pos.0 < touch.start_pos.0 - 8.0 {
                     move_right = true;
@@ -486,7 +527,9 @@ impl KbGameEngine for Example3DGame {
                     move_backward = true;
                 }
             }
+            
 
+            // Right Thumb
             if touch.start_pos.1 > 500.0 && touch.touch_state.is_down() && touch.start_pos.0 > 500.0
             {
                 if touch.current_pos.0 < touch.start_pos.0 - 32.0 {
@@ -499,6 +542,11 @@ impl KbGameEngine for Example3DGame {
                 } else if touch.current_pos.1 > touch.start_pos.1 + 32.0 {
                     look_down = true;
                 }
+            }
+
+            // Help
+            if touch.start_pos.0 < 300.0 && touch.start_pos.1 < 300.0 && touch.touch_state.just_pressed() {
+                renderer.enable_help_text();
             }
         }
 
@@ -837,10 +885,10 @@ impl KbGameEngine for Example3DGame {
                     positions[i] + (positions[i] - center).normalize() * self.crosshair_error * 0.1;
                 self.game_objects[i].scale = scale;
             }
-            self.game_objects.truncate(4);
+            self.game_objects.truncate(6);
 
             let ammo_count = player.get_ammo_count();
-            let mut position = CgVec3::new(-1.7, -0.80, 0.0);
+            let mut position = CgVec3::new(1.65, 0.8, 0.0);
             let scale = CgVec3::new(0.1, 0.1, 0.1);
             let sprite_index = if player.has_shotgun() { 50 } else { 42 };
             let bullet_spacing = if player.has_shotgun() { 0.1 } else { 0.08 };
@@ -863,7 +911,7 @@ impl KbGameEngine for Example3DGame {
                     is_enemy: false,
                     uv_tiles: (1.0, 1.0),
                 });
-                position.x += bullet_spacing;
+                position.x -= bullet_spacing;
             }
         }
 
@@ -888,7 +936,7 @@ impl KbGameEngine for Example3DGame {
         let num_active_particles = renderer.num_active_particles();
         let num_active_decals = self.vfx_manager.num_active_decals();
 
-        let debug_msg = format!("Move: [W][A][S][D]    Look: [Arrow Keys]    Shoot: [Space]\nToggle VSync: [V]   Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M]\n\
+        let debug_msg = format!("Move: [W][A][S][D] or L Thumb   Look: [Arrow Keys] or R Thumb    Shoot: [Space] or tap bullets\nToggle VSync: [V]   Invert Y: [Y]   Toggle collision: [i]   Pause monsters: [M]\n\
             # collision objs = {}, # active particles {}, # active decals {}", num_collision_obj, num_active_particles, num_active_decals);
         renderer.set_debug_game_msg(&debug_msg);
         renderer.set_debug_font_color(&CgVec4::new(1.0, 0.0, 0.0, 1.0));

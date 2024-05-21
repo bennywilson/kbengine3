@@ -207,8 +207,8 @@ impl<'a> KbRenderer<'a> {
         let frame_time_string = {
             if self.display_debug_msg {
                 format!(
-                    "Press [H] to disable Help.\n\
-                    {}\n\n\
+                    "Press [H] or tap here to hide help\n\
+                    {}\n\\n
                     FPS: {:.0} \n\
                     Frame time: {:.2} ms\n\
                     Back End: {:?}\n\
@@ -223,7 +223,7 @@ impl<'a> KbRenderer<'a> {
                 )
             } else {
                 format!(
-                    "Press [H] to enable Help.\n\nFPS: {:.0}\n\n {}",
+                    "Press [H] or tap here for help.\n\nFPS: {:.0}\n\n {}",
                     frame_rate, self.game_hud_msg
                 )
             }

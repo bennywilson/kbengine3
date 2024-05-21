@@ -57,9 +57,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv = in.tex_coords;
 
     outColor = textureSample(t_diffuse, s_diffuse, uv);
-    if (outColor.a < 0.5) {
-        discard;
-    }
-
     return outColor;
 }
