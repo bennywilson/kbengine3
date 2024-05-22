@@ -202,7 +202,7 @@ impl KbGameEngine for Example3DGame {
 
         // Index 4 and 5 are the virtual thumb sticks
         self.game_objects.push(GameObject {
-            position: CgVec3::new(1.5, -0.75, 0.0),
+            position: CgVec3::new(1.45, -0.7, 0.0),
             scale: CgVec3::new(0.2, 0.2, 1.0),
             direction: (1.0, 0.0, 0.0).into(),
             velocity: (0.0, 0.0, 0.0).into(),
@@ -221,7 +221,7 @@ impl KbGameEngine for Example3DGame {
         });
 
         self.game_objects.push(GameObject {
-            position: CgVec3::new(- 1.5, -0.75, 0.0),
+            position: CgVec3::new(-1.45, -0.7, 0.0),
             scale: CgVec3::new(0.2, 0.2, 1.0),
             direction: (1.0, 0.0, 0.0).into(),
             velocity: (0.0, 0.0, 0.0).into(),
@@ -237,6 +237,44 @@ impl KbGameEngine for Example3DGame {
             random_val: kb_random_f32(0.0, 1000.0),
             is_enemy: false,
             uv_tiles: (2.0, 2.0),
+        });
+
+        self.game_objects.push(GameObject {
+            position: CgVec3::new(-1.45, -0.7, 0.0),
+            scale: CgVec3::new(0.1, 0.1, 1.0),
+            direction: (1.0, 0.0, 0.0).into(),
+            velocity: (0.0, 0.0, 0.0).into(),
+            object_type: GameObjectType::Background,
+            object_state: GameObjectState::Idle,
+            next_attack_time: 0.0,
+            texture_index: 1,
+            sprite_index: 58,
+            anim_frame: 0,
+            life_start_time: Instant::now(),
+            state_start_time: Instant::now(),
+            gravity_scale: 0.0,
+            random_val: kb_random_f32(0.0, 1000.0),
+            is_enemy: false,
+            uv_tiles: (1.0, 1.0),
+        });
+
+        self.game_objects.push(GameObject {
+            position: CgVec3::new(1.45, -0.7, 0.0),
+            scale: CgVec3::new(0.1, 0.1, 1.0),
+            direction: (1.0, 0.0, 0.0).into(),
+            velocity: (0.0, 0.0, 0.0).into(),
+            object_type: GameObjectType::Background,
+            object_state: GameObjectState::Idle,
+            next_attack_time: 0.0,
+            texture_index: 1,
+            sprite_index: 59,
+            anim_frame: 0,
+            life_start_time: Instant::now(),
+            state_start_time: Instant::now(),
+            gravity_scale: 0.0,
+            random_val: kb_random_f32(0.0, 1000.0),
+            is_enemy: false,
+            uv_tiles: (1.0, 1.0),
         });
 
         self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
@@ -501,70 +539,63 @@ impl KbGameEngine for Example3DGame {
         let camera_pos = self.game_camera.get_position();
         let mut camera_rot = self.game_camera.get_rotation();
 
-        let mut move_forward = false;
-        let mut move_backward = false;
-        let mut move_left = false;
-        let mut move_right = false;
-        let mut look_up = false;
-        let mut look_down = false;
-        let mut look_left = false;
-        let mut look_right = false;
-
+        let mut move_vec = CG_VEC3_ZERO;
         let touch_map_iter = input_manager.get_touch_map().iter();
+        let mut local_move_vec_move = (0.0, 0.0);
+        let mut local_move_vec_look = (0.0, 0.0);
         for touch_pair in touch_map_iter {
             let touch = &touch_pair.1;
 
             // Left thumb
             if touch.touch_state.is_down() && touch.start_pos.0 < 500.0 {
-                if touch.current_pos.0 < touch.start_pos.0 - 8.0 {
-                    move_right = true;
-                } else if touch.current_pos.0 > touch.start_pos.0 + 8.0 {
-                    move_left = true;
+                local_move_vec_move.0 = (touch.current_pos.0 as f32 - 118.0).clamp(-90.0, 90.0);
+                if local_move_vec_move.0 < 0.0 {
+                    local_move_vec_move.0 = (local_move_vec_move.0 + 20.0).clamp(-90.0, 0.0);
+                } else {
+                    local_move_vec_move.0 = (local_move_vec_move.0 - 20.0).clamp(0.0, 90.0);
                 }
-                if touch.current_pos.1 < touch.start_pos.1 - 8.0 {
-                    move_forward = true;
-                } else if touch.current_pos.1 > touch.start_pos.1 + 8.0 {
-                    move_backward = true;
-                }
+                local_move_vec_move.1 = (touch.current_pos.1 as f32 - 660.0).clamp(-90.0, 90.0);
+                move_vec += right_dir * local_move_vec_move.0;
+                move_vec -= forward_dir * local_move_vec_move.1;
             }
-            
 
             // Right Thumb
-            if touch.start_pos.1 > 500.0 && touch.touch_state.is_down() && touch.start_pos.0 > 500.0
+            if touch.start_pos.1 > 570.0 && touch.touch_state.is_down() && touch.start_pos.0 > 500.0
             {
-                if touch.current_pos.0 < touch.start_pos.0 - 32.0 {
-                    look_left = true;
-                } else if touch.current_pos.0 > touch.start_pos.0 + 32.0 {
-                    look_right = true;
+                local_move_vec_look.0 = (touch.current_pos.0 as f32 - 1233.0).clamp(-90.0, 90.0);
+                local_move_vec_look.1 = (touch.current_pos.1 as f32 - 660.0).clamp(-90.0, 90.0);
+                if local_move_vec_look.0 < 0.0 {
+                    local_move_vec_look.0 = (local_move_vec_look.0 + 20.0).clamp(-90.0, 0.0);
+                } else {
+                    local_move_vec_look.0 = (local_move_vec_look.0 - 20.0).clamp(0.0, 90.0);
                 }
-                if touch.current_pos.1 < touch.start_pos.1 - 32.0 {
-                    look_up = true;
-                } else if touch.current_pos.1 > touch.start_pos.1 + 32.0 {
-                    look_down = true;
-                }
+
+                camera_rot.x -= 2.0 * delta_time * local_move_vec_look.0;
+                camera_rot.y += 1.0 * delta_time * local_move_vec_look.1;
             }
 
             // Help
-            if touch.start_pos.0 < 300.0 && touch.start_pos.1 < 300.0 && touch.touch_state.just_pressed() {
+            if touch.start_pos.0 < 300.0
+                && touch.start_pos.1 < 300.0
+                && touch.touch_state.just_pressed()
+            {
                 renderer.enable_help_text();
             }
         }
 
-        // Movement
-        let mut move_vec = CG_VEC3_ZERO;
-        if input_manager.get_key_state("w").is_down() || move_forward {
+        if input_manager.get_key_state("w").is_down() {
             move_vec += forward_dir
         }
 
-        if input_manager.get_key_state("s").is_down() || move_backward {
+        if input_manager.get_key_state("s").is_down() {
             move_vec += -forward_dir;
         }
 
-        if input_manager.get_key_state("d").is_down() || move_left {
+        if input_manager.get_key_state("d").is_down() {
             move_vec += right_dir;
         }
 
-        if input_manager.get_key_state("a").is_down() || move_right {
+        if input_manager.get_key_state("a").is_down() {
             move_vec += -right_dir;
         }
 
@@ -607,16 +638,16 @@ impl KbGameEngine for Example3DGame {
             delta_time * CAMERA_ROTATION_RATE
         };
 
-        if input_manager.get_key_state("left_arrow").is_down() || look_left {
+        if input_manager.get_key_state("left_arrow").is_down() {
             camera_rot.x += x_radians;
         }
-        if input_manager.get_key_state("right_arrow").is_down() || look_right {
+        if input_manager.get_key_state("right_arrow").is_down() {
             camera_rot.x -= x_radians;
         }
-        if input_manager.get_key_state("up_arrow").is_down() || look_up {
+        if input_manager.get_key_state("up_arrow").is_down() {
             camera_rot.y -= y_radians;
         }
-        if input_manager.get_key_state("down_arrow").is_down() || look_down {
+        if input_manager.get_key_state("down_arrow").is_down() {
             camera_rot.y += y_radians
         }
         camera_rot.y = camera_rot.y.clamp(-60.0, 75.0);
@@ -885,10 +916,10 @@ impl KbGameEngine for Example3DGame {
                     positions[i] + (positions[i] - center).normalize() * self.crosshair_error * 0.1;
                 self.game_objects[i].scale = scale;
             }
-            self.game_objects.truncate(6);
+            self.game_objects.truncate(8);
 
             let ammo_count = player.get_ammo_count();
-            let mut position = CgVec3::new(1.65, 0.8, 0.0);
+            let mut position = CgVec3::new(1.65, 0.0, 0.0);
             let scale = CgVec3::new(0.1, 0.1, 0.1);
             let sprite_index = if player.has_shotgun() { 50 } else { 42 };
             let bullet_spacing = if player.has_shotgun() { 0.1 } else { 0.08 };
@@ -914,6 +945,15 @@ impl KbGameEngine for Example3DGame {
                 position.x -= bullet_spacing;
             }
         }
+
+        // Virtual sticks
+        self.game_objects[6].position.x = (-1.45 + local_move_vec_move.0 * 0.001).clamp(-1.6, -1.4);
+        self.game_objects[6].position.y =
+            (-0.7 - local_move_vec_move.1 * 0.001).clamp(-0.85, -0.65);
+
+        self.game_objects[7].position.x = (1.45 + local_move_vec_look.0 * 0.001).clamp(1.4, 1.6);
+        self.game_objects[7].position.y =
+            (-0.7 - local_move_vec_look.1 * 0.001).clamp(-0.85, -0.65);
 
         // Debug
         if input_manager.get_key_state("i").just_pressed() {

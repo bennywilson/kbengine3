@@ -172,7 +172,7 @@ impl GamePlayer {
         let mut fire = false;
         for touch_pair in touch_map_iter {
             let touch = &touch_pair.1;
-            if touch.start_pos.1 < 500.0 && touch.start_pos.0 > 500.0 {
+            if touch.start_pos.1 < 570.0 && touch.start_pos.0 > 500.0 {
                 fire = true;
                 break;
             }
