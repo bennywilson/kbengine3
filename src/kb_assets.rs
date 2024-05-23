@@ -315,7 +315,7 @@ impl KbAssetManager {
             );
             file_to_byte_buffer.insert(
                 "atlas.png".to_string(),
-                include_bytes!("./../Examples/key/game_assets/textures/atlas.png").to_vec(),
+                include_bytes!("./../../key/game_assets/textures/atlas.png").to_vec(),
             );
             file_to_byte_buffer.insert(
                 "lens_flare.png".to_string(),
