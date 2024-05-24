@@ -756,6 +756,7 @@ impl KbGameEngine for Example3DGame {
                     let sign_prop = self.sign_prop.as_mut().unwrap();
                     if sign_prop.collision_handle == handle.unwrap() {
                         sign_prop.apply_bullet_hole(&trace_start_pos, &trace_end_pos);
+                        renderer.add_bullet_hole(&sign_prop.get_actors()[0], &trace_start_pos, &trace_end_pos);
                     }
                 }
                 if found_hit {

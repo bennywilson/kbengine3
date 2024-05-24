@@ -25,9 +25,6 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) inv_light_1: vec3<f32>,
-    @location(3) inv_light_2: vec3<f32>,
-    @location(4) inv_light_3: vec3<f32>
 }
 
 @vertex
@@ -38,17 +35,11 @@ fn vs_main(
 
     out.tex_coords = model.tex_coords;
 
-    var pos: vec3<f32> = model.position.xyz;
     var normal = vec4<f32>(model.normal.xyz, 0.0);
     out.normal = (model_uniform.inv_world * normal).xyz;
-
-    out.clip_position = model_uniform.world_view_proj * vec4<f32>(pos.xyz, 1.0);
-    out.inv_light_1 = (model_uniform.inv_world * vec4<f32>(1.0, 1.0, 1.0, 0.0)).xyz;
-    out.inv_light_2 = (model_uniform.inv_world * vec4<f32>(-1.0, 1.0, 1.0, 0.0)).xyz;
-    out.inv_light_3 = (model_uniform.inv_world * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
-
-//out.clip_position.z = 0.5;
-//out.clip_position.w = 0.5;
+    var pos: vec2f = model.tex_coords.xy * 2.0 - 1.0;
+    pos.y *= -1.0;
+    out.clip_position = vec4f(pos.xy, 0.0, 1.0);
 
     return out;
 }
