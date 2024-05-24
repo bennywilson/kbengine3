@@ -463,7 +463,11 @@ impl KbSunbeamRenderGroup {
             bytemuck::cast_slice(&[sunbeam_uniform]),
         );
 
-        let sun_position = CgPoint::new(game_config.sun_beam_pos_scale.x, game_config.sun_beam_pos_scale.y, game_config.sun_beam_pos_scale.z);
+        let sun_position = CgPoint::new(
+            game_config.sun_beam_pos_scale.x,
+            game_config.sun_beam_pos_scale.y,
+            game_config.sun_beam_pos_scale.z,
+        );
         let sun_position = view_proj.transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
 

@@ -104,7 +104,7 @@ impl KbConfig {
             Some(val) => val,
             None => false,
         };
-        
+
         let sun_beam_pos_scale = {
             if json_file["sun_beam_pos_scale"].is_array() {
                 let x = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
@@ -113,7 +113,7 @@ impl KbConfig {
                 let w = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();
                 CgVec4::new(x, y, z, w)
             } else {
-                 CgVec4::new(500.0, 550.0, 500.0, 1550.0)
+                CgVec4::new(500.0, 550.0, 500.0, 1550.0)
             }
         };
 
@@ -122,7 +122,7 @@ impl KbConfig {
             Some(val) => val,
             None => false,
         };
- 
+
         KbConfig {
             enemy_spawn_delay,
             enemy_move_speed,
