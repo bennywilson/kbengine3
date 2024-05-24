@@ -3,12 +3,13 @@
     "enemy_move_speed": 1.0,
     "max_instances": 2000,
 
-    "window_width": 1920,
-    "window_height": 1080,
-
-    "graphics_back_end": "gl",
+    "window_width": 1366,
+    "window_height": 768,
+    "graphics_back_end": "default",
     "graphics_power_pref": "default",
 
     "vsync": false,
-    "sunbeams": true
+    "sunbeams": true,
+    "sunbeam_pos_scale": [500.0, 550.0, 500.0, 1550.0],
+    "bullet_holes": false
 }

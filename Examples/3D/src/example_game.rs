@@ -330,7 +330,13 @@ impl KbGameEngine for Example3DGame {
         let sign_model = renderer
             .load_model("game_assets/models/sign.glb", true)
             .await;
-        self.spawn_sign(renderer, &sign_model);
+
+        if game_config.bullet_holes {
+            game_config.sun_beam_pos_scale = [0.0, 300.0, 500.0, 1550.0].into();
+            self.spawn_sign(renderer, &sign_model);
+        } else {
+            game_config.sun_beam_pos_scale = [500.0, 550.0, 500.0, 1550.0].into();
+        }
 
         self.decal_render_group = renderer
             .add_custom_render_group(
