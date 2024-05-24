@@ -210,7 +210,7 @@ impl KbSunbeamRenderGroup {
                     resource: wgpu::BindingResource::TextureView(&flare_tex.view),
                 },
             ],
-            label: Some("KbModel_tex_bind_group"),
+            label: Some("KbSunbeamRenderGroup::tex_bind_group"),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),

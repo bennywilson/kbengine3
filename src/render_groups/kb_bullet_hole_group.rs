@@ -17,7 +17,7 @@ pub struct KbBulletHoleRenderGroup {
     pub uniform: KbBulletHoleUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    render_texture: KbTexture,
+   // render_texture: KbTexture,
 }
 
 #[allow(dead_code)]
@@ -123,13 +123,13 @@ impl KbBulletHoleRenderGroup {
         surface_config.width = 1024;
         surface_config.height = 1024;
 
-        let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+      //  let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
         KbBulletHoleRenderGroup {
             pipeline,
             uniform,
             uniform_buffer,
             uniform_bind_group,
-            render_texture,
+            //render_texture,
         }
     }
 
@@ -148,8 +148,10 @@ impl KbBulletHoleRenderGroup {
                     label: Some("KbModelRenderGroup::render()"),
                 });
 
+        let model_mappings = asset_manager.get_model_mappings();
+        let model = &model_mappings[&actor.get_model()];
         let color_attachment = wgpu::RenderPassColorAttachment {
-            view: &self.render_texture.view,
+            view: &model.hole_texture.as_ref().unwrap().view,
             resolve_target: None,
             ops: wgpu::Operations {
               /*  load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -191,8 +193,6 @@ impl KbBulletHoleRenderGroup {
             bytemuck::cast_slice(&[uniform_data]),
         );
 
-        let model_mappings = asset_manager.get_model_mappings();
-        let model = &model_mappings[&actor.get_model()];
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));

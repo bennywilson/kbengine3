@@ -145,6 +145,10 @@ impl Example3DGame {
             [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
         );
         let sign_actors = sign.get_actors();
+        sign_actors[0].set_render_group(
+            &KbRenderGroupType::WorldHole,
+            &Some(self.outline_render_group),
+        );
         sign_actors[1].set_render_group(
             &KbRenderGroupType::WorldCustom,
             &Some(self.outline_render_group),
@@ -153,7 +157,7 @@ impl Example3DGame {
         let rotation =
             cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
         for actor in sign_actors {
-           // actor.set_rotation(&rotation);
+            actor.set_rotation(&rotation);
             renderer.add_or_update_actor(actor);
         }
         self.sign_prop = Some(sign);
@@ -305,10 +309,10 @@ impl KbGameEngine for Example3DGame {
             uv_tiles: (1.0, 1.0),
         });
 
-        self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
-        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+        self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb", false).await;
+        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb", false).await;
 
-        let sign_model = renderer.load_model("game_assets/models/sign.glb").await;
+        let sign_model = renderer.load_model("game_assets/models/sign.glb", true).await;
         self.spawn_sign(renderer, &sign_model);
 
         self.decal_render_group = renderer
@@ -338,7 +342,7 @@ impl KbGameEngine for Example3DGame {
                 )
                 .await,
         );
-        let hands_model = renderer.load_model("game_assets/models/fp_hands.glb").await;
+        let hands_model = renderer.load_model("game_assets/models/fp_hands.glb", false).await;
         let mut player = GamePlayer::new(&hands_model).await;
 
         let (hands, hands_outlines) = player.get_actors();
@@ -355,7 +359,7 @@ impl KbGameEngine for Example3DGame {
         self.player = Some(player);
 
         // Monster
-        let monster_model = renderer.load_model("game_assets/models/monster.glb").await;
+        let monster_model = renderer.load_model("game_assets/models/monster.glb", false).await;
         let monster_render_group = renderer
             .add_custom_render_group(
                 &KbRenderGroupType::WorldCustom,
@@ -367,7 +371,7 @@ impl KbGameEngine for Example3DGame {
         self.monster_model = monster_model;
 
         // World objects
-        let level_model = renderer.load_model("game_assets/models/level.glb").await;
+        let level_model = renderer.load_model("game_assets/models/level.glb", false).await;
         let mut actor = KbActor::new();
         actor.set_position(&[0.0, 0.0, 0.0].into());
         actor.set_scale(&(CgVec3::new(10.0, 19.0, 10.0) * GLOBAL_SCALE.x));
@@ -375,7 +379,7 @@ impl KbGameEngine for Example3DGame {
         renderer.add_or_update_actor(&actor);
         self.world_actors.push(actor);
 
-        let sky_model = renderer.load_model("game_assets/models/sky_dome.glb").await;
+        let sky_model = renderer.load_model("game_assets/models/sky_dome.glb", false).await;
         {
             let sky_render_group = Some(
                 renderer
@@ -420,7 +424,7 @@ impl KbGameEngine for Example3DGame {
                 "game_assets/shaders/first_person_outline.wgsl",
             )
             .await;
-        let pinky_model = renderer.load_model("game_assets/models/pinky.glb").await;
+        let pinky_model = renderer.load_model("game_assets/models/pinky.glb", false).await;
         let mut actor = KbActor::new();
         actor.set_position(&[16.5, 0.5, 6.0].into());
         let pinky_rot_x = cgmath::Rad::from(cgmath::Deg(90.0));

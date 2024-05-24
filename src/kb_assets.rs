@@ -514,6 +514,7 @@ impl KbAssetManager {
         &mut self,
         file_path: &str,
         mut device_resource: &mut KbDeviceResources<'_>,
+        use_holes: bool,
     ) -> KbModelHandle {
         let new_model = {
             #[cfg(not(target_arch = "wasm32"))]
@@ -542,7 +543,7 @@ impl KbAssetManager {
                     }
                 };
                 let bytes = load_binary(&final_file_path).await.unwrap();
-                KbModel::from_bytes(&bytes, &mut device_resource, self).await
+                KbModel::from_bytes(&bytes, &mut device_resource, self, use_holes).await
             }
             #[cfg(target_arch = "wasm32")]
             {

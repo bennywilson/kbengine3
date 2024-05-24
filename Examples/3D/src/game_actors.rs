@@ -443,7 +443,7 @@ impl GameProp {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
-                GamePropType::Sign => CgVec3::new(0.3, 5.0, 4.3),
+                GamePropType::Sign => CgVec3::new(0.3, 5.0, 0.3),
             }
         };
 
