@@ -17,7 +17,7 @@ pub struct KbBulletHoleRenderGroup {
     pub uniform: KbBulletHoleUniform,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-   // render_texture: KbTexture,
+    pub first_run: bool,
 }
 
 #[allow(dead_code)]
@@ -129,6 +129,7 @@ impl KbBulletHoleRenderGroup {
             uniform,
             uniform_buffer,
             uniform_bind_group,
+            first_run: true,
             //render_texture,
         }
     }
@@ -154,16 +155,20 @@ impl KbBulletHoleRenderGroup {
             view: &model.hole_texture.as_ref().unwrap().view,
             resolve_target: None,
             ops: wgpu::Operations {
-              /*  load: wgpu::LoadOp::Clear(wgpu::Color {
-                    r: 0.5,
-                    g: 0.0,
-                    b: 0.5,
-                    a: 0.0,
-                }),*/
-                load: wgpu::LoadOp::Load,
+                load:   if !self.first_run {
+                            wgpu::LoadOp::Load
+                        } else {
+                            wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            a: 1.0,
+                        })
+                },
                 store: wgpu::StoreOp::Store,
             },
         };
+        self.first_run = false;
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("KbBulletHoleRenderGroup::render_pass"),

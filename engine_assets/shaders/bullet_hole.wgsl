@@ -26,7 +26,8 @@ fn vs_main(
     pos.y *= -1.0;
     out.clip_position = vec4f(pos.xy, 0.0, 1.0);
     out.local_pos = model.position;
-
+    var swap =  out.local_pos.z;
+    out.local_pos.z *= -1.0;
     return out;
 }
 
@@ -40,16 +41,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	var closestPt = dot(in.local_pos.xyz - trace_hit, trace_dir) * trace_dir + trace_hit;
     var hole_size = 75.0f;
 
-    var out_color: vec4f = vec4f(1.0, 1.0, 1.0, 1.0);
+    var out_color: vec4f = vec4f(1.0, 1.0, 1.0, 0.0);
 
     var local_pos = in.local_pos.xyz;
-	if ( length( closestPt - local_pos ) > 2.0f ) {
-		out_color.g = 0.0f;
+	if ( length( closestPt - local_pos ) > 0.7f ) {
+		discard;
     }
 
 	var normalized_dist = saturate( length( closestPt - local_pos.xyz ) / hole_size );
 	if ( normalized_dist > 0.4f ) {
-		out_color.g = 0.0f;
+	    discard;
 	}
 
 	return out_color;

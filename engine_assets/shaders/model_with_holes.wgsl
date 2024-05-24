@@ -93,5 +93,9 @@ albedo.r += textureSample(t_hole, s_diffuse, uv).x * 0.0001;
     outColor.z = lighting.z;
     outColor.w = 1.0;
 
+    var hole = textureSample(t_hole, s_diffuse, uv);
+    if (hole.a < 0.5) {
+        discard;
+    }
     return outColor;
 }

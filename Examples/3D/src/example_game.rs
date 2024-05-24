@@ -154,12 +154,16 @@ impl Example3DGame {
             &Some(self.outline_render_group),
         );
 
+       // hack
+        renderer.add_bullet_hole(&sign_actors[0], &CgVec3::new(0.0, 9999999.0, 0.0), &CgVec3::new(0.0, 1.0, 0.0));
+ 
         let rotation =
             cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
         for actor in sign_actors {
             actor.set_rotation(&rotation);
             renderer.add_or_update_actor(actor);
         }
+   
         self.sign_prop = Some(sign);
     }
 }

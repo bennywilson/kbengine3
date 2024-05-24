@@ -439,16 +439,21 @@ impl GameProp {
         collision_manager: &mut KbCollisionManager,
         particle_handles: [KbParticleHandle; 2],
     ) -> Self {
+        let mut coll_pos = *position;
+
         let extents = {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
-                GamePropType::Sign => CgVec3::new(0.3, 5.0, 0.3),
+                GamePropType::Sign => {
+                    coll_pos = CgVec3::new(0.0, 0.0,0.0);
+                    CgVec3::new(5.3, 10.0, 0.3)
+                },
             }
         };
 
         let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-            position: *position,
+            position: coll_pos,
             extents,
             block: false,
         });

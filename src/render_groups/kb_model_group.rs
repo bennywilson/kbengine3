@@ -861,12 +861,12 @@ impl KbModelRenderGroup {
         let (view_matrix, view_dir, _) = game_camera.calculate_view_matrix();
         let view_pos = game_camera.get_position();
         let view_pos = [view_pos.x, view_pos.y, view_pos.z, 1.0];
-        let fov = if render_group == KbRenderGroupType::World
-            || render_group == KbRenderGroupType::WorldCustom
+        let fov = if render_group == KbRenderGroupType::Foreground
+            || render_group == KbRenderGroupType::ForegroundCustom
         {
-            game_config.fov
-        } else {
             game_config.foreground_fov
+        } else {
+            game_config.fov            
         };
         let proj_matrix = cgmath::perspective(
             cgmath::Deg(fov),
