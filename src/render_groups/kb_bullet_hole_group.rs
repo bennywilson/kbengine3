@@ -1,3 +1,5 @@
+use cgmath::InnerSpace;
+use cgmath::SquareMatrix;
 use wgpu::util::DeviceExt;
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*, log};
@@ -5,19 +7,9 @@ use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_ut
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbBulletHoleUniform {
-    pub world: [[f32; 4]; 4],
-    pub inv_world: [[f32; 4]; 4],
-    pub mvp_matrix: [[f32; 4]; 4],
-    pub view_proj: [[f32; 4]; 4],
-    pub camera_pos: [f32; 4],
-    pub camera_dir: [f32; 4],
-    pub screen_dimensions: [f32; 4],
-    pub time: [f32; 4],
-    pub model_color: [f32; 4],
-    pub custom_data_1: [f32; 4],
-    pub sun_color: [f32; 4],
+    pub trace_hit: [f32; 4],
+    pub trace_dir: [f32; 4],
 }
-pub const MAX_UNIFORMS: usize = 100;
 
 #[allow(dead_code)]
 pub struct KbBulletHoleRenderGroup {
@@ -160,12 +152,13 @@ impl KbBulletHoleRenderGroup {
             view: &self.render_texture.view,
             resolve_target: None,
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color {
+              /*  load: wgpu::LoadOp::Clear(wgpu::Color {
                     r: 0.5,
                     g: 0.0,
                     b: 0.5,
                     a: 0.0,
-                }),
+                }),*/
+                load: wgpu::LoadOp::Load,
                 store: wgpu::StoreOp::Store,
             },
         };
@@ -177,6 +170,26 @@ impl KbBulletHoleRenderGroup {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
+
+        let inv_world_matrix = cgmath::Matrix4::from_translation(actor.get_position())
+            * cgmath::Matrix4::from(actor.get_rotation())
+            * cgmath::Matrix4::from_nonuniform_scale(
+                actor.get_scale().x,
+                actor.get_scale().y,
+                actor.get_scale().z,
+            ).invert().unwrap();
+        let local_pos = inv_world_matrix * CgVec4::new(traces.0.x, traces.0.y, traces.0.z, 1.0);
+        let local_dir = inv_world_matrix * CgVec4::new(traces.1.x, traces.1.y, traces.1.z, 0.0);
+        let local_dir = local_dir.normalize();
+        let uniform_data = KbBulletHoleUniform {
+            trace_hit: [local_pos.x, local_pos.y, local_pos.z, 0.0],
+            trace_dir: [local_dir.x, local_dir.y, local_dir.z, 0.0],
+        };
+        device_resources.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[uniform_data]),
+        );
 
         let model_mappings = asset_manager.get_model_mappings();
         let model = &model_mappings[&actor.get_model()];

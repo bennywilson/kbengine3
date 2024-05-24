@@ -134,7 +134,7 @@ impl Example3DGame {
     }
 
     fn spawn_sign(&mut self, renderer: &mut KbRenderer<'_>, model_handle: &KbModelHandle) {
-        let sign_pos = CgVec3::new(0.0, 5.0, 15.0);
+        let sign_pos = CgVec3::new(0.0, 0.0, 0.0);
 
         let mut sign = GameProp::new(
             &GamePropType::Sign,
@@ -153,7 +153,7 @@ impl Example3DGame {
         let rotation =
             cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
         for actor in sign_actors {
-            actor.set_rotation(&rotation);
+           // actor.set_rotation(&rotation);
             renderer.add_or_update_actor(actor);
         }
         self.sign_prop = Some(sign);
@@ -755,8 +755,8 @@ impl KbGameEngine for Example3DGame {
                 if found_hit && self.sign_prop.is_some() {
                     let sign_prop = self.sign_prop.as_mut().unwrap();
                     if sign_prop.collision_handle == handle.unwrap() {
-                        sign_prop.apply_bullet_hole(&trace_start_pos, &trace_end_pos);
-                        renderer.add_bullet_hole(&sign_prop.get_actors()[0], &trace_start_pos, &trace_end_pos);
+                        let trace_dir = (trace_end_pos - trace_start_pos).normalize();
+                        renderer.add_bullet_hole(&sign_prop.get_actors()[0], &hit_loc.unwrap(), &trace_dir);
                     }
                 }
                 if found_hit {
