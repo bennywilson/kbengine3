@@ -217,7 +217,7 @@ impl KbGameEngine for Example3DGame {
         renderer: &mut KbRenderer<'_>,
         game_config: &mut KbConfig,
     ) {
-        log!("GameEngine::initialize_world() caled...");
+        log!("GameEngine::initialize_world()...");
         game_config.clear_color = CgVec4::new(0.87, 0.58, 0.24, 1.0);
         game_config.sun_color = CgVec4::new(0.8 * 0.8, 0.58 * 0.58, 0.24 * 0.24, 0.0);
 
@@ -910,9 +910,9 @@ impl KbGameEngine for Example3DGame {
         let spawn_timer = {
             let t = 1.0 - (self.score as f32 / 20.0).clamp(0.0, 1.0);
             if self.score == 0 {
-                t + 5.0
+                t + game_config.enemy_spawn_delay + 5.0
             } else {
-                t + 1.0
+                t + game_config.enemy_spawn_delay + 1.0
             }
         };
         if self.monster_spawn_timer.elapsed().as_secs_f32() > spawn_timer {
