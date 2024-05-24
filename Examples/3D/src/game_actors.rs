@@ -3,7 +3,7 @@ use instant::Instant;
 
 use kb_engine3::{
     kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*,
-    kb_resource::*, kb_utils::*, log,
+    kb_resource::*, kb_utils::*,
 };
 
 #[allow(dead_code)]
@@ -439,16 +439,21 @@ impl GameProp {
         collision_manager: &mut KbCollisionManager,
         particle_handles: [KbParticleHandle; 2],
     ) -> Self {
+        let mut coll_pos = *position;
+
         let extents = {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
-                GamePropType::Sign => CgVec3::new(4.0, 4.0, 4.0),
+                GamePropType::Sign => {
+                    coll_pos = CgVec3::new(0.0, 0.0, 0.0);
+                    CgVec3::new(9.5, 10.0, 0.3)
+                }
             }
         };
 
         let collision_box = KbCollisionShape::AABB(KbCollisionAABB {
-            position: *position,
+            position: coll_pos,
             extents,
             block: false,
         });
@@ -519,10 +524,6 @@ impl GameProp {
     }
     pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
         &mut self.actors
-    }
-
-    pub fn apply_bullet_hole(&mut self, _start_pos: &CgVec3, _end_pos: &CgVec3) {
-        log!("Taking damage! {:?}", self.prop_type);
     }
 }
 

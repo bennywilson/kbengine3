@@ -1,3 +1,5 @@
+use cgmath::InnerSpace;
+use cgmath::SquareMatrix;
 use wgpu::util::DeviceExt;
 
 use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_utils::*, log};
@@ -5,27 +7,17 @@ use crate::{kb_assets::*, kb_config::*, kb_game_object::*, kb_resource::*, kb_ut
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct KbBulletHoleUniform {
-    pub world: [[f32; 4]; 4],
-    pub inv_world: [[f32; 4]; 4],
-    pub mvp_matrix: [[f32; 4]; 4],
-    pub view_proj: [[f32; 4]; 4],
-    pub camera_pos: [f32; 4],
-    pub camera_dir: [f32; 4],
-    pub screen_dimensions: [f32; 4],
-    pub time: [f32; 4],
-    pub model_color: [f32; 4],
-    pub custom_data_1: [f32; 4],
-    pub sun_color: [f32; 4],
+    pub trace_hit: [f32; 4],
+    pub trace_dir: [f32; 4],
 }
-pub const MAX_UNIFORMS: usize = 100;
 
 #[allow(dead_code)]
 pub struct KbBulletHoleRenderGroup {
     pub pipeline: wgpu::RenderPipeline,
     pub uniform: KbBulletHoleUniform,
     pub uniform_buffer: wgpu::Buffer,
-    pub uniform_bind_group: wgpu::BindGroup,
-    render_texture: KbTexture,
+    pub bind_group: wgpu::BindGroup,
+    pub first_run: bool,
 }
 
 #[allow(dead_code)]
@@ -49,9 +41,9 @@ impl KbBulletHoleRenderGroup {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -60,24 +52,55 @@ impl KbBulletHoleRenderGroup {
                         min_binding_size: None,
                     },
                     count: None,
-                }],
-                label: Some("KbModelRenderGroup_uniform_bind_group_layout"),
-            });
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("KbBulletHoleRenderGroup::bind_group_layout"),
+        });
 
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-            label: Some("KbModelRenderGroup_uniform_bind_group"),
+        let scorch_texture = asset_manager
+            .load_texture("/game_assets/fx/scorch_t.png", device_resources)
+            .await;
+        let scorch_tex = asset_manager.get_texture(&scorch_texture);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&scorch_tex.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&scorch_tex.sampler),
+                },
+            ],
+            label: Some("KbBulletHoleRenderGroup::bind_group"),
         });
 
         log!("  Creating pipeline");
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("KbModelRenderGroup_render_pipeline_layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -91,6 +114,18 @@ impl KbBulletHoleRenderGroup {
             cull_mode = None;
         }
 
+        let blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Dst,
+                dst_factor: wgpu::BlendFactor::Zero,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Min,
+            },
+        });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbBulletHoleRenderGroup::pipeline"),
             layout: Some(&pipeline_layout),
@@ -105,7 +140,7 @@ impl KbBulletHoleRenderGroup {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -131,13 +166,14 @@ impl KbBulletHoleRenderGroup {
         surface_config.width = 1024;
         surface_config.height = 1024;
 
-        let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+        //  let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
         KbBulletHoleRenderGroup {
             pipeline,
             uniform,
             uniform_buffer,
-            uniform_bind_group,
-            render_texture,
+            bind_group,
+            first_run: true,
+            //render_texture,
         }
     }
 
@@ -156,19 +192,26 @@ impl KbBulletHoleRenderGroup {
                     label: Some("KbModelRenderGroup::render()"),
                 });
 
+        let model_mappings = asset_manager.get_model_mappings();
+        let model = &model_mappings[&actor.get_model()];
         let color_attachment = wgpu::RenderPassColorAttachment {
-            view: &self.render_texture.view,
+            view: &model.hole_texture.as_ref().unwrap().view,
             resolve_target: None,
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color {
-                    r: 0.5,
-                    g: 0.0,
-                    b: 0.5,
-                    a: 0.0,
-                }),
+                load: if !self.first_run {
+                    wgpu::LoadOp::Load
+                } else {
+                    wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        a: 1.0,
+                    })
+                },
                 store: wgpu::StoreOp::Store,
             },
         };
+        self.first_run = false;
 
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("KbBulletHoleRenderGroup::render_pass"),
@@ -178,10 +221,30 @@ impl KbBulletHoleRenderGroup {
             timestamp_writes: None,
         });
 
-        let model_mappings = asset_manager.get_model_mappings();
-        let model = &model_mappings[&actor.get_model()];
+        let inv_world_matrix = cgmath::Matrix4::from_translation(actor.get_position())
+            * cgmath::Matrix4::from(actor.get_rotation())
+            * cgmath::Matrix4::from_nonuniform_scale(
+                actor.get_scale().x,
+                actor.get_scale().y,
+                actor.get_scale().z,
+            )
+            .invert()
+            .unwrap();
+        let local_pos = inv_world_matrix * CgVec4::new(traces.0.x, traces.0.y, traces.0.z, 1.0);
+        let local_dir = inv_world_matrix * CgVec4::new(traces.1.x, traces.1.y, traces.1.z, 0.0);
+        let local_dir = local_dir.normalize();
+        let uniform_data = KbBulletHoleUniform {
+            trace_hit: [local_pos.x, local_pos.y, local_pos.z, 0.0],
+            trace_dir: [local_dir.x, local_dir.y, local_dir.z, 0.0],
+        };
+        device_resources.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[uniform_data]),
+        );
+
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
         render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..model.num_indices, 0, 0..1);

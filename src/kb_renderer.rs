@@ -23,6 +23,7 @@ pub struct KbRenderer<'a> {
     sprite_render_group: KbSpriteRenderGroup,
     postprocess_render_group: KbPostprocessRenderGroup,
     model_render_group: KbModelRenderGroup,
+    model_with_holes_render_group: KbModelRenderGroup,
     line_render_group: KbLineRenderGroup,
     sunbeam_render_group: KbSunbeamRenderGroup,
 
@@ -60,7 +61,7 @@ impl<'a> KbRenderer<'a> {
 
         let mut asset_manager = KbAssetManager::new();
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-
+        log!("1");
         let sprite_render_group =
             KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group =
@@ -72,6 +73,8 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
+        log!("2");
+
         let line_render_group = KbLineRenderGroup::new(
             "/engine_assets/shaders/line.wgsl",
             &device_resources,
@@ -88,6 +91,16 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
+        log!("3");
+
+        let model_with_holes_render_group = KbModelRenderGroup::new(
+            "/engine_assets/shaders/model_with_holes.wgsl",
+            &KbBlendMode::None,
+            &device_resources,
+            &mut asset_manager,
+        )
+        .await;
+        log!("4");
 
         let debug_lines = Vec::<KbLine>::new();
 
@@ -95,6 +108,7 @@ impl<'a> KbRenderer<'a> {
             device_resources,
             sprite_render_group,
             model_render_group,
+            model_with_holes_render_group,
             postprocess_render_group,
             line_render_group,
             sunbeam_render_group,
@@ -298,13 +312,35 @@ impl<'a> KbRenderer<'a> {
         if self.bullet_hole_actor_index.is_some() {
             PERF_SCOPE!("Bullet Holes");
 
-            let actor = self.actor_map.get_mut(&self.bullet_hole_actor_index.unwrap()).unwrap();
-            self.bullet_hole_render_group.render(&mut self.device_resources, &mut self.asset_manager, game_config, actor, &self.bullet_hole_trace);
+            let actor = self
+                .actor_map
+                .get_mut(&self.bullet_hole_actor_index.unwrap())
+                .unwrap();
+            self.bullet_hole_render_group.render(
+                &mut self.device_resources,
+                &mut self.asset_manager,
+                game_config,
+                actor,
+                &self.bullet_hole_trace,
+            );
+            self.bullet_hole_actor_index = None;
         }
         {
             PERF_SCOPE!("World Opaque");
             self.model_render_group.render(
                 &KbRenderGroupType::World,
+                None,
+                &mut self.device_resources,
+                &mut self.asset_manager,
+                &self.game_camera,
+                &mut self.actor_map,
+                game_config,
+            );
+        }
+        {
+            PERF_SCOPE!("World With Holes");
+            self.model_with_holes_render_group.render(
+                &KbRenderGroupType::WorldHole,
                 None,
                 &mut self.device_resources,
                 &mut self.asset_manager,
@@ -539,10 +575,10 @@ impl<'a> KbRenderer<'a> {
             _ => {}
         }
     }
-    pub async fn load_model(&mut self, file_path: &str) -> KbModelHandle {
+    pub async fn load_model(&mut self, file_path: &str, use_holes: bool) -> KbModelHandle {
         let model_handle = self
             .asset_manager
-            .load_model(file_path, &mut self.device_resources)
+            .load_model(file_path, &mut self.device_resources, use_holes)
             .await;
         model_handle
     }

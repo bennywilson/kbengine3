@@ -5,10 +5,11 @@
 
     "window_width": 1366,
     "window_height": 768,
-
-    "graphics_back_end": "gl",
+    "graphics_back_end": "default",
     "graphics_power_pref": "default",
 
     "vsync": false,
-    "sunbeams": true
+    "sunbeams": true,
+    "sunbeam_pos_scale": [500.0, 550.0, 500.0, 1550.0],
+    "bullet_holes": true
 }

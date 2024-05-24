@@ -51,6 +51,8 @@ pub struct KbInputManager {
     pub key_h: KbButtonState,
     pub key_v: KbButtonState,
 
+    pub key_shift: KbButtonState,
+
     pub touch_id_to_info: HashMap<u64, KbTouchInfo>,
 }
 
@@ -231,6 +233,16 @@ impl KbInputManager {
                 }
                 true
             }
+            PhysicalKey::Code(KeyCode::ShiftLeft) => {
+                if pressed {
+                    if self.key_shift == KbButtonState::None {
+                        self.key_shift = KbButtonState::JustPressed;
+                    }
+                } else {
+                    self.key_shift = KbButtonState::None;
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -278,6 +290,9 @@ impl KbInputManager {
         if self.key_space == KbButtonState::JustPressed {
             self.key_space = KbButtonState::Down;
         }
+        if self.key_shift == KbButtonState::JustPressed {
+            self.key_shift = KbButtonState::Down;
+        }
 
         for touch in &mut self.touch_id_to_info {
             touch.1.frame_delta.0 = 0.0;
@@ -288,6 +303,7 @@ impl KbInputManager {
 
     pub fn get_key_state(&self, key: &str) -> KbButtonState {
         let button_state = match key {
+            "v" => self.key_v.clone(),
             "w" => self.key_w.clone(),
             "a" => self.key_a.clone(),
             "s" => self.key_s.clone(),
@@ -295,12 +311,16 @@ impl KbInputManager {
             "m" => self.key_m.clone(),
             "i" => self.key_i.clone(),
             "y" => self.key_y.clone(),
+            "h" => self.key_h.clone(),
             "left_arrow" => self.key_arrow_left.clone(),
             "right_arrow" => self.key_arrow_right.clone(),
             "up_arrow" => self.key_arrow_up.clone(),
             "down_arrow" => self.key_arrow_down.clone(),
             "space" => self.key_space.clone(),
-            _ => KbButtonState::None,
+            "left_shift" => self.key_shift.clone(),
+            _ => {
+                panic!("Doh!");
+            }
         };
 
         button_state

@@ -18,6 +18,7 @@ pub enum KbBlendMode {
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum KbRenderGroupType {
     World,
+    WorldHole,
     WorldCustom,
     Foreground,
     ForegroundCustom,

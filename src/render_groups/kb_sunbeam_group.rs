@@ -28,7 +28,6 @@ impl KbSunbeamInstance {
     }
 }
 
-const SUN_POS_SCALE: [f32; 4] = [500.0, 550.0, 500.0, 1550.0];
 const SUN_COLOR: [f32; 4] = [0.07, 0.07, 0.07, 0.1];
 const NUM_FLARE_STEPS: u32 = 20;
 const FLARE_SCALE: f32 = 1.03;
@@ -210,7 +209,7 @@ impl KbSunbeamRenderGroup {
                     resource: wgpu::BindingResource::TextureView(&flare_tex.view),
                 },
             ],
-            label: Some("KbModel_tex_bind_group"),
+            label: Some("KbSunbeamRenderGroup::tex_bind_group"),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),
@@ -378,7 +377,7 @@ impl KbSunbeamRenderGroup {
                 0.0,
             ],
             camera_dir: [view_dir.x, view_dir.y, view_dir.z, 0.0],
-            extra_data: SUN_POS_SCALE,
+            extra_data: game_config.sun_beam_pos_scale.into(),
         };
         device_resources.queue.write_buffer(
             &self.uniform_buffer,
@@ -464,7 +463,11 @@ impl KbSunbeamRenderGroup {
             bytemuck::cast_slice(&[sunbeam_uniform]),
         );
 
-        let sun_position = CgPoint::new(SUN_POS_SCALE[0], SUN_POS_SCALE[1], SUN_POS_SCALE[2]);
+        let sun_position = CgPoint::new(
+            game_config.sun_beam_pos_scale.x,
+            game_config.sun_beam_pos_scale.y,
+            game_config.sun_beam_pos_scale.z,
+        );
         let sun_position = view_proj.transform_point(sun_position);
         let mut beam_instances = Vec::<KbSunbeamInstance>::new();
 
