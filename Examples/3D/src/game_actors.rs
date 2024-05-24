@@ -447,7 +447,7 @@ impl GameProp {
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
                 GamePropType::Sign => {
                     coll_pos = CgVec3::new(0.0, 0.0, 0.0);
-                    CgVec3::new(5.3, 10.0, 0.3)
+                    CgVec3::new(9.5, 10.0, 0.3)
                 }
             }
         };

@@ -133,10 +133,8 @@ impl Example3DGame {
         self.props.push(shotgun);
     }
 
-
     fn spawn_sign(&mut self, renderer: &mut KbRenderer<'_>, model_handle: &KbModelHandle) {
-        #[cfg(feature = "bullet_holes")]
-            {
+        {
             let sign_pos = CgVec3::new(0.0, 0.0, 0.0);
 
             let mut sign = GameProp::new(
@@ -160,12 +158,13 @@ impl Example3DGame {
             // hack
             renderer.add_bullet_hole(
                 &sign_actors[0],
-                &CgVec3::new(0.0, 9999999.0, 0.0),
+                &CgVec3::new(99999999.0, 9999999.0, 9999999.0),
                 &CgVec3::new(0.0, 1.0, 0.0),
             );
 
-            let rotation =
-                cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
+            let rotation = cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(
+                cgmath::Deg(90.0),
+            )));
             for actor in sign_actors {
                 actor.set_rotation(&rotation);
                 renderer.add_or_update_actor(actor);
@@ -662,7 +661,12 @@ impl KbGameEngine for Example3DGame {
             move_vec += -right_dir;
         }
 
-        move_vec = move_vec.normalize() * delta_time * CAMERA_MOVE_RATE;
+        move_vec = move_vec.normalize();
+        if input_manager.get_key_state("left_shift").is_down() {
+            move_vec *= 0.45;
+        }
+        move_vec *= delta_time * CAMERA_MOVE_RATE;
+
         if move_vec.magnitude2() > 0.001 {
             let trace_start = CgVec3::new(camera_pos.x, 0.25, camera_pos.z);
             let (t, handle, _, _) = self.collision_manager.cast_ray(&trace_start, &move_vec);

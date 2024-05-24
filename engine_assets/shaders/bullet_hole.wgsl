@@ -33,6 +33,10 @@ fn vs_main(
 
 
 // Fragment shader
+@group(0) @binding(1)
+var t_diffuse: texture_2d<f32>;
+@group(0) @binding(2)
+var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -40,18 +44,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var trace_dir = model_uniform.trace_dir.xyz;
 	var closestPt = dot(in.local_pos.xyz - trace_hit, trace_dir) * trace_dir + trace_hit;
     var hole_size = 75.0f;
+    var scorch_size = 3.0;
 
     var out_color: vec4f = vec4f(1.0, 1.0, 1.0, 0.0);
 
     var local_pos = in.local_pos.xyz;
 	if ( length( closestPt - local_pos ) > 0.7f ) {
-		discard;
+		out_color.w = 1.0;
     }
 
 	var normalized_dist = saturate( length( closestPt - local_pos.xyz ) / hole_size );
 	if ( normalized_dist > 0.4f ) {
-	    discard;
+	    out_color.w = 1.0;
 	}
+
+    // Hack.  Only works on planes on yz    
+	var scorch_uv = (local_pos.yz - closestPt.yz) / scorch_size;
+	scorch_uv = scorch_uv * 0.5 + 0.5;
+    scorch_uv = saturate(scorch_uv);
+
+    var scorch = textureSample(t_diffuse, s_diffuse, scorch_uv).xyz;
+	out_color.x *= scorch.x;
+	out_color.y *= scorch.y;
+	out_color.z *= scorch.z;
+
 
 	return out_color;
 }

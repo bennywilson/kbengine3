@@ -93,6 +93,10 @@ impl KbAssetManager {
                 "model.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/model.wgsl").to_string(),
             );
+            file_to_byte_buffer.insert(
+                "scorch_t.png".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
+            );
             file_to_string_buffer.insert(
                 "model_with_holes.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
@@ -176,6 +180,10 @@ impl KbAssetManager {
             file_to_byte_buffer.insert(
                 "smoke_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "scorch_t.png".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
             );
             file_to_byte_buffer.insert(
                 "muzzle_flash_t.png".to_string(),

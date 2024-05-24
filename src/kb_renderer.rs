@@ -73,7 +73,7 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-                log!("2");
+        log!("2");
 
         let line_render_group = KbLineRenderGroup::new(
             "/engine_assets/shaders/line.wgsl",
@@ -91,7 +91,7 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-                log!("3");
+        log!("3");
 
         let model_with_holes_render_group = KbModelRenderGroup::new(
             "/engine_assets/shaders/model_with_holes.wgsl",
@@ -100,7 +100,7 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-                log!("4");
+        log!("4");
 
         let debug_lines = Vec::<KbLine>::new();
 
@@ -323,6 +323,7 @@ impl<'a> KbRenderer<'a> {
                 actor,
                 &self.bullet_hole_trace,
             );
+            self.bullet_hole_actor_index = None;
         }
         {
             PERF_SCOPE!("World Opaque");

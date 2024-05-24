@@ -87,15 +87,15 @@ albedo.r += textureSample(t_hole, s_diffuse, uv).x * 0.0001;
     light_3 = light_3 * 0.9 + 0.1;
 
     var lighting: vec3<f32> = albedo * light_1 + albedo * light_2 + albedo * light_3;
-
-    outColor.x = lighting.x;
-    outColor.y = lighting.y;
-    outColor.z = lighting.z;
-    outColor.w = 1.0;
-
     var hole = textureSample(t_hole, s_diffuse, uv);
     if (hole.a < 0.5) {
         discard;
     }
+    outColor.x = lighting.x * hole.x;
+    outColor.y = lighting.y * hole.y;
+    outColor.z = lighting.z * hole.z;
+    outColor.w = 1.0;
+
+
     return outColor;
 }

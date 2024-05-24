@@ -60,18 +60,6 @@ impl KbConfig {
             None => 720,
         };
 
-        let json_val = json_file["graphics_back_end"].as_str();
-        let graphics_backend = match json_val {
-            Some(val) => match val {
-                "dx12" => wgpu::Backends::DX12,
-                "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
-                "vulkan" => wgpu::Backends::VULKAN,
-                "gl" => wgpu::Backends::GL,
-                _ => wgpu::Backends::all(),
-            },
-            None => wgpu::Backends::all(),
-        };
-        
         let graphics_backend = {
             #[cfg(target_arch = "wasm32")]
             {
@@ -88,8 +76,8 @@ impl KbConfig {
                         "vulkan" => wgpu::Backends::VULKAN,
                         "gl" => wgpu::Backends::GL,
                         _ => wgpu::Backends::all(),
-                    }
-                    None => wgpu::Backends::BROWSER_WEBGPU
+                    },
+                    None => wgpu::Backends::BROWSER_WEBGPU,
                 }
             }
         };

@@ -3,8 +3,8 @@
     "enemy_move_speed": 1.0,
     "max_instances": 2000,
 
-    "window_width": 1366,
-    "window_height": 768,
+    "window_width": 1920,
+    "window_height": 1080,
 
     "graphics_back_end": "gl",
     "graphics_power_pref": "default",
