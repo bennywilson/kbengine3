@@ -277,7 +277,11 @@ impl GameVfxManager {
     }
 
     pub async fn init(&mut self, renderer: &mut KbRenderer<'_>) {
-        self.decal_model = Some(renderer.load_model("game_assets/models/decal.glb", false).await);
+        self.decal_model = Some(
+            renderer
+                .load_model("game_assets/models/decal.glb", false)
+                .await,
+        );
         self.decal_render_group = renderer
             .add_custom_render_group(
                 &KbRenderGroupType::WorldCustom,

@@ -372,7 +372,7 @@ impl KbModel {
         let mut surface_config = device_resources.surface_config.clone();
         surface_config.width = 1024;
         surface_config.height = 1024;
-        let mut hole_texture = None;// 
+        let mut hole_texture = None; //
         let mut tex_2_bind = wgpu::BindingResource::TextureView(&texture.view);
         if use_holes {
             hole_texture = Some(KbTexture::new_render_texture(&device, &surface_config).unwrap());
@@ -780,7 +780,6 @@ impl KbModelRenderGroup {
         game_camera: &KbCamera,
         actors: &HashMap<u32, KbActor>,
         game_config: &KbConfig,
-
     ) {
         let mut command_encoder =
             device_resources
@@ -866,7 +865,7 @@ impl KbModelRenderGroup {
         {
             game_config.foreground_fov
         } else {
-            game_config.fov            
+            game_config.fov
         };
         let proj_matrix = cgmath::perspective(
             cgmath::Deg(fov),

@@ -71,6 +71,28 @@ impl KbConfig {
             },
             None => wgpu::Backends::all(),
         };
+        
+        let graphics_backend = {
+            #[cfg(target_arch = "wasm32")]
+            {
+                wgpu::Backends::GL
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let json_val = json_file["graphics_power_pref"].as_str();
+                match json_val {
+                    Some(val) => match val {
+                        "dx12" => wgpu::Backends::DX12,
+                        "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
+                        "vulkan" => wgpu::Backends::VULKAN,
+                        "gl" => wgpu::Backends::GL,
+                        _ => wgpu::Backends::all(),
+                    }
+                    None => wgpu::Backends::BROWSER_WEBGPU
+                }
+            }
+        };
 
         let json_val = json_file["graphics_power_pref"].as_str();
         let graphics_power_pref = match json_val {

@@ -61,7 +61,7 @@ impl<'a> KbRenderer<'a> {
 
         let mut asset_manager = KbAssetManager::new();
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-
+        log!("1");
         let sprite_render_group =
             KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group =
@@ -73,7 +73,7 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-
+                log!("2");
 
         let line_render_group = KbLineRenderGroup::new(
             "/engine_assets/shaders/line.wgsl",
@@ -91,12 +91,16 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
+                log!("3");
 
         let model_with_holes_render_group = KbModelRenderGroup::new(
-             "/engine_assets/shaders/model_with_holes.wgsl",
+            "/engine_assets/shaders/model_with_holes.wgsl",
             &KbBlendMode::None,
             &device_resources,
-            &mut asset_manager).await;
+            &mut asset_manager,
+        )
+        .await;
+                log!("4");
 
         let debug_lines = Vec::<KbLine>::new();
 
@@ -308,8 +312,17 @@ impl<'a> KbRenderer<'a> {
         if self.bullet_hole_actor_index.is_some() {
             PERF_SCOPE!("Bullet Holes");
 
-            let actor = self.actor_map.get_mut(&self.bullet_hole_actor_index.unwrap()).unwrap();
-            self.bullet_hole_render_group.render(&mut self.device_resources, &mut self.asset_manager, game_config, actor, &self.bullet_hole_trace);
+            let actor = self
+                .actor_map
+                .get_mut(&self.bullet_hole_actor_index.unwrap())
+                .unwrap();
+            self.bullet_hole_render_group.render(
+                &mut self.device_resources,
+                &mut self.asset_manager,
+                game_config,
+                actor,
+                &self.bullet_hole_trace,
+            );
         }
         {
             PERF_SCOPE!("World Opaque");

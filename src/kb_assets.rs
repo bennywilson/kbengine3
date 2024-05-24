@@ -94,6 +94,10 @@ impl KbAssetManager {
                 include_str!("../engine_assets/shaders/model.wgsl").to_string(),
             );
             file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
                 "bullet_hole.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
             );
@@ -136,6 +140,10 @@ impl KbAssetManager {
             file_to_string_buffer.insert(
                 "bullet_hole.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
             );
             file_to_string_buffer.insert(
                 "cloud_sprite.wgsl".to_string(),
@@ -269,6 +277,10 @@ impl KbAssetManager {
 
         #[cfg(feature = "wasm_include_key")]
         {
+            file_to_string_buffer.insert(
+                "model_with_holes.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+            );
             file_to_byte_buffer.insert(
                 "postprocess_filter.png".to_string(),
                 include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
@@ -555,7 +567,7 @@ impl KbAssetManager {
                     self.file_to_byte_buffer.len()
                 );
                 let byte_buffer = self.file_to_byte_buffer.get(file_name).unwrap().clone(); // cloning here.
-                KbModel::from_bytes(&byte_buffer, &mut device_resource, self).await
+                KbModel::from_bytes(&byte_buffer, &mut device_resource, self, use_holes).await
             }
         };
         log!("Model loaded");

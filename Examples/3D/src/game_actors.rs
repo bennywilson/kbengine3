@@ -3,7 +3,7 @@ use instant::Instant;
 
 use kb_engine3::{
     kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*,
-    kb_resource::*, kb_utils::*, log,
+    kb_resource::*, kb_utils::*,
 };
 
 #[allow(dead_code)]
@@ -446,9 +446,9 @@ impl GameProp {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
                 GamePropType::Sign => {
-                    coll_pos = CgVec3::new(0.0, 0.0,0.0);
+                    coll_pos = CgVec3::new(0.0, 0.0, 0.0);
                     CgVec3::new(5.3, 10.0, 0.3)
-                },
+                }
             }
         };
 

@@ -133,38 +133,46 @@ impl Example3DGame {
         self.props.push(shotgun);
     }
 
+
     fn spawn_sign(&mut self, renderer: &mut KbRenderer<'_>, model_handle: &KbModelHandle) {
-        let sign_pos = CgVec3::new(0.0, 0.0, 0.0);
+        #[cfg(feature = "bullet_holes")]
+            {
+            let sign_pos = CgVec3::new(0.0, 0.0, 0.0);
 
-        let mut sign = GameProp::new(
-            &GamePropType::Sign,
-            &sign_pos,
-            model_handle,
-            self.outline_render_group,
-            &mut self.collision_manager,
-            [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
-        );
-        let sign_actors = sign.get_actors();
-        sign_actors[0].set_render_group(
-            &KbRenderGroupType::WorldHole,
-            &Some(self.outline_render_group),
-        );
-        sign_actors[1].set_render_group(
-            &KbRenderGroupType::WorldCustom,
-            &Some(self.outline_render_group),
-        );
+            let mut sign = GameProp::new(
+                &GamePropType::Sign,
+                &sign_pos,
+                model_handle,
+                self.outline_render_group,
+                &mut self.collision_manager,
+                [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
+            );
+            let sign_actors = sign.get_actors();
+            sign_actors[0].set_render_group(
+                &KbRenderGroupType::WorldHole,
+                &Some(self.outline_render_group),
+            );
+            sign_actors[1].set_render_group(
+                &KbRenderGroupType::WorldCustom,
+                &Some(self.outline_render_group),
+            );
 
-       // hack
-        renderer.add_bullet_hole(&sign_actors[0], &CgVec3::new(0.0, 9999999.0, 0.0), &CgVec3::new(0.0, 1.0, 0.0));
- 
-        let rotation =
-            cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
-        for actor in sign_actors {
-            actor.set_rotation(&rotation);
-            renderer.add_or_update_actor(actor);
+            // hack
+            renderer.add_bullet_hole(
+                &sign_actors[0],
+                &CgVec3::new(0.0, 9999999.0, 0.0),
+                &CgVec3::new(0.0, 1.0, 0.0),
+            );
+
+            let rotation =
+                cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
+            for actor in sign_actors {
+                actor.set_rotation(&rotation);
+                renderer.add_or_update_actor(actor);
+            }
+
+            self.sign_prop = Some(sign);
         }
-   
-        self.sign_prop = Some(sign);
     }
 }
 
@@ -313,10 +321,16 @@ impl KbGameEngine for Example3DGame {
             uv_tiles: (1.0, 1.0),
         });
 
-        self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb", false).await;
-        self.barrel_model = renderer.load_model("game_assets/models/barrel.glb", false).await;
+        self.shotgun_model = renderer
+            .load_model("game_assets/models/shotgun.glb", false)
+            .await;
+        self.barrel_model = renderer
+            .load_model("game_assets/models/barrel.glb", false)
+            .await;
 
-        let sign_model = renderer.load_model("game_assets/models/sign.glb", true).await;
+        let sign_model = renderer
+            .load_model("game_assets/models/sign.glb", true)
+            .await;
         self.spawn_sign(renderer, &sign_model);
 
         self.decal_render_group = renderer
@@ -346,7 +360,9 @@ impl KbGameEngine for Example3DGame {
                 )
                 .await,
         );
-        let hands_model = renderer.load_model("game_assets/models/fp_hands.glb", false).await;
+        let hands_model = renderer
+            .load_model("game_assets/models/fp_hands.glb", false)
+            .await;
         let mut player = GamePlayer::new(&hands_model).await;
 
         let (hands, hands_outlines) = player.get_actors();
@@ -363,7 +379,9 @@ impl KbGameEngine for Example3DGame {
         self.player = Some(player);
 
         // Monster
-        let monster_model = renderer.load_model("game_assets/models/monster.glb", false).await;
+        let monster_model = renderer
+            .load_model("game_assets/models/monster.glb", false)
+            .await;
         let monster_render_group = renderer
             .add_custom_render_group(
                 &KbRenderGroupType::WorldCustom,
@@ -375,7 +393,9 @@ impl KbGameEngine for Example3DGame {
         self.monster_model = monster_model;
 
         // World objects
-        let level_model = renderer.load_model("game_assets/models/level.glb", false).await;
+        let level_model = renderer
+            .load_model("game_assets/models/level.glb", false)
+            .await;
         let mut actor = KbActor::new();
         actor.set_position(&[0.0, 0.0, 0.0].into());
         actor.set_scale(&(CgVec3::new(10.0, 19.0, 10.0) * GLOBAL_SCALE.x));
@@ -383,7 +403,9 @@ impl KbGameEngine for Example3DGame {
         renderer.add_or_update_actor(&actor);
         self.world_actors.push(actor);
 
-        let sky_model = renderer.load_model("game_assets/models/sky_dome.glb", false).await;
+        let sky_model = renderer
+            .load_model("game_assets/models/sky_dome.glb", false)
+            .await;
         {
             let sky_render_group = Some(
                 renderer
@@ -428,7 +450,9 @@ impl KbGameEngine for Example3DGame {
                 "game_assets/shaders/first_person_outline.wgsl",
             )
             .await;
-        let pinky_model = renderer.load_model("game_assets/models/pinky.glb", false).await;
+        let pinky_model = renderer
+            .load_model("game_assets/models/pinky.glb", false)
+            .await;
         let mut actor = KbActor::new();
         actor.set_position(&[16.5, 0.5, 6.0].into());
         let pinky_rot_x = cgmath::Rad::from(cgmath::Deg(90.0));
@@ -764,7 +788,11 @@ impl KbGameEngine for Example3DGame {
                     let sign_prop = self.sign_prop.as_mut().unwrap();
                     if sign_prop.collision_handle == handle.unwrap() {
                         let trace_dir = (trace_end_pos - trace_start_pos).normalize();
-                        renderer.add_bullet_hole(&sign_prop.get_actors()[0], &hit_loc.unwrap(), &trace_dir);
+                        renderer.add_bullet_hole(
+                            &sign_prop.get_actors()[0],
+                            &hit_loc.unwrap(),
+                            &trace_dir,
+                        );
                     }
                 }
                 if found_hit {

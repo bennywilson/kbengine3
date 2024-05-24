@@ -123,7 +123,7 @@ impl KbBulletHoleRenderGroup {
         surface_config.width = 1024;
         surface_config.height = 1024;
 
-      //  let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
+        //  let render_texture = KbTexture::new_render_texture(&device, &surface_config).unwrap();
         KbBulletHoleRenderGroup {
             pipeline,
             uniform,
@@ -155,15 +155,15 @@ impl KbBulletHoleRenderGroup {
             view: &model.hole_texture.as_ref().unwrap().view,
             resolve_target: None,
             ops: wgpu::Operations {
-                load:   if !self.first_run {
-                            wgpu::LoadOp::Load
-                        } else {
-                            wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            a: 1.0,
-                        })
+                load: if !self.first_run {
+                    wgpu::LoadOp::Load
+                } else {
+                    wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        a: 1.0,
+                    })
                 },
                 store: wgpu::StoreOp::Store,
             },
@@ -184,7 +184,9 @@ impl KbBulletHoleRenderGroup {
                 actor.get_scale().x,
                 actor.get_scale().y,
                 actor.get_scale().z,
-            ).invert().unwrap();
+            )
+            .invert()
+            .unwrap();
         let local_pos = inv_world_matrix * CgVec4::new(traces.0.x, traces.0.y, traces.0.z, 1.0);
         let local_dir = inv_world_matrix * CgVec4::new(traces.1.x, traces.1.y, traces.1.z, 0.0);
         let local_dir = local_dir.normalize();
