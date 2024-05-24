@@ -3,7 +3,7 @@ use instant::Instant;
 
 use kb_engine3::{
     kb_assets::*, kb_collision::*, kb_config::*, kb_game_object::*, kb_input::*, kb_renderer::*,
-    kb_resource::*, kb_utils::*,
+    kb_resource::*, kb_utils::*, log,
 };
 
 #[allow(dead_code)]
@@ -414,15 +414,17 @@ impl GameMob {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum GamePropType {
     Shotgun,
     Barrel,
+    Sign,
 }
 
+#[derive(Debug)]
 pub struct GameProp {
     actors: Vec<KbActor>,
-    collision_handle: KbCollisionHandle,
+    pub collision_handle: KbCollisionHandle,
     prop_type: GamePropType,
     particle_handles: [KbParticleHandle; 2],
     _start_time: Instant,
@@ -441,6 +443,7 @@ impl GameProp {
             match prop_type {
                 GamePropType::Shotgun => CgVec3::new(1.5, 1.5, 1.5),
                 GamePropType::Barrel => CgVec3::new(1.1, 4.0, 1.1),
+                GamePropType::Sign => CgVec3::new(4.0, 4.0, 4.0),
             }
         };
 
@@ -469,6 +472,7 @@ impl GameProp {
             match prop_type {
                 GamePropType::Shotgun => 0.21,
                 GamePropType::Barrel => 0.21,
+                GamePropType::Sign => 0.21,
             }
         };
 
@@ -515,6 +519,10 @@ impl GameProp {
     }
     pub fn get_actors(&mut self) -> &mut Vec<KbActor> {
         &mut self.actors
+    }
+
+    pub fn apply_bullet_hole(&mut self, _start_pos: &CgVec3, _end_pos: &CgVec3) {
+        log!("Taking damage! {:?}", self.prop_type);
     }
 }
 

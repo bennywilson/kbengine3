@@ -10,7 +10,7 @@ use crate::{
     kb_utils::*,
     log,
     render_groups::{
-        kb_line_group::*, kb_model_group::*, kb_postprocess_group::*, kb_sprite_group::*,
+        kb_bullet_hole_group::*, kb_line_group::*, kb_model_group::*, kb_postprocess_group::*, kb_sprite_group::*,
         kb_sunbeam_group::*,
     },
     PERF_SCOPE,
@@ -24,6 +24,7 @@ pub struct KbRenderer<'a> {
     model_render_group: KbModelRenderGroup,
     line_render_group: KbLineRenderGroup,
     sunbeam_render_group: KbSunbeamRenderGroup,
+    bullet_hole_render_group: KbBulletHoleRenderGroup,
 
     custom_world_render_groups: Vec<KbModelRenderGroup>,
     custom_foreground_render_groups: Vec<KbModelRenderGroup>,
@@ -78,6 +79,7 @@ impl<'a> KbRenderer<'a> {
             KbSunbeamRenderGroup::new(&device_resources, &mut asset_manager).await;
         let custom_world_render_groups = Vec::<KbModelRenderGroup>::new();
         let custom_foreground_render_groups = Vec::<KbModelRenderGroup>::new();
+        let bullet_hole_render_group = KbBulletHoleRenderGroup::new("/engine_assets/shaders/bullet_hole.wgsl", &device_resources, &mut asset_manager).await;
 
         let debug_lines = Vec::<KbLine>::new();
 
@@ -88,6 +90,7 @@ impl<'a> KbRenderer<'a> {
             postprocess_render_group,
             line_render_group,
             sunbeam_render_group,
+            bullet_hole_render_group, 
             custom_world_render_groups,
             custom_foreground_render_groups,
 

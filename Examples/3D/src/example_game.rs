@@ -24,6 +24,7 @@ pub struct Example3DGame {
     collision_manager: KbCollisionManager,
     vfx_manager: GameVfxManager,
 
+    sign_prop: Option<GameProp>,
     barrel_model: KbModelHandle,
     shotgun_model: KbModelHandle,
     monster_model: KbModelHandle,
@@ -131,6 +132,32 @@ impl Example3DGame {
         }
         self.props.push(shotgun);
     }
+
+    fn spawn_sign(&mut self, renderer: &mut KbRenderer<'_>, model_handle: &KbModelHandle) {
+        let sign_pos = CgVec3::new(0.0, 5.0, 15.0);
+
+        let mut sign = GameProp::new(
+            &GamePropType::Sign,
+            &sign_pos,
+            model_handle,
+            self.outline_render_group,
+            &mut self.collision_manager,
+            [INVALID_PARTICLE_HANDLE, INVALID_PARTICLE_HANDLE],
+        );
+        let sign_actors = sign.get_actors();
+        sign_actors[1].set_render_group(
+            &KbRenderGroupType::WorldCustom,
+            &Some(self.outline_render_group),
+        );
+
+        let rotation =
+            cgmath::Quaternion::from(CgMat3::from_angle_y(cgmath::Rad::from(cgmath::Deg(90.0))));
+        for actor in sign_actors {
+            actor.set_rotation(&rotation);
+            renderer.add_or_update_actor(actor);
+        }
+        self.sign_prop = Some(sign);
+    }
 }
 
 impl KbGameEngine for Example3DGame {
@@ -148,6 +175,7 @@ impl KbGameEngine for Example3DGame {
             game_objects,
             game_camera,
             vfx_manager: GameVfxManager::new(),
+            sign_prop: None,
             barrel_model: KbModelHandle::make_invalid(),
             shotgun_model: KbModelHandle::make_invalid(),
             monster_model: KbModelHandle::make_invalid(),
@@ -279,6 +307,9 @@ impl KbGameEngine for Example3DGame {
 
         self.shotgun_model = renderer.load_model("game_assets/models/shotgun.glb").await;
         self.barrel_model = renderer.load_model("game_assets/models/barrel.glb").await;
+
+        let sign_model = renderer.load_model("game_assets/models/sign.glb").await;
+        self.spawn_sign(renderer, &sign_model);
 
         self.decal_render_group = renderer
             .add_custom_render_group(
@@ -720,6 +751,13 @@ impl KbGameEngine for Example3DGame {
                 } else {
                     CgVec4::new(0.0, 0.0, 1.0, 1.0)
                 };
+
+                if found_hit && self.sign_prop.is_some() {
+                    let sign_prop = self.sign_prop.as_mut().unwrap();
+                    if sign_prop.collision_handle == handle.unwrap() {
+                        sign_prop.apply_bullet_hole(&trace_start_pos, &trace_end_pos);
+                    }
+                }
                 if found_hit {
                     let hit_loc = hit_loc.unwrap();
                     self.mobs.retain_mut(|mob| {

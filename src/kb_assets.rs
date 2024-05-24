@@ -94,6 +94,10 @@ impl KbAssetManager {
                 include_str!("../engine_assets/shaders/model.wgsl").to_string(),
             );
             file_to_string_buffer.insert(
+                "bullet_hole.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+            );
+            file_to_string_buffer.insert(
                 "particle.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
             );
@@ -129,6 +133,10 @@ impl KbAssetManager {
 
         #[cfg(feature = "wasm_include_3d")]
         {
+            file_to_string_buffer.insert(
+                "bullet_hole.wgsl".to_string(),
+                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+            );
             file_to_string_buffer.insert(
                 "cloud_sprite.wgsl".to_string(),
                 include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
@@ -193,6 +201,10 @@ impl KbAssetManager {
             file_to_byte_buffer.insert(
                 "pinky.glb".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/models/pinky.glb").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "sign.glb".to_string(),
+                include_bytes!("./../Examples/3D/game_assets/models/sign.glb").to_vec(),
             );
             file_to_byte_buffer.insert(
                 "sky_dome.glb".to_string(),
