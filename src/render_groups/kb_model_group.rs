@@ -69,6 +69,7 @@ pub struct KbModel {
     pub textures: Vec<KbTextureHandle>,
     pub tex_bind_group: wgpu::BindGroup,
 
+    pub empty_texture: Option<KbTexture>,
     pub hole_texture: Option<KbTexture>,
 
     uniform_buffers: Vec<wgpu::Buffer>,
@@ -212,6 +213,7 @@ impl KbModel {
             num_indices: 6,
             textures,
             hole_texture: None,
+            empty_texture: None,
             tex_bind_group,
             uniform_buffers,
             uniform_bind_groups,
@@ -351,21 +353,22 @@ impl KbModel {
                 label: Some("KbModel_texture_bind_group_layout"),
             });
 
+        let mut empty_texture = None;
         let texture = {
             if textures.len() > 0 {
                 asset_manager.get_texture(&textures[0])
             } else {
                 let image = &gltf_images[0];
                 //   image.
-                let tex = KbTexture::from_rgba(
+                empty_texture = Some(KbTexture::from_rgba(
                     &gltf_images[0].pixels,
                     image.format == gltf::image::Format::R8G8B8A8,
                     image.width,
                     image.height,
                     &device_resources,
                     Some("gltf tex"),
-                );
-                &tex.unwrap()
+                ).unwrap());
+                empty_texture.as_ref().unwrap()
             }
         };
 
@@ -455,6 +458,7 @@ impl KbModel {
             uniform_buffers,
             textures,
             hole_texture,
+            empty_texture,
             tex_bind_group,
             next_uniform_buffer: 0,
         }
