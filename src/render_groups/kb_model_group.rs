@@ -357,15 +357,15 @@ impl KbModel {
             } else {
                 let image = &gltf_images[0];
                 //   image.
-                &KbTexture::from_rgba(
+                let tex = KbTexture::from_rgba(
                     &gltf_images[0].pixels,
                     image.format == gltf::image::Format::R8G8B8A8,
                     image.width,
                     image.height,
                     &device_resources,
                     Some("gltf tex"),
-                )
-                .unwrap()
+                );
+                &tex.unwrap()
             }
         };
 
