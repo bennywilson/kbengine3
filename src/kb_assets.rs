@@ -71,104 +71,74 @@ impl KbAssetManager {
         let mut file_to_byte_buffer = HashMap::<String, KbByteVec>::new();
         let mut file_to_string_buffer = HashMap::<String, String>::new();
 
-        #[cfg(feature = "wasm_include_2d")]
-        {
-            file_to_byte_buffer.insert(
-                "postprocess_filter.png".to_string(),
-                include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
-                "sprite_sheet.png".to_string(),
-                include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec(),
-            );
-            file_to_string_buffer.insert(
-                "decal.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/decal.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "line.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/line.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "model.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model.wgsl").to_string(),
-            );
-            file_to_byte_buffer.insert(
-                "scorch_t.png".to_string(),
-                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
-            );
-            file_to_string_buffer.insert(
-                "model_with_holes.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "bullet_hole.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "particle.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "postprocess_uber.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "basic_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "cloud_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "postprocess_uber.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_draw.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_draw.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_mask.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_mask.wgsl").to_string(),
-            );
-            file_to_byte_buffer.insert(
-                "lens_flare.png".to_string(),
-                include_bytes!("../engine_assets/textures/lens_flare.png").to_vec(),
-            );
-        }
-
+        file_to_byte_buffer.insert(
+            "postprocess_filter.png".to_string(),
+            include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
+        );
+        file_to_byte_buffer.insert(
+            "sprite_sheet.png".to_string(),
+            include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec(),
+        );
+        file_to_string_buffer.insert(
+            "decal.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/decal.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "line.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/line.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "model.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/model.wgsl").to_string(),
+        );
+       
+        file_to_byte_buffer.insert(
+            "scorch_t.png".to_string(),
+            include_bytes!("../engine_assets/textures/scorch_t.png").to_vec(),
+        );
+        file_to_string_buffer.insert(
+            "model_with_holes.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "bullet_hole.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "particle.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "postprocess_uber.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "basic_sprite.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "cloud_sprite.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "postprocess_uber.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "sunbeam_draw.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/sunbeam_draw.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "sunbeam_mask.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/sunbeam_mask.wgsl").to_string(),
+        );
+        file_to_byte_buffer.insert(
+            "lens_flare.png".to_string(),
+            include_bytes!("../engine_assets/textures/lens_flare.png").to_vec(),
+        );
+     
         #[cfg(feature = "wasm_include_3d")]
         {
-            file_to_string_buffer.insert(
-                "bullet_hole.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/bullet_hole.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "model_with_holes.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "cloud_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "basic_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string(),
-            );
-            file_to_byte_buffer.insert(
-                "lens_flare.png".to_string(),
-                include_bytes!("../engine_assets/textures/lens_flare.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
-                "postprocess_filter.png".to_string(),
-                include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
-                "sprite_sheet.png".to_string(),
-                include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec(),
-            );
             file_to_byte_buffer.insert(
                 "ember_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec(),
@@ -181,10 +151,7 @@ impl KbAssetManager {
                 "smoke_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/smoke_t.png").to_vec(),
             );
-            file_to_byte_buffer.insert(
-                "scorch_t.png".to_string(),
-                include_bytes!("./../Examples/3D/game_assets/fx/scorch_t.png").to_vec(),
-            );
+
             file_to_byte_buffer.insert(
                 "muzzle_flash_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/muzzle_flash_t.png").to_vec(),
@@ -230,44 +197,6 @@ impl KbAssetManager {
                 "shotgun.glb".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/models/shotgun.glb").to_vec(),
             );
-
-            file_to_string_buffer.insert(
-                "decal.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/decal.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "line.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/line.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "model.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "particle.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "postprocess_uber.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sky_dome_draw.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sky_dome_draw.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sky_dome_occlude.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sky_dome_occlude.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_draw.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_draw.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_mask.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_mask.wgsl").to_string(),
-            );
-
             file_to_string_buffer.insert(
                 "first_person.wgsl".to_string(),
                 include_str!("./../Examples/3D/game_assets/shaders/first_person.wgsl").to_string(),
@@ -285,58 +214,6 @@ impl KbAssetManager {
 
         #[cfg(feature = "wasm_include_key")]
         {
-            file_to_string_buffer.insert(
-                "model_with_holes.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model_with_holes.wgsl").to_string(),
-            );
-            file_to_byte_buffer.insert(
-                "postprocess_filter.png".to_string(),
-                include_bytes!("../engine_assets/textures/postprocess_filter.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
-                "sprite_sheet.png".to_string(),
-                include_bytes!("../engine_assets/textures/sprite_sheet.png").to_vec(),
-            );
-            file_to_string_buffer.insert(
-                "decal.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/decal.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "line.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/line.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "model.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/model.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "particle.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/particle.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "postprocess_uber.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "basic_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/basic_sprite.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "cloud_sprite.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "postprocess_uber.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_draw.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_draw.wgsl").to_string(),
-            );
-            file_to_string_buffer.insert(
-                "sunbeam_mask.wgsl".to_string(),
-                include_str!("../engine_assets/shaders/sunbeam_mask.wgsl").to_string(),
-            );
             file_to_byte_buffer.insert(
                 "ember_t.png".to_string(),
                 include_bytes!("./../Examples/3D/game_assets/fx/ember_t.png").to_vec(),
@@ -348,10 +225,6 @@ impl KbAssetManager {
             file_to_byte_buffer.insert(
                 "atlas.png".to_string(),
                 include_bytes!("./../../key/game_assets/textures/atlas.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
-                "lens_flare.png".to_string(),
-                include_bytes!("../engine_assets/textures/lens_flare.png").to_vec(),
             );
         }
 
@@ -404,7 +277,13 @@ impl KbAssetManager {
                         if Path::new("/./engine_assets").exists() {
                             format!("{cwd}/./{file_path}")
                         } else {
-                            format!("{cwd}/../../{file_path}")
+                            #[cfg(feature = "wasm_include_key")]
+                            let path = format!("{cwd}/../kbEngine3/{file_path}");
+
+                            #[cfg(not(feature = "wasm_include_key"))]
+                            let path = format!("{cwd}/../../{file_path}");
+
+                            path
                         }
                     } else if file_path.contains("game_assets") {
                         format!("{cwd}/./{file_path}")
@@ -492,7 +371,13 @@ impl KbAssetManager {
                         if Path::new("/./engine_assets").exists() {
                             format!("{cwd}/./{file_path}")
                         } else {
-                            format!("{cwd}/../../{file_path}")
+                            #[cfg(feature = "wasm_include_key")]
+                            let path = format!("{cwd}/../kbEngine3/{file_path}");
+
+                            #[cfg(not(feature = "wasm_include_key"))]
+                            let path = format!("{cwd}/../../{file_path}");
+
+                            path
                         }
                     } else {
                         file_path.to_string()
