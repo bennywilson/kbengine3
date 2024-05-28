@@ -45,6 +45,8 @@ pub struct Example3DGame {
     invert_y: bool,
     debug_collision: bool,
     pause_monsters: bool,
+
+    post_process_override: KbPostProcessMode,
 }
 
 impl Example3DGame {
@@ -209,6 +211,7 @@ impl KbGameEngine for Example3DGame {
             score: 0,
             high_score: 0,
             next_harm_time: -1.0,
+            post_process_override: KbPostProcessMode::Passthrough,
         }
     }
 
@@ -961,12 +964,16 @@ impl KbGameEngine for Example3DGame {
         } else {
             renderer.set_postprocess_mode(&KbPostProcessMode::Passthrough);
         }
+        
+        if !matches!(self.post_process_override, KbPostProcessMode::Passthrough) {
+            renderer.set_postprocess_mode(&self.post_process_override);
+        }
 
         // UI
         {
             self.high_score = self.high_score.max(self.score);
-            let hud_msg = format!("Score: {}  High Score: {}", self.score, self.high_score);
-            renderer.set_hud_msg(&hud_msg);
+          //  let hud_msg = format!("-/+ to change post-processes", self.score, self.high_score);
+            renderer.set_hud_msg(&"-/+ to change post-processes");
             let player = self.player.as_ref().unwrap();
             let (positions, sprites, scale) = {
                 if !player.has_shotgun() {
@@ -1051,6 +1058,15 @@ impl KbGameEngine for Example3DGame {
 
         if input_manager.get_key_state("m").just_pressed() {
             self.pause_monsters = !self.pause_monsters;
+        }
+
+        if input_manager.get_key_state("+").just_pressed() {
+            self.post_process_override = match self.post_process_override {
+                KbPostProcessMode::Passthrough => KbPostProcessMode::Desaturation,
+                KbPostProcessMode::Desaturation => KbPostProcessMode::ScanLines,
+                KbPostProcessMode::ScanLines => KbPostProcessMode::Warp,
+                KbPostProcessMode::Warp => KbPostProcessMode::Passthrough,
+            }
         }
 
         if self.debug_collision {
