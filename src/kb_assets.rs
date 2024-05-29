@@ -278,7 +278,7 @@ impl KbAssetManager {
                             format!("{cwd}/./{file_path}")
                         } else {
                             #[cfg(feature = "wasm_include_key")]
-                            let path = format!("{cwd}/../kbEngine3/{file_path}");
+                            let path = format!("{cwd}/../kbengine3/{file_path}");
 
                             #[cfg(not(feature = "wasm_include_key"))]
                             let path = format!("{cwd}/../../{file_path}");
@@ -372,7 +372,7 @@ impl KbAssetManager {
                             format!("{cwd}/./{file_path}")
                         } else {
                             #[cfg(feature = "wasm_include_key")]
-                            let path = format!("{cwd}/../kbEngine3/{file_path}");
+                            let path = format!("{cwd}/../kbengine3/{file_path}");
 
                             #[cfg(not(feature = "wasm_include_key"))]
                             let path = format!("{cwd}/../../{file_path}");
