@@ -61,12 +61,18 @@ pub struct KbInputManager {
     pub key_shift: KbButtonState,
 
     pub touch_id_to_info: HashMap<u64, KbTouchInfo>,
+
+    key_map: HashMap<&'static str, KbButtonState>,
 }
 
 #[allow(dead_code)]
 impl KbInputManager {
     pub fn new() -> Self {
-        Default::default()
+        let key_map = HashMap::<&str, KbButtonState>::new();
+        KbInputManager {
+            key_map,
+            ..Default::default()
+        }
     }
 
     pub fn update_touch(
@@ -99,284 +105,60 @@ impl KbInputManager {
     pub fn update(&mut self, key: PhysicalKey, state: ElementState) -> bool {
         let pressed = state == ElementState::Pressed;
 
-        match key {
-            PhysicalKey::Code(KeyCode::Digit1) => {
-                if pressed {
-                    if self.key_1 == KbButtonState::None {
-                        self.key_1 = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_1 = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit2) => {
-                if pressed {
-                    if self.key_2 == KbButtonState::None {
-                        self.key_2 = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_2 = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit3) => {
-                if pressed {
-                    if self.key_3 == KbButtonState::None {
-                        self.key_3 = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_3 = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Digit4) => {
-                if pressed {
-                    if self.key_4 == KbButtonState::None {
-                        self.key_4 = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_4 = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Equal) => {
-                if pressed {
-                    if self.key_plus == KbButtonState::None {
-                        self.key_plus = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_plus = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Minus) => {
-                if pressed {
-                    if self.key_minus == KbButtonState::None {
-                        self.key_minus = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_minus = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyA) => {
-                if pressed {
-                    if self.key_a == KbButtonState::None {
-                        self.key_a = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_a = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyD) => {
-                if pressed {
-                    if self.key_d == KbButtonState::None {
-                        self.key_d = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_d = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyW) => {
-                if pressed {
-                    if self.key_w == KbButtonState::None {
-                        self.key_w = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_w = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyS) => {
-                if pressed {
-                    if self.key_s == KbButtonState::None {
-                        self.key_s = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_s = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::Space) => {
-                if pressed {
-                    if self.key_space == KbButtonState::None {
-                        self.key_space = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_space = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::ArrowUp) => {
-                if pressed {
-                    if self.key_arrow_up == KbButtonState::None {
-                        self.key_arrow_up = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_arrow_up = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::ArrowDown) => {
-                if pressed {
-                    if self.key_arrow_down == KbButtonState::None {
-                        self.key_arrow_down = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_arrow_down = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                if pressed {
-                    if self.key_arrow_left == KbButtonState::None {
-                        self.key_arrow_left = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_arrow_left = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::ArrowRight) => {
-                if pressed {
-                    if self.key_arrow_right == KbButtonState::None {
-                        self.key_arrow_right = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_arrow_right = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyH) => {
-                if pressed {
-                    if self.key_h == KbButtonState::None {
-                        self.key_h = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_h = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyI) => {
-                if pressed {
-                    if self.key_i == KbButtonState::None {
-                        self.key_i = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_i = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyM) => {
-                if pressed {
-                    if self.key_m == KbButtonState::None {
-                        self.key_m = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_m = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyY) => {
-                if pressed {
-                    if self.key_y == KbButtonState::None {
-                        self.key_y = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_y = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::KeyV) => {
-                if pressed {
-                    if self.key_v == KbButtonState::None {
-                        self.key_v = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_v = KbButtonState::None;
-                }
-                true
-            }
-            PhysicalKey::Code(KeyCode::ShiftLeft) => {
-                if pressed {
-                    if self.key_shift == KbButtonState::None {
-                        self.key_shift = KbButtonState::JustPressed;
-                    }
-                } else {
-                    self.key_shift = KbButtonState::None;
-                }
-                true
-            }
-            _ => false,
+        let key_name = match key {
+            PhysicalKey::Code(KeyCode::ArrowUp) => { "up_arrow" }
+            PhysicalKey::Code(KeyCode::ArrowDown) => { "down_arrow" }
+            PhysicalKey::Code(KeyCode::ArrowLeft) => { "left_arrow" }
+            PhysicalKey::Code(KeyCode::ArrowRight) => { "right_arrow" } 
+            PhysicalKey::Code(KeyCode::Digit1) => { "1" }
+            PhysicalKey::Code(KeyCode::Digit2) => { "2" }
+            PhysicalKey::Code(KeyCode::Digit3) => { "3" }
+            PhysicalKey::Code(KeyCode::Digit4) => { "4" }
+            PhysicalKey::Code(KeyCode::Digit5) => { "5" }
+            PhysicalKey::Code(KeyCode::Digit6) => { "6" }
+            PhysicalKey::Code(KeyCode::Digit7) => { "7" }
+            PhysicalKey::Code(KeyCode::Digit8) => { "8" }
+            PhysicalKey::Code(KeyCode::Digit9) => { "9" }
+            PhysicalKey::Code(KeyCode::Digit0) => { "0" }
+            PhysicalKey::Code(KeyCode::Equal) => { "+" },
+            PhysicalKey::Code(KeyCode::Minus) => { "-" }
+            PhysicalKey::Code(KeyCode::KeyW) => { "w" }
+            PhysicalKey::Code(KeyCode::KeyA) => { "a" }
+            PhysicalKey::Code(KeyCode::KeyS) => { "s" }
+            PhysicalKey::Code(KeyCode::KeyD) => { "d" }
+            PhysicalKey::Code(KeyCode::Space) => { "space" } 
+            PhysicalKey::Code(KeyCode::KeyH) => { "h" }
+            PhysicalKey::Code(KeyCode::KeyM) => { "m" }
+            PhysicalKey::Code(KeyCode::KeyY) => { "y" }
+            PhysicalKey::Code(KeyCode::KeyV) => { "v" }
+            PhysicalKey::Code(KeyCode::ShiftLeft) => { "left_shift" }
+            _ => { "none" }
+        };
+        if key_name == "none" {
+            return false;
         }
+
+        let key_pair = self.key_map.get_mut(&key_name);
+        if key_pair.is_some() {
+            let key_pair = key_pair.unwrap();x`x`
+            if pressed {
+                if *key_pair == KbButtonState::None {
+                    *key_pair = KbButtonState::JustPressed;
+                }
+            } else {
+                *key_pair = KbButtonState::None;    
+            };
+        } else {
+            self.key_map.insert(key_name, KbButtonState::JustPressed);
+        }
+        return true;
     }
 
     pub fn update_key_states(&mut self) {
-        if self.key_i == KbButtonState::JustPressed {
-            self.key_i = KbButtonState::Down;
-        }
-        if self.key_y == KbButtonState::JustPressed {
-            self.key_y = KbButtonState::Down;
-        }
-        if self.key_m == KbButtonState::JustPressed {
-            self.key_m = KbButtonState::Down;
-        }
-        if self.key_h == KbButtonState::JustPressed {
-            self.key_h = KbButtonState::Down;
-        }
-        if self.key_v == KbButtonState::JustPressed {
-            self.key_v = KbButtonState::Down;
-        }
-        if self.key_w == KbButtonState::JustPressed {
-            self.key_w = KbButtonState::Down;
-        }
-        if self.key_a == KbButtonState::JustPressed {
-            self.key_a = KbButtonState::Down;
-        }
-        if self.key_s == KbButtonState::JustPressed {
-            self.key_s = KbButtonState::Down;
-        }
-        if self.key_d == KbButtonState::JustPressed {
-            self.key_d = KbButtonState::Down;
-        }
-        if self.key_plus == KbButtonState::JustPressed {
-            self.key_plus = KbButtonState::Down;
-        }
-        if self.key_minus == KbButtonState::JustPressed {
-            self.key_minus = KbButtonState::Down;
-        }
-        if self.key_arrow_left == KbButtonState::JustPressed {
-            self.key_arrow_left = KbButtonState::Down;
-        }
-        if self.key_arrow_up == KbButtonState::JustPressed {
-            self.key_arrow_up = KbButtonState::Down;
-        }
-        if self.key_arrow_right == KbButtonState::JustPressed {
-            self.key_arrow_right = KbButtonState::Down;
-        }
-        if self.key_arrow_down == KbButtonState::JustPressed {
-            self.key_arrow_down = KbButtonState::Down;
-        }
-        if self.key_space == KbButtonState::JustPressed {
-            self.key_space = KbButtonState::Down;
-        }
-        if self.key_shift == KbButtonState::JustPressed {
-            self.key_shift = KbButtonState::Down;
-        }
-        if self.key_1 == KbButtonState::JustPressed {
-            self.key_1 = KbButtonState::Down;
-        }
-        if self.key_2 == KbButtonState::JustPressed {
-            self.key_2 = KbButtonState::Down;
-        }
-        if self.key_3 == KbButtonState::JustPressed {
-            self.key_3 = KbButtonState::Down;
-        }
-        if self.key_4 == KbButtonState::JustPressed {
-            self.key_4 = KbButtonState::Down;
+        for button_pair in &mut self.key_map {
+            if *button_pair.1 == KbButtonState::JustPressed {
+                *button_pair.1 = KbButtonState::Down;
+            }
         }
 
         for touch in &mut self.touch_id_to_info {
@@ -387,34 +169,12 @@ impl KbInputManager {
     }
 
     pub fn get_key_state(&self, key: &str) -> KbButtonState {
-        let button_state = match key {
-            "1" => self.key_1.clone(),
-            "2" => self.key_2.clone(),
-            "3" => self.key_3.clone(),
-            "4" => self.key_4.clone(),
-            "v" => self.key_v.clone(),
-            "w" => self.key_w.clone(),
-            "a" => self.key_a.clone(),
-            "s" => self.key_s.clone(),
-            "d" => self.key_d.clone(),
-            "m" => self.key_m.clone(),
-            "i" => self.key_i.clone(),
-            "y" => self.key_y.clone(),
-            "h" => self.key_h.clone(),
-            "+" => self.key_plus.clone(),
-            "-" => self.key_minus.clone(),
-            "left_arrow" => self.key_arrow_left.clone(),
-            "right_arrow" => self.key_arrow_right.clone(),
-            "up_arrow" => self.key_arrow_up.clone(),
-            "down_arrow" => self.key_arrow_down.clone(),
-            "space" => self.key_space.clone(),
-            "left_shift" => self.key_shift.clone(),
-            _ => {
-                panic!("Doh!");
-            }
-        };
+        let key_state = self.key_map.get(key);
+        if key_state.is_some() {
+            return key_state.unwrap().clone();
+        }
 
-        button_state
+        KbButtonState::None
     }
 
     pub fn get_touch_map(&self) -> &HashMap<u64, KbTouchInfo> {

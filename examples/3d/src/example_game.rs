@@ -964,7 +964,7 @@ impl KbGameEngine for Example3DGame {
         } else {
             renderer.set_postprocess_mode(&KbPostProcessMode::Passthrough);
         }
-        
+
         if !matches!(self.post_process_override, KbPostProcessMode::Passthrough) {
             renderer.set_postprocess_mode(&self.post_process_override);
         }
@@ -972,8 +972,8 @@ impl KbGameEngine for Example3DGame {
         // UI
         {
             self.high_score = self.high_score.max(self.score);
-          //  let hud_msg = format!("-/+ to change post-processes", self.score, self.high_score);
-            renderer.set_hud_msg(&"-/+ to change post-processes");
+            //  let hud_msg = format!("-/+ to change post-processes", self.score, self.high_score);
+            renderer.set_hud_msg("-/+ to change post-processes");
             let player = self.player.as_ref().unwrap();
             let (positions, sprites, scale) = {
                 if !player.has_shotgun() {
