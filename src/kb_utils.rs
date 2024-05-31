@@ -146,3 +146,8 @@ pub fn cgmat4_to_cgmat3(mat4: &CgMat4) -> CgMat3 {
 pub fn cgvec3_remove_y(vec: CgVec3) -> CgVec2 {
     CgVec2::new(vec.x, vec.z)
 }
+
+pub fn kb_lerp(op1: f32, op2: f32, time: f32) -> f32 {
+    let val = (op2 - op1) * time + op1;
+    val
+}
