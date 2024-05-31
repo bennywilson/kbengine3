@@ -38,7 +38,7 @@ pub struct KbTouchInfo {
 pub struct KbInputManager {
     touch_id_to_info: HashMap<u64, KbTouchInfo>,
     mouse_scroll_delta: f32,
-    cursor_position: (f64, f64),
+    cursor_position: (i32, i32),
     key_map: HashMap<&'static str, KbButtonState>,
 }
 
@@ -164,7 +164,7 @@ impl KbInputManager {
     pub fn update_key_states(&mut self) {
         for button_pair in &mut self.key_map {
             if *button_pair.1 == KbButtonState::JustPressed {
-                *button_pair.1 = KbButtonState::Down{ mouse_start: (self.cursor_position.0 as i32, self.cursor_position.1 as i32) }
+                *button_pair.1 = KbButtonState::Down{ mouse_start: (self.cursor_position.0, self.cursor_position.1) }
             }
         }
 
@@ -195,7 +195,11 @@ impl KbInputManager {
     }
 
     pub fn set_mouse_position(&mut self, position: &winit::dpi::PhysicalPosition<f64>) {
-        self.cursor_position.0 = position.x;
-        self.cursor_position.1 = position.y;        
+        self.cursor_position.0 = position.x as i32;
+        self.cursor_position.1 = position.y as i32;
+    }
+
+    pub fn get_mouse_position(&self) -> (i32, i32) {
+        self.cursor_position
     }
 }
