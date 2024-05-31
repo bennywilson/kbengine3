@@ -287,6 +287,15 @@ where
                         }
                     }
 
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        match delta {
+                            MouseScrollDelta::LineDelta(_, y) => {
+                                input_manager.update_mouse_scroll(*y);
+                            }
+                            _ => {}
+                        }
+                    }
+
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {

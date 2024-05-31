@@ -33,35 +33,8 @@ pub struct KbTouchInfo {
 
 #[derive(Debug, Default)]
 pub struct KbInputManager {
-    pub key_space: KbButtonState,
-
-    pub key_arrow_left: KbButtonState,
-    pub key_arrow_up: KbButtonState,
-    pub key_arrow_down: KbButtonState,
-    pub key_arrow_right: KbButtonState,
-
-    pub key_1: KbButtonState,
-    pub key_2: KbButtonState,
-    pub key_3: KbButtonState,
-    pub key_4: KbButtonState,
-    pub key_plus: KbButtonState,
-    pub key_minus: KbButtonState,
-
-    pub key_w: KbButtonState,
-    pub key_a: KbButtonState,
-    pub key_s: KbButtonState,
-    pub key_d: KbButtonState,
-
-    pub key_i: KbButtonState,
-    pub key_y: KbButtonState,
-    pub key_m: KbButtonState,
-    pub key_h: KbButtonState,
-    pub key_v: KbButtonState,
-
-    pub key_shift: KbButtonState,
-
-    pub touch_id_to_info: HashMap<u64, KbTouchInfo>,
-
+    touch_id_to_info: HashMap<u64, KbTouchInfo>,
+    mouse_scroll_delta: f32,
     key_map: HashMap<&'static str, KbButtonState>,
 }
 
@@ -73,6 +46,10 @@ impl KbInputManager {
             key_map,
             ..Default::default()
         }
+    }
+
+    pub fn update_mouse_scroll(&mut self, y_delta: f32) {
+        self.mouse_scroll_delta += y_delta;
     }
 
     pub fn update_touch(
@@ -140,7 +117,7 @@ impl KbInputManager {
 
         let key_pair = self.key_map.get_mut(&key_name);
         if key_pair.is_some() {
-            let key_pair = key_pair.unwrap();x`x`
+            let key_pair = key_pair.unwrap();
             if pressed {
                 if *key_pair == KbButtonState::None {
                     *key_pair = KbButtonState::JustPressed;
@@ -166,6 +143,8 @@ impl KbInputManager {
             touch.1.frame_delta.1 = 0.0;
             touch.1.touch_state = KbButtonState::Down;
         }
+
+        self.mouse_scroll_delta = 0.0;
     }
 
     pub fn get_key_state(&self, key: &str) -> KbButtonState {
@@ -179,5 +158,9 @@ impl KbInputManager {
 
     pub fn get_touch_map(&self) -> &HashMap<u64, KbTouchInfo> {
         &self.touch_id_to_info
+    }
+
+    pub fn get_mouse_scroll_delta(&self) -> f32 {
+        self.mouse_scroll_delta
     }
 }
