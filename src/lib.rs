@@ -296,6 +296,16 @@ where
                         }
                     }
 
+                    WindowEvent::MouseInput {
+                        button, state, ..
+                    } => {
+                        input_manager.set_mouse_button_state(button, state);
+                    }
+
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input_manager.set_mouse_position(position);
+
+                    }
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
@@ -313,7 +323,7 @@ where
                         event,
                         is_synthetic: _,
                     } => {
-                        input_manager.update(event.physical_key, event.state);
+                        input_manager.set_key_state(event.physical_key, event.state);
 
                         if input_manager.get_key_state("h").just_pressed() {
                             game_renderer.enable_help_text();

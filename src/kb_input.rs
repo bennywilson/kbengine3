@@ -1,21 +1,24 @@
 use std::collections::HashMap;
 
 use winit::{
-    event::ElementState,
+    event::{ElementState, MouseButton},
     keyboard::{KeyCode, PhysicalKey},
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum KbButtonState {
     #[default]
-    None = 0,
-    JustPressed = 1,
-    Down = 2,
+    None,
+    JustPressed,
+    Down { mouse_start: (i32, i32) },
 }
 
 impl KbButtonState {
     pub fn is_down(&self) -> bool {
-        *self == KbButtonState::Down
+        match *self {
+            KbButtonState::Down{..} => { true }
+            _ => { false }
+        }
     }
 
     pub fn just_pressed(&self) -> bool {
@@ -35,6 +38,7 @@ pub struct KbTouchInfo {
 pub struct KbInputManager {
     touch_id_to_info: HashMap<u64, KbTouchInfo>,
     mouse_scroll_delta: f32,
+    cursor_position: (f64, f64),
     key_map: HashMap<&'static str, KbButtonState>,
 }
 
@@ -79,9 +83,35 @@ impl KbInputManager {
         }
     }
 
-    pub fn update(&mut self, key: PhysicalKey, state: ElementState) -> bool {
-        let pressed = state == ElementState::Pressed;
+    pub fn set_mouse_button_state(&mut self, button: &MouseButton, state: &ElementState) -> bool {
+        let button_name = match button {
+            MouseButton::Left => { "mouse_left" }
+            MouseButton::Right => { "mouse_right" }
+            MouseButton::Middle => { "mouse_middle" }
+            _ => { "none" }
+        };
+        if button_name == "none" {
+            return false;
+        }
 
+        let key_pair = self.key_map.get_mut(&button_name);
+        if key_pair.is_some() {
+            let key_pair = key_pair.unwrap();
+            if *state == ElementState::Pressed {
+                if *key_pair == KbButtonState::None {
+                    *key_pair = KbButtonState::JustPressed;
+                }
+            } else {
+                *key_pair = KbButtonState::None;    
+            };
+        } else {
+            self.key_map.insert(button_name, KbButtonState::JustPressed);
+        }
+
+        true
+    }
+    
+    pub fn set_key_state(&mut self, key: PhysicalKey, state: ElementState) -> bool {
         let key_name = match key {
             PhysicalKey::Code(KeyCode::ArrowUp) => { "up_arrow" }
             PhysicalKey::Code(KeyCode::ArrowDown) => { "down_arrow" }
@@ -118,7 +148,7 @@ impl KbInputManager {
         let key_pair = self.key_map.get_mut(&key_name);
         if key_pair.is_some() {
             let key_pair = key_pair.unwrap();
-            if pressed {
+            if state == ElementState::Pressed {
                 if *key_pair == KbButtonState::None {
                     *key_pair = KbButtonState::JustPressed;
                 }
@@ -134,14 +164,14 @@ impl KbInputManager {
     pub fn update_key_states(&mut self) {
         for button_pair in &mut self.key_map {
             if *button_pair.1 == KbButtonState::JustPressed {
-                *button_pair.1 = KbButtonState::Down;
+                *button_pair.1 = KbButtonState::Down{ mouse_start: (self.cursor_position.0 as i32, self.cursor_position.1 as i32) }
             }
         }
 
         for touch in &mut self.touch_id_to_info {
             touch.1.frame_delta.0 = 0.0;
             touch.1.frame_delta.1 = 0.0;
-            touch.1.touch_state = KbButtonState::Down;
+            touch.1.touch_state = KbButtonState::Down{ mouse_start: (0, 0) }
         }
 
         self.mouse_scroll_delta = 0.0;
@@ -162,5 +192,10 @@ impl KbInputManager {
 
     pub fn get_mouse_scroll_delta(&self) -> f32 {
         self.mouse_scroll_delta
+    }
+
+    pub fn set_mouse_position(&mut self, position: &winit::dpi::PhysicalPosition<f64>) {
+        self.cursor_position.0 = position.x;
+        self.cursor_position.1 = position.y;        
     }
 }
