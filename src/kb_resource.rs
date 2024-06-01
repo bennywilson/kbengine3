@@ -421,7 +421,7 @@ impl<'a> KbDeviceResources<'a> {
             KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
         self.render_textures[1] =
             KbTexture::new_depth_texture(&self.device, &self.surface_config).unwrap();
-        self.render_textures[1] =
+        self.render_textures[2] =
             KbTexture::new_render_texture(&self.device, &self.surface_config).unwrap();
     }
 

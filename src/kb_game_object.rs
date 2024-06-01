@@ -493,7 +493,7 @@ pub struct GameObject {
     pub object_type: GameObjectType,
     pub object_state: GameObjectState,
     pub next_attack_time: f32,
-    pub texture_index: i32,
+    pub texture_index: u32,
     pub sprite_index: i32,
     pub uv_tiles: (f32, f32),
     pub anim_frame: i32,

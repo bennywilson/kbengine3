@@ -20,7 +20,8 @@ use crate::{
 pub struct KbRenderer<'a> {
     device_resources: KbDeviceResources<'a>,
 
-    sprite_render_group: KbSpriteRenderGroup,
+    default_sprite_render_group: KbSpriteRenderGroup,
+    custom_sprite_render_groups: Vec<KbSpriteRenderGroup>,
     postprocess_render_group: KbPostprocessRenderGroup,
     model_render_group: KbModelRenderGroup,
     model_with_holes_render_group: KbModelRenderGroup,
@@ -61,9 +62,9 @@ impl<'a> KbRenderer<'a> {
 
         let mut asset_manager = KbAssetManager::new();
         let device_resources = KbDeviceResources::new(window.clone(), game_config).await;
-        log!("1");
-        let sprite_render_group =
-            KbSpriteRenderGroup::new(&device_resources, &mut asset_manager, &game_config).await;
+        let default_sprite_render_group =
+            KbSpriteRenderGroup::new("/engine_assets/textures/sprite_sheet.png".to_string(), 0,
+                &device_resources, &mut asset_manager, &game_config).await;
         let postprocess_render_group =
             KbPostprocessRenderGroup::new(&device_resources, &mut asset_manager).await;
         let model_render_group = KbModelRenderGroup::new(
@@ -73,7 +74,6 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-        log!("2");
 
         let line_render_group = KbLineRenderGroup::new(
             "/engine_assets/shaders/line.wgsl",
@@ -91,7 +91,6 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-        log!("3");
 
         let model_with_holes_render_group = KbModelRenderGroup::new(
             "/engine_assets/shaders/model_with_holes.wgsl",
@@ -100,13 +99,13 @@ impl<'a> KbRenderer<'a> {
             &mut asset_manager,
         )
         .await;
-        log!("4");
 
         let debug_lines = Vec::<KbLine>::new();
 
         KbRenderer {
             device_resources,
-            sprite_render_group,
+            default_sprite_render_group,
+            custom_sprite_render_groups: vec![],
             model_render_group,
             model_with_holes_render_group,
             postprocess_render_group,
@@ -436,7 +435,7 @@ impl<'a> KbRenderer<'a> {
         if skybox_render_objs.len() > 0 {
             PERF_SCOPE!("Sprite Pass Sky");
 
-            self.sprite_render_group.render(
+            self.default_sprite_render_group.render(
                 KbRenderPassType::Opaque,
                 &mut self.device_resources,
                 game_config,
@@ -447,7 +446,7 @@ impl<'a> KbRenderer<'a> {
         if cloud_render_objs.len() > 0 {
             PERF_SCOPE!("Sprite Pass Clouds");
 
-            self.sprite_render_group.render(
+            self.default_sprite_render_group.render(
                 KbRenderPassType::Transparent,
                 &mut self.device_resources,
                 game_config,
@@ -458,7 +457,7 @@ impl<'a> KbRenderer<'a> {
         if game_render_objs.len() > 0 {
             PERF_SCOPE!("2D Game Objects");
 
-            self.sprite_render_group.render(
+            self.default_sprite_render_group.render(
                 KbRenderPassType::Opaque,
                 &mut self.device_resources,
                 game_config,
@@ -466,6 +465,13 @@ impl<'a> KbRenderer<'a> {
             );
         }
 
+        {
+            PERF_SCOPE!("Custom Render Groups");
+            for render_group in &mut self.custom_sprite_render_groups {
+                render_group.render(KbRenderPassType::Opaque, &mut self.device_resources, game_config, &game_render_objs);
+            }
+        }
+    
         {
             PERF_SCOPE!("Postprocess pass");
             self.postprocess_render_group.render(
@@ -475,6 +481,7 @@ impl<'a> KbRenderer<'a> {
                 Some(self.postprocess_mode.clone()),
             );
         }
+
 
         {
             PERF_SCOPE!("Debug text pass");
@@ -496,22 +503,14 @@ impl<'a> KbRenderer<'a> {
         Ok(())
     }
 
-    pub async fn resize(&mut self, game_config: &KbConfig) {
-        log!(
-            "Resizing window to {} x {}",
+    pub fn resize(&mut self, game_config: &KbConfig) {
+        log!("Resizing window to {} x {}",
             game_config.window_width,
             game_config.window_height
         );
 
         self.device_resources.resize(&game_config);
-        self.sprite_render_group = KbSpriteRenderGroup::new(
-            &self.device_resources,
-            &mut self.asset_manager,
-            &game_config,
-        )
-        .await;
-        self.postprocess_render_group =
-            KbPostprocessRenderGroup::new(&self.device_resources, &mut self.asset_manager).await;
+        self.postprocess_render_group.resize(&mut self.device_resources, &self.asset_manager);
     }
 
     pub fn window_id(&self) -> winit::window::WindowId {
@@ -680,5 +679,12 @@ impl<'a> KbRenderer<'a> {
 
     pub fn num_active_particles(&self) -> usize {
         self.active_particles
+    }
+
+    pub async fn add_sprite_render_group(&mut self, texture_path: String, game_config: &KbConfig) -> u32 {
+        let new_index = self.custom_sprite_render_groups.len() as u32 + 1;
+        let render_group = KbSpriteRenderGroup::new(texture_path, new_index, &self.device_resources, &mut self.asset_manager, game_config).await;
+        self.custom_sprite_render_groups.push(render_group);
+        new_index
     }
 }

@@ -234,9 +234,9 @@ where
                         match render_result {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => {
-                                let _ = async {
-                                    game_renderer.resize(&game_config).await;
-                                };
+                              //  let _ = async {
+                                    game_renderer.resize(&game_config);//clear.await;
+                               // };
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                             Err(e) => {
@@ -275,9 +275,10 @@ where
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => {
-                                    let _ = async {
+                                    game_renderer.resize(&game_config);
+                                   /*  let _ = async {
                                         game_renderer.resize(&game_config).await;
-                                    };
+                                    };*/
                                 }
                                 Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                                 Err(e) => {
@@ -309,12 +310,11 @@ where
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
+                       // log!("Resized {} {}", physical_size.width, physical_size.z
                         if physical_size.width > 0 && physical_size.height > 0 {
                             game_config.window_width = physical_size.width;
                             game_config.window_height = physical_size.height;
-                            let _ = async {
-                                game_renderer.resize(&game_config).await;
-                            };
+                            game_renderer.resize(&game_config);
                         }
                     }
 
