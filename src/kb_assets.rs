@@ -121,6 +121,14 @@ impl KbAssetManager {
             include_str!("../engine_assets/shaders/cloud_sprite.wgsl").to_string(),
         );
         file_to_string_buffer.insert(
+            "sky_dome_draw.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/sky_dome_draw.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
+            "sky_dome_occlude.wgsl".to_string(),
+            include_str!("../engine_assets/shaders/sky_dome_occlude.wgsl").to_string(),
+        );
+        file_to_string_buffer.insert(
             "postprocess_uber.wgsl".to_string(),
             include_str!("../engine_assets/shaders/postprocess_uber.wgsl").to_string(),
         );
