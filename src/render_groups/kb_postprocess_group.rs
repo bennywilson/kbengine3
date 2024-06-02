@@ -10,6 +10,7 @@ pub struct KbPostprocessRenderGroup {
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub bind_group: wgpu::BindGroup,
+    pub postprocess_tex_handle: KbTextureHandle,
 }
 
 impl KbPostprocessRenderGroup {
@@ -184,6 +185,7 @@ impl KbPostprocessRenderGroup {
             bind_group,
             vertex_buffer,
             index_buffer,
+            postprocess_tex_handle,
         }
     }
 
@@ -251,5 +253,59 @@ impl KbPostprocessRenderGroup {
         device_resources
             .queue
             .submit(std::iter::once(command_encoder.finish()));
+    }
+
+    pub fn resize(&mut self, device_resources: &mut KbDeviceResources, asset_manager: &KbAssetManager) {
+        let postprocess_tex = asset_manager.get_texture(&self.postprocess_tex_handle);
+        let bind_group_layout = device_resources.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("bind_group_layout"),
+        });
+        let render_texture = &device_resources.render_textures[0];
+        self.bind_group = device_resources.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&postprocess_tex.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&postprocess_tex.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&render_texture.view),
+                },
+            ],
+            label: Some("bind_group"),
+        }); 
     }
 }

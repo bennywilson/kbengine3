@@ -70,7 +70,7 @@ impl KbConfig {
 
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let json_val = json_file["graphics_power_pref"].as_str();
+                let json_val = json_file["graphics_back_end"].as_str();
                 match json_val {
                     Some(val) => match val {
                         "dx12" => wgpu::Backends::DX12,

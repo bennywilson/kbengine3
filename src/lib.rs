@@ -107,7 +107,7 @@ where
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => {
                                 let _ = async {
-                                    game_renderer.resize(&game_config).await;
+                                    game_renderer.resize(&game_config);
                                 };
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
@@ -148,7 +148,7 @@ where
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => {
                                     let _ = async {
-                                        game_renderer.resize(&game_config).await;
+                                        game_renderer.resize(&game_config);
                                     };
                                 }
                                 Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
@@ -159,6 +159,26 @@ where
                         }
                     }
 
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        match delta {
+                            MouseScrollDelta::PixelDelta(pos) => {
+                                input_manager.update_mouse_scroll(pos.y as f32);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    WindowEvent::MouseInput {
+                        button, state, ..
+                    } => {
+                        input_manager.set_mouse_button_state(button, state);
+                    }
+
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input_manager.set_mouse_position(position);
+
+                    }
+    
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
@@ -166,7 +186,7 @@ where
                             game_config.window_width = physical_size.width;
                             game_config.window_height = physical_size.height;
                             let _ = async {
-                                game_renderer.resize(&game_config).await;
+                                game_renderer.resize(&game_config);
                             };
                         }
                     }
@@ -184,7 +204,7 @@ where
                         event,
                         is_synthetic: _,
                     } => {
-                        input_manager.update(event.physical_key, event.state);
+                        input_manager.set_key_state(event.physical_key, event.state);
 
                         if input_manager.get_key_state("h").just_pressed() {
                             game_renderer.enable_help_text();
@@ -234,9 +254,7 @@ where
                         match render_result {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => {
-                                let _ = async {
-                                    game_renderer.resize(&game_config).await;
-                                };
+                                game_renderer.resize(&game_config);
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                             Err(e) => {
@@ -275,9 +293,10 @@ where
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => {
-                                    let _ = async {
+                                    game_renderer.resize(&game_config);
+                                   /*  let _ = async {
                                         game_renderer.resize(&game_config).await;
-                                    };
+                                    };*/
                                 }
                                 Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                                 Err(e) => {
@@ -287,15 +306,34 @@ where
                         }
                     }
 
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        match delta {
+                            MouseScrollDelta::LineDelta(_, y) => {
+                                input_manager.update_mouse_scroll(*y);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    WindowEvent::MouseInput {
+                        button, state, ..
+                    } => {
+                        input_manager.set_mouse_button_state(button, state);
+                    }
+
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input_manager.set_mouse_position(position);
+
+                    }
+
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
+                       // log!("Resized {} {}", physical_size.width, physical_size.z
                         if physical_size.width > 0 && physical_size.height > 0 {
                             game_config.window_width = physical_size.width;
                             game_config.window_height = physical_size.height;
-                            let _ = async {
-                                game_renderer.resize(&game_config).await;
-                            };
+                            game_renderer.resize(&game_config);
                         }
                     }
 
@@ -304,7 +342,7 @@ where
                         event,
                         is_synthetic: _,
                     } => {
-                        input_manager.update(event.physical_key, event.state);
+                        input_manager.set_key_state(event.physical_key, event.state);
 
                         if input_manager.get_key_state("h").just_pressed() {
                             game_renderer.enable_help_text();

@@ -19,10 +19,13 @@ pub struct KbSpriteRenderGroup {
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub tex_bind_group: wgpu::BindGroup,
+    pub texture_index: u32,
 }
 
 impl KbSpriteRenderGroup {
     pub async fn new(
+        texture_file: String,
+        texture_index: u32,
         device_resources: &KbDeviceResources<'_>,
         asset_manager: &mut KbAssetManager,
         game_config: &KbConfig,
@@ -63,16 +66,9 @@ impl KbSpriteRenderGroup {
                 ],
                 label: Some("kbSpritePipeline: texture_bind_group_layout"),
             });
-
-        #[cfg(feature = "wasm_include_key")]
-        let sprite_tex_handle = asset_manager
-            .load_texture("/game_assets/textures/atlas.png", &device_resources)
-            .await;
-
-        #[cfg(not(feature = "wasm_include_key"))]
         let sprite_tex_handle = asset_manager
             .load_texture(
-                "/engine_assets/textures/sprite_sheet.png",
+                &texture_file,
                 &device_resources,
             )
             .await;
@@ -284,6 +280,7 @@ impl KbSpriteRenderGroup {
             uniform_buffer,
             uniform_bind_group,
             tex_bind_group,
+            texture_index,
         }
     }
 
@@ -315,6 +312,10 @@ impl KbSpriteRenderGroup {
 
         for game_object in game_objects {
             PERF_SCOPE!("Creating instances");
+            if game_object.texture_index != self.texture_index {
+                continue;
+            }
+
             let game_object_position = game_object.position + extra_offset;
             let sprite_index = game_object.sprite_index + game_object.anim_frame;
             let mut u_offset = ((sprite_index % 8) as f32) * u_scale;
@@ -345,6 +346,11 @@ impl KbSpriteRenderGroup {
             };
             frame_instances.push(new_instance);
         }
+
+        if frame_instances.is_empty() {
+            return;
+        }
+
         device_resources.queue.write_buffer(
             &self.instance_buffer,
             0,
