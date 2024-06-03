@@ -42,6 +42,7 @@ web-sys = { version = "0.3.69", features = [
     "Window",
     "Element",
     "Location",
+    "HtmlInputElement",
 ]}
 
 [features]
