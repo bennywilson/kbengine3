@@ -162,7 +162,7 @@ where
                     WindowEvent::MouseWheel { delta, .. } => {
                         match delta {
                             MouseScrollDelta::PixelDelta(pos) => {
-                                input_manager.update_mouse_scroll(pos.y as f32);
+                                input_manager.update_mouse_scroll(pos.y as f32 / 150.0);
                             }
                             _ => {}
                         }
