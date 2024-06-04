@@ -246,7 +246,7 @@ impl KbTexture {
     }
 
     pub fn from_rgba(
-        rgba: &Vec<u8>,
+        rgba: &[u8],
         is_rgba: bool,
         width: u32,
         height: u32,

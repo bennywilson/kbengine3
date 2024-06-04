@@ -15,10 +15,7 @@ pub enum KbButtonState {
 
 impl KbButtonState {
     pub fn is_down(&self) -> bool {
-        match *self {
-            KbButtonState::Down{..} => { true }
-            _ => { false }
-        }
+        matches!(*self, KbButtonState::Down{..})
     }
 
     pub fn just_pressed(&self) -> bool {
@@ -158,7 +155,7 @@ impl KbInputManager {
         } else {
             self.key_map.insert(key_name, KbButtonState::JustPressed);
         }
-        return true;
+        true
     }
 
     pub fn update_key_states(&mut self) {

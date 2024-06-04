@@ -212,7 +212,7 @@ impl<'a> KbRenderer<'a> {
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Text"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: view,
+                view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -284,7 +284,7 @@ impl<'a> KbRenderer<'a> {
         device_resources.brush.draw(&mut render_pass);
 
         // Frame rate update
-        self.frame_count = self.frame_count + 1;
+        self.frame_count += 1;
         if self.frame_count > 16 {
             let elapsed_time = self.frame_timer.elapsed().as_secs_f32();
             let avg_frame_time = elapsed_time / (self.frame_count as f32);
@@ -332,7 +332,7 @@ impl<'a> KbRenderer<'a> {
                 &mut self.device_resources,
                 &mut self.asset_manager,
                 &self.game_camera,
-                &mut self.actor_map,
+                &self.actor_map,
                 game_config,
             );
         }
@@ -344,11 +344,11 @@ impl<'a> KbRenderer<'a> {
                 &mut self.device_resources,
                 &mut self.asset_manager,
                 &self.game_camera,
-                &mut self.actor_map,
+                &self.actor_map,
                 game_config,
             );
         }
-        if self.actor_map.len() > 0 {
+        if !self.actor_map.is_empty() {
             PERF_SCOPE!("World Custom");
             for i in 0..self.custom_world_render_groups.len() {
                 let render_group = &mut self.custom_world_render_groups[i];
@@ -358,7 +358,7 @@ impl<'a> KbRenderer<'a> {
                     &mut self.device_resources,
                     &mut self.asset_manager,
                     &self.game_camera,
-                    &mut self.actor_map,
+                    &self.actor_map,
                     game_config,
                 );
             }
@@ -370,12 +370,12 @@ impl<'a> KbRenderer<'a> {
                 &mut self.device_resources,
                 &mut self.asset_manager,
                 &self.game_camera,
-                &mut self.debug_lines,
+                &self.debug_lines,
                 game_config,
             );
         }
 
-        if self.particle_map.len() > 0 {
+        if !self.particle_map.is_empty() {
             PERF_SCOPE!("World Transparent");
             self.model_render_group.render_particles(
                 KbParticleBlendMode::AlphaBlend,
@@ -401,7 +401,7 @@ impl<'a> KbRenderer<'a> {
             );
         }
 
-        if self.actor_map.len() > 0 {
+        if !self.actor_map.is_empty() {
             PERF_SCOPE!("Foreground Opaque");
             self.model_render_group.render(
                 &KbRenderGroupType::Foreground,
@@ -409,7 +409,7 @@ impl<'a> KbRenderer<'a> {
                 &mut self.device_resources,
                 &mut self.asset_manager,
                 &self.game_camera,
-                &mut self.actor_map,
+                &self.actor_map,
                 game_config,
             );
             {
@@ -422,7 +422,7 @@ impl<'a> KbRenderer<'a> {
                         &mut self.device_resources,
                         &mut self.asset_manager,
                         &self.game_camera,
-                        &mut self.actor_map,
+                        &self.actor_map,
                         game_config,
                     );
                 }
@@ -432,7 +432,7 @@ impl<'a> KbRenderer<'a> {
         let (game_render_objs, skybox_render_objs, cloud_render_objs) =
             self.get_sorted_render_objects(game_objects);
 
-        if skybox_render_objs.len() > 0 {
+        if !skybox_render_objs.is_empty() {
             PERF_SCOPE!("Sprite Pass Sky");
 
             self.default_sprite_render_group.render(
@@ -454,7 +454,7 @@ impl<'a> KbRenderer<'a> {
             );
         }
 
-        if game_render_objs.len() > 0 {
+        if !game_render_objs.is_empty() {
             PERF_SCOPE!("2D Game Objects");
 
             self.default_sprite_render_group.render(
@@ -490,7 +490,7 @@ impl<'a> KbRenderer<'a> {
                 &mut command_encoder,
                 &final_view,
                 game_objects.len() as u32,
-                &game_config,
+                game_config,
             );
             self.submit_encoder(command_encoder);
         }
@@ -509,7 +509,7 @@ impl<'a> KbRenderer<'a> {
             game_config.window_height
         );
 
-        self.device_resources.resize(&game_config);
+        self.device_resources.resize(game_config);
         self.postprocess_render_group.resize(&mut self.device_resources, &self.asset_manager);
     }
 
@@ -539,9 +539,9 @@ impl<'a> KbRenderer<'a> {
             }
         };
         let mut particle = KbParticleActor::new(
-            &transform,
+            transform,
             &self.next_particle_id,
-            &particle_params,
+            particle_params,
             &self.device_resources,
             &mut self.asset_manager,
         )
@@ -565,21 +565,17 @@ impl<'a> KbRenderer<'a> {
         scale: &Option<CgVec3>,
     ) {
         let particle = self.particle_map.get_mut(handle).unwrap();
-        particle.set_position(&position);
+        particle.set_position(position);
 
-        match scale {
-            Some(s) => {
-                particle.set_scale(s);
-            }
-            _ => {}
+        if let Some(s) = scale {
+            particle.set_scale(s);
         }
     }
     pub async fn load_model(&mut self, file_path: &str, use_holes: bool) -> KbModelHandle {
-        let model_handle = self
+        self
             .asset_manager
             .load_model(file_path, &mut self.device_resources, use_holes)
-            .await;
-        model_handle
+            .await
     }
 
     pub fn set_camera(&mut self, camera: &KbCamera) {

@@ -30,37 +30,22 @@ pub struct KbConfig {
 
 impl KbConfig {
     pub fn new(config_file_text: &str) -> Self {
-        let mut json_file = json::parse(&config_file_text).unwrap();
+        let mut json_file = json::parse(config_file_text).unwrap();
 
         let json_val = json_file["enemy_spawn_delay"].as_f32();
-        let enemy_spawn_delay = match json_val {
-            Some(val) => val,
-            None => 1.0,
-        };
+        let enemy_spawn_delay = json_val.unwrap_or(1.0);
 
         let json_val = json_file["enemy_move_speed"].as_f32();
-        let enemy_move_speed = match json_val {
-            Some(val) => val,
-            None => 0.01,
-        };
+        let enemy_move_speed = json_val.unwrap_or(0.01);
 
         let json_val = json_file["max_instances"].as_u32();
-        let max_render_instances = match json_val {
-            Some(val) => val,
-            None => 10000,
-        };
+        let max_render_instances = json_val.unwrap_or(10000);
 
         let json_val = json_file["window_width"].as_u32();
-        let window_width = match json_val {
-            Some(val) => val,
-            None => 1280,
-        };
+        let window_width: u32 = json_val.unwrap_or(1280);
 
         let json_val = json_file["window_height"].as_u32();
-        let window_height = match json_val {
-            Some(val) => val,
-            None => 720,
-        };
+        let window_height: u32 = json_val.unwrap_or(720);
 
         let graphics_backend = {
             #[cfg(target_arch = "wasm32")]
@@ -95,15 +80,9 @@ impl KbConfig {
         };
 
         let json_val = json_file["vsync"].as_bool();
-        let vsync = match json_val {
-            Some(val) => val,
-            None => true,
-        };
+        let vsync = json_val.unwrap_or(true);
 
-        let sunbeams_enabled = match json_file["sunbeams"].as_bool() {
-            Some(val) => val,
-            None => false,
-        };
+        let sunbeams_enabled = json_file["sunbeams"].as_bool().unwrap_or(false);
 
         let sun_beam_pos_scale = {
             if json_file["sun_beam_pos_scale"].is_array() {
@@ -118,10 +97,7 @@ impl KbConfig {
         };
 
         let json_val = json_file["bullet_holes"].as_bool();
-        let bullet_holes = match json_val {
-            Some(val) => val,
-            None => false,
-        };
+        let bullet_holes = json_val.unwrap_or_default();
 
         KbConfig {
             enemy_spawn_delay,

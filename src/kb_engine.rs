@@ -13,9 +13,9 @@ pub trait KbGameEngine {
     );
 
     // Do not override tick_frame().  Put custom code in tick_frame_internal()
-    fn tick_frame<'a>(
+    fn tick_frame(
         &mut self,
-        renderer: &'a mut KbRenderer<'_>,
+        renderer: &mut KbRenderer<'_>,
         input_manager: &mut KbInputManager,
         game_config: &mut KbConfig,
     ) {
@@ -24,9 +24,9 @@ pub trait KbGameEngine {
         input_manager.update_key_states();
     }
 
-    fn tick_frame_internal<'a>(
+    fn tick_frame_internal(
         &mut self,
-        renderer: &'a mut KbRenderer<'_>,
+        renderer: &mut KbRenderer<'_>,
         input_manager: &KbInputManager,
         game_config: &KbConfig,
     );

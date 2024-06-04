@@ -157,13 +157,13 @@ impl KbSpriteRenderGroup {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,

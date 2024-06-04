@@ -19,9 +19,9 @@ pub fn kb_random_f32(min_val: f32, max_val: f32) -> f32 {
     let mut buf: [u8; 4] = [0, 0, 0, 0];
     let _ = getrandom::getrandom(&mut buf);
     let mut t = buf[0] as u32;
-    t = t + (buf[1] as u32) << 8;
-    t = t + (buf[2] as u32) << 16;
-    t = t + (buf[3] as u32) << 24;
+    t += (buf[1] as u32) << 8;
+    t += (buf[2] as u32) << 16;
+    t += (buf[3] as u32) << 24;
     let t = t as f32 / u32::MAX as f32;
     min_val + (max_val - min_val) * t
 }
