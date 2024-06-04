@@ -100,7 +100,7 @@ impl KbModel {
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("KbModel::instance_buffer"),
             mapped_at_creation: false,
-            size: (size_of::<KbModelDrawInstance>() * MAX_PARTICLE_INSTANCES as usize) as u64,
+            size: (size_of::<KbModelDrawInstance>() * MAX_PARTICLE_INSTANCES) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -139,7 +139,7 @@ impl KbModel {
 
         let mut textures = Vec::<KbTextureHandle>::new();
         let texture_handle = asset_manager
-            .load_texture(texture_file_path, &device_resources)
+            .load_texture(texture_file_path, device_resources)
             .await;
         textures.push(texture_handle);
         let texture = asset_manager.get_texture(&textures[0]);
@@ -243,16 +243,15 @@ impl KbModel {
                     view: _,
                     mime_type: _,
                 } => {}
-                gltf::image::Source::Uri { uri, mime_type: _ } => match std::env::current_dir() {
-                    Ok(dir) => {
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    if let Ok(dir) = std::env::current_dir() {
                         let file_path = format!("{}\\game_assets\\{}", dir.display(), uri);
                         let texture_handle = asset_manager
-                            .load_texture(&file_path, &device_resources)
+                            .load_texture(&file_path, device_resources)
                             .await;
                         textures.push(texture_handle);
                     }
-                    _ => {}
-                },
+                }
             }
         }
 
@@ -301,7 +300,7 @@ impl KbModel {
                         color: [1.0, 1.0, 1.0, 1.0],
                     };
                     vertices.push(vertex);
-                    i = i + 1;
+                    i += 1;
                 }
             }
         }
@@ -316,7 +315,7 @@ impl KbModel {
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&indices.as_slice()),
+            contents: bytemuck::cast_slice(indices.as_slice()),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -355,19 +354,22 @@ impl KbModel {
 
         let mut empty_texture = None;
         let texture = {
-            if textures.len() > 0 {
+            if !textures.is_empty() {
                 asset_manager.get_texture(&textures[0])
             } else {
                 let image = &gltf_images[0];
                 //   image.
-                empty_texture = Some(KbTexture::from_rgba(
-                    &gltf_images[0].pixels,
-                    image.format == gltf::image::Format::R8G8B8A8,
-                    image.width,
-                    image.height,
-                    &device_resources,
-                    Some("gltf tex"),
-                ).unwrap());
+                empty_texture = Some(
+                    KbTexture::from_rgba(
+                        &gltf_images[0].pixels,
+                        image.format == gltf::image::Format::R8G8B8A8,
+                        image.width,
+                        image.height,
+                        device_resources,
+                        Some("gltf tex"),
+                    )
+                    .unwrap(),
+                );
                 empty_texture.as_ref().unwrap()
             }
         };
@@ -378,7 +380,7 @@ impl KbModel {
         let mut hole_texture = None; //
         let mut tex_2_bind = wgpu::BindingResource::TextureView(&texture.view);
         if use_holes {
-            hole_texture = Some(KbTexture::new_render_texture(&device, &surface_config).unwrap());
+            hole_texture = Some(KbTexture::new_render_texture(device, &surface_config).unwrap());
             tex_2_bind = wgpu::BindingResource::TextureView(&hole_texture.as_ref().unwrap().view);
         }
         let tex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -445,7 +447,7 @@ impl KbModel {
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             mapped_at_creation: false,
-            size: (size_of::<KbModelDrawInstance>() * MAX_UNIFORMS as usize) as u64,
+            size: (size_of::<KbModelDrawInstance>() * MAX_UNIFORMS) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -466,14 +468,14 @@ impl KbModel {
 
     pub fn alloc_uniform_buffer(&mut self) -> &mut wgpu::Buffer {
         if self.next_uniform_buffer > 80 {
-            self.next_uniform_buffer = self.next_uniform_buffer - 1;
+            self.next_uniform_buffer -= 1;
             for _ in 0..32 {
                 log!("Wear the AP don't slam my door!");
             }
         }
 
         let ret_val = &mut self.uniform_buffers[self.next_uniform_buffer];
-        self.next_uniform_buffer = self.next_uniform_buffer + 1;
+        self.next_uniform_buffer += 1;
         ret_val
     }
 
@@ -589,7 +591,7 @@ impl KbModelRenderGroup {
             });
 
         let shader_handle = asset_manager
-            .load_shader(shader_path, &device_resources)
+            .load_shader(shader_path, device_resources)
             .await;
         let model_shader = asset_manager.get_shader(&shader_handle);
         let blend = Some(match blend_mode {
@@ -626,13 +628,13 @@ impl KbModelRenderGroup {
             label: Some("KbModelRenderGroup_opaque_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -666,20 +668,20 @@ impl KbModelRenderGroup {
         });
 
         let particle_shader_handle = asset_manager
-            .load_shader("/engine_assets/shaders/particle.wgsl", &device_resources)
+            .load_shader("/engine_assets/shaders/particle.wgsl", device_resources)
             .await;
         let particle_shader = asset_manager.get_shader(&particle_shader_handle);
         let alpha_blend_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbModelRenderGroup::alpha_blend_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &particle_shader,
+                module: particle_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbModelDrawInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &particle_shader,
+                module: particle_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -725,13 +727,13 @@ impl KbModelRenderGroup {
             label: Some("KbModelRenderGroup_additive_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &particle_shader,
+                module: particle_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbModelDrawInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &particle_shader,
+                module: particle_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -775,6 +777,7 @@ impl KbModelRenderGroup {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         render_group: &KbRenderGroupType,
@@ -904,7 +907,7 @@ impl KbModelRenderGroup {
             let model_handle = actor.get_model();
             let model = asset_manager.get_model(&model_handle).unwrap();
 
-            if models_to_render.contains(&model_handle) == false {
+            if !models_to_render.contains(&model_handle) {
                 models_to_render.push(model_handle);
             }
 
@@ -952,7 +955,7 @@ impl KbModelRenderGroup {
                 0.0,
             ];
             device_resources.queue.write_buffer(
-                &uniform_buffer,
+                uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[uniform_data]),
             );
@@ -961,7 +964,7 @@ impl KbModelRenderGroup {
         // Render KbModels now that uniforms are set
         let model_mappings = asset_manager.get_model_mappings();
         for model_handle in &mut models_to_render {
-            let model = &model_mappings[&model_handle];
+            let model = &model_mappings[model_handle];
             render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
             render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -979,7 +982,7 @@ impl KbModelRenderGroup {
             .submit(std::iter::once(command_encoder.finish()));
 
         for model_handle in &mut models_to_render {
-            let model = &mut model_mappings.get_mut(&model_handle).unwrap();
+            let model = &mut model_mappings.get_mut(model_handle).unwrap();
             model.free_uniform_buffers();
         }
     }
@@ -1048,7 +1051,7 @@ impl KbModelRenderGroup {
                 continue;
             }
 
-            if particle_actor.is_active() == false {
+            if !particle_actor.is_active() {
                 continue;
             }
 
@@ -1081,14 +1084,14 @@ impl KbModelRenderGroup {
             uniform.custom_data_1 = [0.0, 0.0, 0.0, 0.0];
             uniform.model_color = [1.0, 1.0, 1.0, 1.0];
             device_resources.queue.write_buffer(
-                &uniform_buffer,
+                uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[uniform]),
             );
 
             // Instances
             let particles = &particle_val.1.particles;
-            if particles.len() == 0 {
+            if particles.is_empty() {
                 continue;
             }
             let mut particle_instances = Vec::<KbModelDrawInstance>::new();

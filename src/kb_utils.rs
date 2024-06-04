@@ -30,9 +30,9 @@ pub fn kb_random_u32(min_val: u32, max_val: u32) -> u32 {
     let mut buf: [u8; 4] = [0, 0, 0, 0];
     let _ = getrandom::getrandom(&mut buf);
     let mut t = buf[0] as u32;
-    t = t + ((buf[1] as u32) << 8);
-    t = t + ((buf[2] as u32) << 16);
-    t = t + ((buf[3] as u32) << 24);
+    t += (buf[1] as u32) << 8;
+    t += (buf[2] as u32) << 16;
+    t += (buf[3] as u32) << 24;
     let dif = (max_val - min_val) + 1;
     min_val + (t % dif)
 }
@@ -69,7 +69,7 @@ macro_rules! PERF_SCOPE {
 #[macro_export]
 macro_rules! make_kb_handle {
     ($asset_type:ident, $handle_type:ident, $mapping_type:ident) => {
-        #[derive(Debug, Clone, Copy, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub struct $handle_type {
             index: u32,
         }
@@ -83,18 +83,18 @@ macro_rules! make_kb_handle {
                 $handle_type { index: u32::MAX }
             }
         }
-        impl PartialEq for $handle_type {
-            fn eq(&self, other: &Self) -> bool {
-                self.index == other.index
-            }
-        }
-        impl Eq for $handle_type {}
 
         #[allow(dead_code)]
         pub struct $mapping_type {
             names_to_handles: HashMap<String, $handle_type>,
             handles_to_assets: HashMap<$handle_type, $asset_type>,
             next_handle: $handle_type,
+        }
+
+        impl Default for $mapping_type {
+            fn default() -> Self {
+                Self::new()
+            }
         }
 
         impl $mapping_type {
@@ -148,6 +148,5 @@ pub fn cgvec3_remove_y(vec: CgVec3) -> CgVec2 {
 }
 
 pub fn kb_lerp(op1: f32, op2: f32, time: f32) -> f32 {
-    let val = (op2 - op1) * time + op1;
-    val
+    (op2 - op1) * time + op1
 }

@@ -41,20 +41,12 @@ impl KbActorTransform {
     }
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct KbParticleHandle {
     pub index: u32,
 }
-impl PartialEq for KbParticleHandle {
-    fn eq(&self, other: &Self) -> bool {
-        self.index == other.index
-    }
-}
-impl Eq for KbParticleHandle {}
 
-pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle {
-    index: u32::max_value(),
-};
+pub const INVALID_PARTICLE_HANDLE: KbParticleHandle = KbParticleHandle { index: u32::MAX };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KbParticleBlendMode {
@@ -143,11 +135,10 @@ impl KbParticleActor {
         particle_handle: &KbParticleHandle,
         params: &KbParticleParams,
         device_resources: &KbDeviceResources<'_>,
-        mut asset_manager: &mut KbAssetManager,
+        asset_manager: &mut KbAssetManager,
     ) -> Self {
         let model =
-            KbModel::new_particle(&params.texture_file, &device_resources, &mut asset_manager)
-                .await;
+            KbModel::new_particle(&params.texture_file, device_resources, asset_manager).await;
         let spawn_rate = kb_random_f32(params.min_start_spawn_rate, params.max_start_spawn_rate);
         let params = (*params).clone();
         let start_time = instant::Instant::now();
@@ -156,9 +147,9 @@ impl KbParticleActor {
         let transform = (*transform).clone();
 
         KbParticleActor {
-            params: params,
+            params,
             model,
-            transform: transform,
+            transform,
             spawn_rate,
             start_time,
             next_spawn_time,
@@ -215,10 +206,10 @@ impl KbParticleActor {
                 false
             } else {
                 let t = ((elapsed_time - particle.start_time) / particle.life_time).clamp(0.0, 1.0);
-                particle.velocity = particle.velocity + particle.acceleration * delta_time;
-                particle.position = particle.position + particle.velocity * delta_time;
+                particle.velocity += particle.acceleration * delta_time;
+                particle.position += particle.velocity * delta_time;
 
-                particle.rotation = particle.rotation + particle.rotation_rate * delta_time;
+                particle.rotation += particle.rotation_rate * delta_time;
                 particle.scale =
                     particle.start_scale + (particle.end_scale - particle.start_scale) * t;
                 particle.color = self.params.start_color_0
@@ -233,7 +224,7 @@ impl KbParticleActor {
     }
 
     pub fn set_position(&mut self, position: &CgVec3) {
-        self.transform.position = position.clone();
+        self.transform.position = *position;
     }
 
     pub fn get_position(&self) -> CgVec3 {
@@ -241,7 +232,7 @@ impl KbParticleActor {
     }
 
     pub fn set_scale(&mut self, scale: &CgVec3) {
-        self.transform.scale = scale.clone();
+        self.transform.scale = *scale;
     }
 
     pub fn get_scale(&self) -> CgVec3 {
@@ -249,7 +240,7 @@ impl KbParticleActor {
     }
 
     pub fn set_rotation(&mut self, rotation: &CgQuat) {
-        self.transform.rotation = rotation.clone();
+        self.transform.rotation = *rotation;
     }
 
     pub fn get_rotation(&self) -> CgQuat {
@@ -318,13 +309,19 @@ pub struct KbActor {
     model_handle: KbModelHandle,
 }
 
+impl Default for KbActor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KbActor {
     pub fn new() -> Self {
         unsafe {
-            NEXT_ACTOR_ID = NEXT_ACTOR_ID + 1;
+            NEXT_ACTOR_ID += 1;
             KbActor {
                 id: NEXT_ACTOR_ID,
-                position: CG_VEC3_ZERO.into(),
+                position: CG_VEC3_ZERO,
                 rotation: (0.0, 0.0, 0.0, 1.0).into(),
                 scale: CG_VEC3_ONE,
                 color: CG_VEC4_ONE,
@@ -337,7 +334,7 @@ impl KbActor {
     }
 
     pub fn set_position(&mut self, position: &CgVec3) {
-        self.position = position.clone();
+        self.position = *position;
     }
 
     pub fn get_position(&self) -> CgVec3 {
@@ -345,7 +342,7 @@ impl KbActor {
     }
 
     pub fn set_rotation(&mut self, rotation: &CgQuat) {
-        self.rotation = rotation.clone();
+        self.rotation = *rotation;
     }
 
     pub fn get_rotation(&self) -> CgQuat {
@@ -353,7 +350,7 @@ impl KbActor {
     }
 
     pub fn set_scale(&mut self, scale: &CgVec3) {
-        self.scale = scale.clone();
+        self.scale = *scale;
     }
 
     pub fn get_scale(&self) -> CgVec3 {
@@ -361,11 +358,11 @@ impl KbActor {
     }
 
     pub fn set_model(&mut self, new_model: &KbModelHandle) {
-        self.model_handle = new_model.clone();
+        self.model_handle = *new_model;
     }
 
     pub fn get_model(&self) -> KbModelHandle {
-        self.model_handle.clone()
+        self.model_handle
     }
 
     pub fn set_render_group(
@@ -374,14 +371,12 @@ impl KbActor {
         custom_render_group_handle: &Option<usize>,
     ) {
         self.render_group = new_render_group.clone();
-        self.custom_render_group_handle = custom_render_group_handle.clone();
+        self.custom_render_group_handle
+            .clone_from(custom_render_group_handle);
     }
 
     pub fn get_render_group(&self) -> (KbRenderGroupType, Option<usize>) {
-        (
-            self.render_group.clone(),
-            self.custom_render_group_handle.clone(),
-        )
+        (self.render_group.clone(), self.custom_render_group_handle)
     }
 
     pub fn set_color(&mut self, color: CgVec4) {
@@ -389,7 +384,7 @@ impl KbActor {
     }
 
     pub fn get_color(&self) -> CgVec4 {
-        self.color.clone()
+        self.color
     }
 
     pub fn set_custom_data_1(&mut self, custom_data: CgVec4) {
@@ -397,7 +392,7 @@ impl KbActor {
     }
 
     pub fn get_custom_data_1(&self) -> CgVec4 {
-        self.custom_data_1.clone()
+        self.custom_data_1
     }
 }
 
@@ -405,6 +400,12 @@ impl KbActor {
 pub struct KbCamera {
     position: CgVec3,
     rotation: CgVec3,
+}
+
+impl Default for KbCamera {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KbCamera {
@@ -421,19 +422,19 @@ impl KbCamera {
     }*/
 
     pub fn set_position(&mut self, new_pos: &CgVec3) {
-        self.position = new_pos.clone();
+        self.position = *new_pos;
     }
 
     pub fn get_position(&self) -> CgVec3 {
-        self.position.clone()
+        self.position
     }
 
     pub fn set_rotation(&mut self, new_rot: &CgVec3) {
-        self.rotation = new_rot.clone();
+        self.rotation = *new_rot;
     }
 
     pub fn get_rotation(&self) -> CgVec3 {
-        self.rotation.clone()
+        self.rotation
     }
     /*
     pub fn set_rotation(&mut self, new_rot: &CgQuat) {
@@ -539,7 +540,7 @@ impl GameObject {
     }
 
     fn update_movement(&mut self, delta_time: f32) {
-        self.position = self.position + self.velocity * delta_time;
+        self.position += self.velocity * delta_time;
 
         // Apply Gravity
         if f32::abs(self.gravity_scale) > 0.001 {
@@ -579,10 +580,8 @@ impl GameObject {
                     if self.position.x > 2.1 {
                         self.position.x = -2.1;
                     }
-                } else {
-                    if self.position.x < -2.1 {
-                        self.position.x = 2.1;
-                    }
+                } else if self.position.x < -2.1 {
+                    self.position.x = 2.1;
                 }
             }
 
@@ -591,19 +590,13 @@ impl GameObject {
                     if self.position.x > 1.9 {
                         self.velocity.x *= -1.0;
                     }
-                } else {
-                    if self.position.x < -1.9 {
-                        self.velocity.x *= -1.0;
-                    }
+                } else if self.position.x < -1.9 {
+                    self.velocity.x *= -1.0;
                 }
             }
 
             GameObjectType::Character => {
-                if self.position.x > 1.9 {
-                    self.position.x = 1.9;
-                } else if self.position.x < -1.9 {
-                    self.position.x = -1.9;
-                }
+                self.position.x = self.position.x.clamp(-1.9, 1.9);
             }
             _ => (),
         }
@@ -616,22 +609,18 @@ impl GameObject {
     pub fn set_velocity(&mut self, move_vec: CgVec3) {
         self.velocity.x = move_vec.x;
 
-        if matches!(self.object_type, GameObjectType::Character) == false {
+        if !matches!(self.object_type, GameObjectType::Character) {
             return;
         }
 
         let is_jumping = matches!(self.object_state, GameObjectState::Jumping);
-        if f32::abs(move_vec.x) < 0.0001 {
-            if !is_jumping {
-                self.set_state(GameObjectState::Idle);
-            }
-        } else if matches!(self.object_state, GameObjectState::Running) == false {
-            if !is_jumping {
-                self.set_state(GameObjectState::Running);
-            }
+        if f32::abs(move_vec.x) < 0.0001 && !is_jumping {
+            self.set_state(GameObjectState::Idle);
+        } else if !matches!(self.object_state, GameObjectState::Running) && !is_jumping {
+            self.set_state(GameObjectState::Running);
         }
 
-        if move_vec.y > 0.0 && matches!(self.object_state, GameObjectState::Jumping) == false {
+        if move_vec.y > 0.0 && !matches!(self.object_state, GameObjectState::Jumping) {
             self.velocity.y = 2.1;
             self.set_state(GameObjectState::Jumping);
         }
@@ -644,6 +633,6 @@ impl GameObject {
         }
 
         self.next_attack_time = cur_time + 0.1;
-        return true;
+        true
     }
 }

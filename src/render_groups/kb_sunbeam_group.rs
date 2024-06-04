@@ -51,6 +51,7 @@ pub struct KbSunbeamRenderGroup {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
+    flare_tex_handle: KbTextureHandle,
 }
 
 impl KbSunbeamRenderGroup {
@@ -63,10 +64,7 @@ impl KbSunbeamRenderGroup {
 
         // Post Process Pipeline
         let mask_shader_handle = asset_manager
-            .load_shader(
-                "/engine_assets/shaders/sunbeam_mask.wgsl",
-                &device_resources,
-            )
+            .load_shader("/engine_assets/shaders/sunbeam_mask.wgsl", device_resources)
             .await;
         let mask_shader = asset_manager.get_shader(&mask_shader_handle);
 
@@ -112,13 +110,13 @@ impl KbSunbeamRenderGroup {
             label: Some("pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &mask_shader,
+                module: mask_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &mask_shader,
+                module: mask_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -186,7 +184,7 @@ impl KbSunbeamRenderGroup {
             });
 
         let flare_tex_handle = asset_manager
-            .load_texture("/engine_assets/textures/lens_flare.png", &device_resources)
+            .load_texture("/engine_assets/textures/lens_flare.png", device_resources)
             .await;
         let flare_tex = asset_manager.get_texture(&flare_tex_handle);
         let tex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -227,23 +225,20 @@ impl KbSunbeamRenderGroup {
         };
 
         let draw_shader_handle = asset_manager
-            .load_shader(
-                "/engine_assets/shaders/sunbeam_draw.wgsl",
-                &device_resources,
-            )
+            .load_shader("/engine_assets/shaders/sunbeam_draw.wgsl", device_resources)
             .await;
         let draw_shader = asset_manager.get_shader(&draw_shader_handle);
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &draw_shader,
+                module: draw_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbSunbeamInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &draw_shader,
+                module: draw_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -291,7 +286,7 @@ impl KbSunbeamRenderGroup {
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             mapped_at_creation: false,
-            size: (size_of::<KbSunbeamInstance>() * 50 as usize) as u64,
+            size: (size_of::<KbSunbeamInstance>() * 50_usize) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -305,6 +300,7 @@ impl KbSunbeamRenderGroup {
             vertex_buffer,
             index_buffer,
             instance_buffer,
+            flare_tex_handle,
         }
     }
 
@@ -496,4 +492,68 @@ impl KbSunbeamRenderGroup {
             .queue
             .submit(std::iter::once(command_encoder.finish()));
     }
+
+    pub fn resize(
+        &mut self,
+        device_resources: &mut KbDeviceResources,
+        asset_manager: &KbAssetManager,
+    ) {
+        let flare_tex = asset_manager.get_texture(&self.flare_tex_handle);
+        let texture_bind_group_layout =
+            device_resources.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("KbModel_texture_bind_group_layout"),
+            });
+
+        self.tex_bind_group = device_resources.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &device_resources.render_textures[2].view,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(
+                        &device_resources.render_textures[2].sampler,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&flare_tex.view),
+                },
+            ],
+            label: Some("KbSunbeamRenderGroup::tex_bind_group"),
+        });
+    }
+
 }

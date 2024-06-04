@@ -83,7 +83,6 @@ impl KbConfig {
         let vsync = json_val.unwrap_or(true);
 
         let sunbeams_enabled = json_file["sunbeams"].as_bool().unwrap_or(false);
-
         let sun_beam_pos_scale = {
             if json_file["sun_beam_pos_scale"].is_array() {
                 let x = json_file["sun_beam_pos_scale"].pop().as_f32().unwrap();

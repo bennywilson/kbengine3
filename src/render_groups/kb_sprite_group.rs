@@ -67,16 +67,13 @@ impl KbSpriteRenderGroup {
                 label: Some("kbSpritePipeline: texture_bind_group_layout"),
             });
         let sprite_tex_handle = asset_manager
-            .load_texture(
-                &texture_file,
-                &device_resources,
-            )
+            .load_texture(&texture_file, device_resources)
             .await;
 
         let postprocess_tex_handle = asset_manager
             .load_texture(
                 "/engine_assets/textures/postprocess_filter.png",
-                &device_resources,
+                device_resources,
             )
             .await;
 
@@ -102,10 +99,7 @@ impl KbSpriteRenderGroup {
         });
 
         let shader_handle = asset_manager
-            .load_shader(
-                "/engine_assets/shaders/basic_sprite.wgsl",
-                &device_resources,
-            )
+            .load_shader("/engine_assets/shaders/basic_sprite.wgsl", device_resources)
             .await;
         let shader = asset_manager.get_shader(&shader_handle);
 
@@ -197,10 +191,7 @@ impl KbSpriteRenderGroup {
         });
 
         let transparent_shader_handle = asset_manager
-            .load_shader(
-                "/engine_assets/shaders/cloud_sprite.wgsl",
-                &device_resources,
-            )
+            .load_shader("/engine_assets/shaders/cloud_sprite.wgsl", device_resources)
             .await;
         let transparent_shader = asset_manager.get_shader(&transparent_shader_handle);
 
@@ -208,13 +199,13 @@ impl KbSpriteRenderGroup {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &transparent_shader,
+                module: transparent_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc(), KbSpriteDrawInstance::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &transparent_shader,
+                module: transparent_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -291,7 +282,7 @@ impl KbSpriteRenderGroup {
         game_config: &KbConfig,
         game_objects: &Vec<GameObject>,
     ) {
-        if game_objects.len() == 0 {
+        if game_objects.is_empty() {
             return;
         }
 
@@ -326,7 +317,7 @@ impl KbSpriteRenderGroup {
                 -1.0
             };
             if mul < 0.0 {
-                u_offset = u_offset + u_scale;
+                u_offset += u_scale;
             }
 
             let new_instance = KbSpriteDrawInstance {

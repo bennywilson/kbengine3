@@ -95,20 +95,20 @@ impl KbLineRenderGroup {
             });
 
         let shader_handle = asset_manager
-            .load_shader(shader_path, &device_resources)
+            .load_shader(shader_path, device_resources)
             .await;
         let model_shader = asset_manager.get_shader(&shader_handle);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("KbLineRenderGroup_opaque_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -216,9 +216,9 @@ impl KbLineRenderGroup {
             (game_config.window_height as f32) / (game_config.window_width as f32),
             0.0,
         ];
-        uniform_data.model_color = [1.0, 0.1, 1.0, 1.0].into();
+        uniform_data.model_color = [1.0, 0.1, 1.0, 1.0];
         device_resources.queue.write_buffer(
-            &uniform_buffer,
+            uniform_buffer,
             0,
             bytemuck::cast_slice(&[uniform_data]),
         );
@@ -236,27 +236,27 @@ impl KbLineRenderGroup {
             let end_2 = line.end - up_vec;
 
             let vertex_1 = KbVertex {
-                position: [start_1.x, start_1.y, start_1.z].into(),
-                tex_coords: [0.0, 0.0].into(),
-                normal: [0.0, 1.0, 0.0].into(),
+                position: [start_1.x, start_1.y, start_1.z],
+                tex_coords: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
                 color: line.color.into(),
             };
             let vertex_2 = KbVertex {
-                position: [start_2.x, start_2.y, start_2.z].into(),
-                tex_coords: [0.0, 0.0].into(),
-                normal: [0.0, 1.0, 0.0].into(),
+                position: [start_2.x, start_2.y, start_2.z],
+                tex_coords: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
                 color: line.color.into(),
             };
             let vertex_3 = KbVertex {
-                position: [end_2.x, end_2.y, end_2.z].into(),
-                tex_coords: [0.0, 0.0].into(),
-                normal: [0.0, 1.0, 0.0].into(),
+                position: [end_2.x, end_2.y, end_2.z],
+                tex_coords: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
                 color: line.color.into(),
             };
             let vertex_4 = KbVertex {
-                position: [end_1.x, end_1.y, end_1.z].into(),
-                tex_coords: [0.0, 0.0].into(),
-                normal: [0.0, 1.0, 0.0].into(),
+                position: [end_1.x, end_1.y, end_1.z],
+                tex_coords: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
                 color: line.color.into(),
             };
 
@@ -271,7 +271,7 @@ impl KbLineRenderGroup {
         device_resources.queue.write_buffer(
             &self.vertex_buffer,
             0,
-            bytemuck::cast_slice(&vertices.as_slice()),
+            bytemuck::cast_slice(vertices.as_slice()),
         );
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

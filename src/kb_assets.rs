@@ -66,6 +66,12 @@ pub struct KbAssetManager {
     file_to_byte_buffer: HashMap<String, KbByteVec>,
 }
 
+impl Default for KbAssetManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KbAssetManager {
     pub fn new() -> Self {
         let mut file_to_byte_buffer = HashMap::<String, KbByteVec>::new();
@@ -91,7 +97,7 @@ impl KbAssetManager {
             "model.wgsl".to_string(),
             include_str!("../engine_assets/shaders/model.wgsl").to_string(),
         );
-       
+
         file_to_byte_buffer.insert(
             "scorch_t.png".to_string(),
             include_bytes!("../engine_assets/textures/scorch_t.png").to_vec(),
@@ -144,7 +150,7 @@ impl KbAssetManager {
             "lens_flare.png".to_string(),
             include_bytes!("../engine_assets/textures/lens_flare.png").to_vec(),
         );
-     
+
         #[cfg(feature = "wasm_include_3d")]
         {
             file_to_byte_buffer.insert(
@@ -252,18 +258,17 @@ impl KbAssetManager {
         device_resource: &KbDeviceResources<'_>,
     ) -> KbTextureHandle {
         let mappings = &mut self.texture_mappings;
-        match mappings.names_to_handles.get(file_path) {
-            Some(handle) => return *handle,
-            _ => {}
+        if let Some(handle) = mappings.names_to_handles.get(file_path) {
+            return *handle;
         }
 
         log!("KbAssetManager loading texture {file_path}");
         let new_handle = {
-            if mappings.next_handle.is_valid() == false {
+            if !mappings.next_handle.is_valid() {
                 mappings.next_handle.index = 0;
             }
-            let new_handle = mappings.next_handle.clone();
-            mappings.next_handle.index = mappings.next_handle.index + 1;
+            let new_handle = mappings.next_handle;
+            mappings.next_handle.index += 1;
             new_handle
         };
 
@@ -326,14 +331,12 @@ impl KbAssetManager {
             }
         };
 
-        mappings
-            .handles_to_assets
-            .insert(new_handle.clone(), new_texture);
+        mappings.handles_to_assets.insert(new_handle, new_texture);
         mappings
             .names_to_handles
-            .insert(file_path.to_string(), new_handle.clone());
+            .insert(file_path.to_string(), new_handle);
 
-        new_handle.clone()
+        new_handle
     }
 
     pub fn get_texture(&self, texture_handle: &KbTextureHandle) -> &KbTexture {
@@ -346,18 +349,17 @@ impl KbAssetManager {
         device_resources: &KbDeviceResources<'_>,
     ) -> KbShaderHandle {
         let mappings = &mut self.shader_mappings;
-        match mappings.names_to_handles.get(file_path) {
-            Some(handle) => return handle.clone(),
-            _ => {}
+        if let Some(handle) = mappings.names_to_handles.get(file_path) {
+            return *handle;
         }
 
         log!("KbAssetManager loading shader {file_path}");
         let new_handle = {
-            if mappings.next_handle.is_valid() == false {
+            if !mappings.next_handle.is_valid() {
                 mappings.next_handle.index = 0;
             }
-            let new_handle = mappings.next_handle.clone();
-            mappings.next_handle.index = mappings.next_handle.index + 1;
+            let new_handle = mappings.next_handle;
+            mappings.next_handle.index += 1;
             new_handle
         };
 
@@ -410,13 +412,11 @@ impl KbAssetManager {
                     source: wgpu::ShaderSource::Wgsl(shader_str.into()),
                 });
 
-        mappings
-            .handles_to_assets
-            .insert(new_handle.clone(), new_shader);
+        mappings.handles_to_assets.insert(new_handle, new_shader);
         mappings
             .names_to_handles
-            .insert(file_path.to_string(), new_handle.clone());
-        new_handle.clone()
+            .insert(file_path.to_string(), new_handle);
+        new_handle
     }
 
     pub fn get_shader(&self, shader_handle: &KbShaderHandle) -> &ShaderModule {
@@ -426,7 +426,7 @@ impl KbAssetManager {
     pub async fn load_model(
         &mut self,
         file_path: &str,
-        mut device_resource: &mut KbDeviceResources<'_>,
+        device_resource: &mut KbDeviceResources<'_>,
         use_holes: bool,
     ) -> KbModelHandle {
         let new_model = {
@@ -456,7 +456,7 @@ impl KbAssetManager {
                     }
                 };
                 let bytes = load_binary(&final_file_path).await.unwrap();
-                KbModel::from_bytes(&bytes, &mut device_resource, self, use_holes).await
+                KbModel::from_bytes(&bytes, device_resource, self, use_holes).await
             }
             #[cfg(target_arch = "wasm32")]
             {
@@ -468,34 +468,31 @@ impl KbAssetManager {
                     self.file_to_byte_buffer.len()
                 );
                 let byte_buffer = self.file_to_byte_buffer.get(file_name).unwrap().clone(); // cloning here.
-                KbModel::from_bytes(&byte_buffer, &mut device_resource, self, use_holes).await
+                KbModel::from_bytes(&byte_buffer, device_resource, self, use_holes).await
             }
         };
         log!("Model loaded");
 
         let mappings = &mut self.model_mappings;
-        match mappings.names_to_handles.get(file_path) {
-            Some(handle) => return handle.clone(),
-            _ => {}
+        if let Some(handle) = mappings.names_to_handles.get(file_path) {
+            return *handle;
         }
 
         log!("KbAssetManager loading model {file_path}");
         let new_handle = {
-            if mappings.next_handle.is_valid() == false {
+            if !mappings.next_handle.is_valid() {
                 mappings.next_handle.index = 0;
             }
-            let new_handle = mappings.next_handle.clone();
-            mappings.next_handle.index = mappings.next_handle.index + 1;
+            let new_handle = mappings.next_handle;
+            mappings.next_handle.index += 1;
             new_handle
         };
-        mappings
-            .handles_to_assets
-            .insert(new_handle.clone(), new_model);
+        mappings.handles_to_assets.insert(new_handle, new_model);
         mappings
             .names_to_handles
-            .insert(file_path.to_string(), new_handle.clone());
+            .insert(file_path.to_string(), new_handle);
 
-        new_handle.clone()
+        new_handle
     }
 
     pub fn get_model(&mut self, model_handle: &KbModelHandle) -> Option<&mut KbModel> {
