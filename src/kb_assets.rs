@@ -240,6 +240,30 @@ impl KbAssetManager {
                 "atlas.png".to_string(),
                 include_bytes!("./../../key/game_assets/textures/atlas.png").to_vec(),
             );
+            file_to_byte_buffer.insert(
+                "map_00.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_00.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "map_01.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_01.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "map_10.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_10.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "map_11.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_11.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "map_20.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_20.png").to_vec(),
+            );
+            file_to_byte_buffer.insert(
+                "map_21.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/map_21.png").to_vec(),
+            );
         }
 
         KbAssetManager {
