@@ -160,25 +160,19 @@ where
                     }
 
                     WindowEvent::MouseWheel { delta, .. } => {
-                        match delta {
-                            MouseScrollDelta::PixelDelta(pos) => {
-                                input_manager.update_mouse_scroll(pos.y as f32);
-                            }
-                            _ => {}
+                        if let MouseScrollDelta::PixelDelta(pix_delta) = delta {
+                            input_manager.update_mouse_scroll(pix_delta.y as f32 / 150.0);
                         }
                     }
 
-                    WindowEvent::MouseInput {
-                        button, state, ..
-                    } => {
+                    WindowEvent::MouseInput { button, state, .. } => {
                         input_manager.set_mouse_button_state(button, state);
                     }
 
                     WindowEvent::CursorMoved { position, .. } => {
                         input_manager.set_mouse_position(position);
-
                     }
-    
+
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
@@ -250,7 +244,7 @@ where
                     }
                     if hack_wait > 8 {
                         let render_result = game_renderer
-                            .render_frame(&game_engine.get_game_objects(), &game_config);
+                            .render_frame(game_engine.get_game_objects(), &game_config);
                         match render_result {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => {
@@ -281,7 +275,7 @@ where
                     window_id,
                 } if window_id == game_renderer.window_id() => match event {
                     WindowEvent::RedrawRequested => {
-                        if game_config.vsync == false {
+                        if !game_config.vsync {
                             game_engine.tick_frame(
                                 &mut game_renderer,
                                 &mut input_manager,
@@ -289,12 +283,12 @@ where
                             );
 
                             let render_result = game_renderer
-                                .render_frame(&game_engine.get_game_objects(), &game_config);
+                                .render_frame(game_engine.get_game_objects(), &game_config);
                             match render_result {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => {
                                     game_renderer.resize(&game_config);
-                                   /*  let _ = async {
+                                    /*  let _ = async {
                                         game_renderer.resize(&game_config).await;
                                     };*/
                                 }
@@ -306,30 +300,25 @@ where
                         }
                     }
 
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        match delta {
-                            MouseScrollDelta::LineDelta(_, y) => {
-                                input_manager.update_mouse_scroll(*y);
-                            }
-                            _ => {}
-                        }
+                    WindowEvent::MouseWheel {
+                        delta: MouseScrollDelta::LineDelta(_, y),
+                        ..
+                    } => {
+                        input_manager.update_mouse_scroll(*y);
                     }
 
-                    WindowEvent::MouseInput {
-                        button, state, ..
-                    } => {
+                    WindowEvent::MouseInput { button, state, .. } => {
                         input_manager.set_mouse_button_state(button, state);
                     }
 
                     WindowEvent::CursorMoved { position, .. } => {
                         input_manager.set_mouse_position(position);
-
                     }
 
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
-                       // log!("Resized {} {}", physical_size.width, physical_size.z
+                        // log!("Resized {} {}", physical_size.width, physical_size.z
                         if physical_size.width > 0 && physical_size.height > 0 {
                             game_config.window_width = physical_size.width;
                             game_config.window_height = physical_size.height;

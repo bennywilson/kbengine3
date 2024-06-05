@@ -37,6 +37,12 @@ pub struct KbCollisionManager {
     collision_objects: KbCollisionMappings,
 }
 
+impl Default for KbCollisionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KbCollisionManager {
     pub fn new() -> Self {
         log!("Initializing KbCollisionManager...");
@@ -48,17 +54,17 @@ impl KbCollisionManager {
     pub fn add_collision(&mut self, collision: &KbCollisionShape) -> KbCollisionHandle {
         let mappings = &mut self.collision_objects;
         let new_handle = {
-            if mappings.next_handle.is_valid() == false {
+            if !mappings.next_handle.is_valid() {
                 mappings.next_handle.index = 0;
             }
-            let new_handle = mappings.next_handle.clone();
-            mappings.next_handle.index = mappings.next_handle.index + 1;
+            let new_handle = mappings.next_handle;
+            mappings.next_handle.index += 1;
             new_handle
         };
         self.collision_objects
             .handles_to_assets
-            .insert(new_handle.clone(), (*collision).clone());
-        new_handle.clone()
+            .insert(new_handle, *collision);
+        new_handle
     }
 
     pub fn remove_collision(&mut self, handle: &KbCollisionHandle) {
@@ -66,11 +72,11 @@ impl KbCollisionManager {
     }
 
     pub fn get_collision(&self, handle: &KbCollisionHandle) -> KbCollisionShape {
-        self.collision_objects
+        *self
+            .collision_objects
             .handles_to_assets
-            .get(&handle)
+            .get(handle)
             .unwrap()
-            .clone()
     }
 
     pub fn update_collision_position(&mut self, handle: &KbCollisionHandle, new_pos: &CgVec3) {
@@ -80,26 +86,21 @@ impl KbCollisionManager {
             .get_mut(handle)
             .expect("Bad collision handle");
 
-        let new_collision: KbCollisionShape; //::Sphere(KbCollisionSphere { position: CG_VEC3_ZERO, radius: 1.0 });
-        match collision {
-            KbCollisionShape::Sphere(s) => {
-                new_collision = KbCollisionShape::Sphere(KbCollisionSphere {
-                    position: new_pos.clone(),
-                    radius: s.radius,
-                });
-            }
-            KbCollisionShape::AABB(b) => {
-                new_collision = KbCollisionShape::AABB(KbCollisionAABB {
-                    position: new_pos.clone(),
-                    extents: b.extents,
-                    block: b.block,
-                });
-            }
-        }
+        let new_collision = match collision {
+            KbCollisionShape::Sphere(s) => KbCollisionShape::Sphere(KbCollisionSphere {
+                position: *new_pos,
+                radius: s.radius,
+            }),
+            KbCollisionShape::AABB(b) => KbCollisionShape::AABB(KbCollisionAABB {
+                position: *new_pos,
+                extents: b.extents,
+                block: b.block,
+            }),
+        };
 
         self.collision_objects
             .handles_to_assets
-            .insert(handle.clone(), new_collision);
+            .insert(*handle, new_collision);
     }
 
     pub fn cast_ray(
@@ -141,7 +142,7 @@ impl KbCollisionManager {
                     if largest_min > 0.0 && smallest_max >= largest_min && largest_min < closest_hit
                     {
                         closest_hit = largest_min;
-                        closest_handle = handle.clone();
+                        closest_handle = *handle;
                         blocks = Some(aabb.block);
                     }
                 }
@@ -163,7 +164,7 @@ impl KbCollisionManager {
     }
 
     pub fn debug_draw(&mut self, renderer: &mut KbRenderer, config: &KbConfig) {
-        for (_, value) in &mut self.collision_objects.handles_to_assets {
+        for value in &mut self.collision_objects.handles_to_assets.values_mut() {
             match value {
                 KbCollisionShape::Sphere(_s) => {}
 
@@ -188,20 +189,20 @@ impl KbCollisionManager {
 
                     let color = CgVec4::new(1.0, 1.0, 0.0, 1.0);
 
-                    renderer.add_line(&extent_0, &extent_1, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_1, &extent_2, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_2, &extent_3, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_3, &extent_0, &color, 0.05, 0.001, &config);
+                    renderer.add_line(&extent_0, &extent_1, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_1, &extent_2, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_2, &extent_3, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_3, &extent_0, &color, 0.05, 0.001, config);
 
-                    renderer.add_line(&extent_4, &extent_5, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_5, &extent_6, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_6, &extent_7, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_7, &extent_4, &color, 0.05, 0.001, &config);
+                    renderer.add_line(&extent_4, &extent_5, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_5, &extent_6, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_6, &extent_7, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_7, &extent_4, &color, 0.05, 0.001, config);
 
-                    renderer.add_line(&extent_0, &extent_4, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_1, &extent_5, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_2, &extent_6, &color, 0.05, 0.001, &config);
-                    renderer.add_line(&extent_3, &extent_7, &color, 0.05, 0.001, &config);
+                    renderer.add_line(&extent_0, &extent_4, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_1, &extent_5, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_2, &extent_6, &color, 0.05, 0.001, config);
+                    renderer.add_line(&extent_3, &extent_7, &color, 0.05, 0.001, config);
                 }
             }
         }

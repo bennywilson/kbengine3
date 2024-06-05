@@ -10,15 +10,14 @@ pub enum KbButtonState {
     #[default]
     None,
     JustPressed,
-    Down { mouse_start: (i32, i32) },
+    Down {
+        mouse_start: (i32, i32),
+    },
 }
 
 impl KbButtonState {
     pub fn is_down(&self) -> bool {
-        match *self {
-            KbButtonState::Down{..} => { true }
-            _ => { false }
-        }
+        matches!(*self, KbButtonState::Down { .. })
     }
 
     pub fn just_pressed(&self) -> bool {
@@ -85,10 +84,10 @@ impl KbInputManager {
 
     pub fn set_mouse_button_state(&mut self, button: &MouseButton, state: &ElementState) -> bool {
         let button_name = match button {
-            MouseButton::Left => { "mouse_left" }
-            MouseButton::Right => { "mouse_right" }
-            MouseButton::Middle => { "mouse_middle" }
-            _ => { "none" }
+            MouseButton::Left => "mouse_left",
+            MouseButton::Right => "mouse_right",
+            MouseButton::Middle => "mouse_middle",
+            _ => "none",
         };
         if button_name == "none" {
             return false;
@@ -102,7 +101,7 @@ impl KbInputManager {
                     *key_pair = KbButtonState::JustPressed;
                 }
             } else {
-                *key_pair = KbButtonState::None;    
+                *key_pair = KbButtonState::None;
             };
         } else {
             self.key_map.insert(button_name, KbButtonState::JustPressed);
@@ -110,36 +109,36 @@ impl KbInputManager {
 
         true
     }
-    
+
     pub fn set_key_state(&mut self, key: PhysicalKey, state: ElementState) -> bool {
         let key_name = match key {
-            PhysicalKey::Code(KeyCode::ArrowUp) => { "up_arrow" }
-            PhysicalKey::Code(KeyCode::ArrowDown) => { "down_arrow" }
-            PhysicalKey::Code(KeyCode::ArrowLeft) => { "left_arrow" }
-            PhysicalKey::Code(KeyCode::ArrowRight) => { "right_arrow" } 
-            PhysicalKey::Code(KeyCode::Digit1) => { "1" }
-            PhysicalKey::Code(KeyCode::Digit2) => { "2" }
-            PhysicalKey::Code(KeyCode::Digit3) => { "3" }
-            PhysicalKey::Code(KeyCode::Digit4) => { "4" }
-            PhysicalKey::Code(KeyCode::Digit5) => { "5" }
-            PhysicalKey::Code(KeyCode::Digit6) => { "6" }
-            PhysicalKey::Code(KeyCode::Digit7) => { "7" }
-            PhysicalKey::Code(KeyCode::Digit8) => { "8" }
-            PhysicalKey::Code(KeyCode::Digit9) => { "9" }
-            PhysicalKey::Code(KeyCode::Digit0) => { "0" }
-            PhysicalKey::Code(KeyCode::Equal) => { "+" },
-            PhysicalKey::Code(KeyCode::Minus) => { "-" }
-            PhysicalKey::Code(KeyCode::KeyW) => { "w" }
-            PhysicalKey::Code(KeyCode::KeyA) => { "a" }
-            PhysicalKey::Code(KeyCode::KeyS) => { "s" }
-            PhysicalKey::Code(KeyCode::KeyD) => { "d" }
-            PhysicalKey::Code(KeyCode::Space) => { "space" } 
-            PhysicalKey::Code(KeyCode::KeyH) => { "h" }
-            PhysicalKey::Code(KeyCode::KeyM) => { "m" }
-            PhysicalKey::Code(KeyCode::KeyY) => { "y" }
-            PhysicalKey::Code(KeyCode::KeyV) => { "v" }
-            PhysicalKey::Code(KeyCode::ShiftLeft) => { "left_shift" }
-            _ => { "none" }
+            PhysicalKey::Code(KeyCode::ArrowUp) => "up_arrow",
+            PhysicalKey::Code(KeyCode::ArrowDown) => "down_arrow",
+            PhysicalKey::Code(KeyCode::ArrowLeft) => "left_arrow",
+            PhysicalKey::Code(KeyCode::ArrowRight) => "right_arrow",
+            PhysicalKey::Code(KeyCode::Digit1) => "1",
+            PhysicalKey::Code(KeyCode::Digit2) => "2",
+            PhysicalKey::Code(KeyCode::Digit3) => "3",
+            PhysicalKey::Code(KeyCode::Digit4) => "4",
+            PhysicalKey::Code(KeyCode::Digit5) => "5",
+            PhysicalKey::Code(KeyCode::Digit6) => "6",
+            PhysicalKey::Code(KeyCode::Digit7) => "7",
+            PhysicalKey::Code(KeyCode::Digit8) => "8",
+            PhysicalKey::Code(KeyCode::Digit9) => "9",
+            PhysicalKey::Code(KeyCode::Digit0) => "0",
+            PhysicalKey::Code(KeyCode::Equal) => "+",
+            PhysicalKey::Code(KeyCode::Minus) => "-",
+            PhysicalKey::Code(KeyCode::KeyW) => "w",
+            PhysicalKey::Code(KeyCode::KeyA) => "a",
+            PhysicalKey::Code(KeyCode::KeyS) => "s",
+            PhysicalKey::Code(KeyCode::KeyD) => "d",
+            PhysicalKey::Code(KeyCode::Space) => "space",
+            PhysicalKey::Code(KeyCode::KeyH) => "h",
+            PhysicalKey::Code(KeyCode::KeyM) => "m",
+            PhysicalKey::Code(KeyCode::KeyY) => "y",
+            PhysicalKey::Code(KeyCode::KeyV) => "v",
+            PhysicalKey::Code(KeyCode::ShiftLeft) => "left_shift",
+            _ => "none",
         };
         if key_name == "none" {
             return false;
@@ -153,34 +152,38 @@ impl KbInputManager {
                     *key_pair = KbButtonState::JustPressed;
                 }
             } else {
-                *key_pair = KbButtonState::None;    
+                *key_pair = KbButtonState::None;
             };
         } else {
             self.key_map.insert(key_name, KbButtonState::JustPressed);
         }
-        return true;
+        true
     }
 
     pub fn update_key_states(&mut self) {
         for button_pair in &mut self.key_map {
             if *button_pair.1 == KbButtonState::JustPressed {
-                *button_pair.1 = KbButtonState::Down{ mouse_start: (self.cursor_position.0, self.cursor_position.1) }
+                *button_pair.1 = KbButtonState::Down {
+                    mouse_start: (self.cursor_position.0, self.cursor_position.1),
+                }
             }
         }
 
         for touch in &mut self.touch_id_to_info {
             touch.1.frame_delta.0 = 0.0;
             touch.1.frame_delta.1 = 0.0;
-            touch.1.touch_state = KbButtonState::Down{ mouse_start: (0, 0) }
+            touch.1.touch_state = KbButtonState::Down {
+                mouse_start: (0, 0),
+            }
         }
 
         self.mouse_scroll_delta = 0.0;
     }
 
     pub fn get_key_state(&self, key: &str) -> KbButtonState {
-        let key_state = self.key_map.get(key);
-        if key_state.is_some() {
-            return key_state.unwrap().clone();
+        let key_state_pair = self.key_map.get(key);
+        if let Some(key_state) = key_state_pair {
+            return key_state.clone();
         }
 
         KbButtonState::None

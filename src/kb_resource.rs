@@ -246,7 +246,7 @@ impl KbTexture {
     }
 
     pub fn from_rgba(
-        rgba: &Vec<u8>,
+        rgba: &[u8],
         is_rgba: bool,
         width: u32,
         height: u32,
@@ -264,15 +264,15 @@ impl KbTexture {
         let mut new_rgba = Vec::<u8>::new();
         let mut i = 0;
         while i < rgba.len() {
-            new_rgba.push(rgba[i + 0]);
+            new_rgba.push(rgba[i]);
             new_rgba.push(rgba[i + 1]);
             new_rgba.push(rgba[i + 2]);
-            if is_rgba == false {
+            if !is_rgba {
                 new_rgba.push(255);
-                i = i + 3;
+                i += 3;
             } else {
                 new_rgba.push(rgba[i + 3]);
-                i = i + 4;
+                i += 4;
             }
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -468,9 +468,9 @@ impl<'a> KbDeviceResources<'a> {
             .formats
             .iter()
             .copied()
-            .filter(|f| f.is_srgb())
-            .next()
-            .unwrap_or(surface_caps.formats[0]);
+            .find(|f| f.is_srgb())
+            .unwrap();
+
         let mut surface_config = surface
             .get_default_config(
                 &adapter,

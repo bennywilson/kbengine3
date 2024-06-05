@@ -105,7 +105,7 @@ impl KbBulletHoleRenderGroup {
         });
 
         let shader_handle = asset_manager
-            .load_shader(shader_path, &device_resources)
+            .load_shader(shader_path, device_resources)
             .await;
         let model_shader = asset_manager.get_shader(&shader_handle);
 
@@ -130,13 +130,13 @@ impl KbBulletHoleRenderGroup {
             label: Some("KbBulletHoleRenderGroup::pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "vs_main",
                 buffers: &[KbVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &model_shader,
+                module: model_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
