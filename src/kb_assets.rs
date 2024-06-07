@@ -237,10 +237,6 @@ impl KbAssetManager {
                 include_bytes!("./../examples/3d/game_assets/fx/smoke_t.png").to_vec(),
             );
             file_to_byte_buffer.insert(
-                "atlas.png".to_string(),
-                include_bytes!("./../../key/game_assets/textures/atlas.png").to_vec(),
-            );
-            file_to_byte_buffer.insert(
                 "map_00.png".to_string(),
                 include_bytes!("./../../key/game_assets/textures/map_00.png").to_vec(),
             );
