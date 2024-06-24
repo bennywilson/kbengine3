@@ -250,12 +250,12 @@ impl<'a> KbRenderer<'a> {
                     device_resources.adapter.get_info().name.as_str(),
                     self.game_hud_msg
                 )
-            } else {
+            } /*else {
                 format!(
                     "Press [H] or tap here for help.\n\nFPS: {:.0}\n\n {}",
                     frame_rate, self.game_hud_msg
                 )
-            }
+            }*/
         };
 
         let section = TextSection::default()
