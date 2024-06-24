@@ -50,6 +50,7 @@ pub struct KbRenderer<'a> {
     frame_count: u32,
     window_id: winit::window::WindowId,
 
+    allow_debug_text: bool,
     display_debug_msg: bool,
     game_debug_msg: String,
     game_hud_msg: String,
@@ -141,6 +142,7 @@ impl<'a> KbRenderer<'a> {
             game_debug_msg: "".to_string(),
             game_hud_msg: "".to_string(),
 
+            allow_debug_text: true,
             display_debug_msg: false,
             debug_msg_color: CgVec4::new(0.0, 1.0, 0.0, 1.0),
         }
@@ -211,79 +213,81 @@ impl<'a> KbRenderer<'a> {
     ) {
         let device_resources = &mut self.device_resources;
 
-        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Text"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
+        if self.allow_debug_text {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Text"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
-        let mut total_frame_times = 0.0;
-        for frame_time in &self.frame_times {
-            total_frame_times += frame_time;
-        }
-        let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
-        let frame_rate = 1.0 / avg_frame_time;
-
-        let frame_time_string = {
-            if self.display_debug_msg {
-                format!(
-                    "Press [H] or tap here to hide help\n\
-                    {}\n\\n
-                    FPS: {:.0} \n\
-                    Frame time: {:.2} ms\n\
-                    Back End: {:?}\n\
-                    Graphics: {}\n\n\
-                    {}\n",
-                    self.game_debug_msg,
-                    frame_rate,
-                    avg_frame_time * 1000.0,
-                    device_resources.adapter.get_info().backend,
-                    device_resources.adapter.get_info().name.as_str(),
-                    self.game_hud_msg
-                )
-            } else {
-                format!(
-                    "Press [H] or tap here for help.\n\nFPS: {:.0}\n\n {}",
-                    frame_rate, self.game_hud_msg
-                )
+            let mut total_frame_times = 0.0;
+            for frame_time in &self.frame_times {
+                total_frame_times += frame_time;
             }
-        };
+            let avg_frame_time = total_frame_times / (self.frame_times.len() as f32);
+            let frame_rate = 1.0 / avg_frame_time;
 
-        let section = TextSection::default()
-            .add_text(
-                Text::new(&frame_time_string)
-                    .with_color([
-                        self.debug_msg_color.x,
-                        self.debug_msg_color.y,
-                        self.debug_msg_color.z,
-                        self.debug_msg_color.w,
-                    ])
-                    .with_scale(24.0 * 1.0),
-            )
-            .with_screen_position((10.0, 10.0));
-        device_resources.brush.resize_view(
-            game_config.window_width as f32,
-            game_config.window_height as f32,
-            &device_resources.queue,
-        );
-        let _ = &mut device_resources
-            .brush
-            .queue(
-                &device_resources.device,
+            let frame_time_string = {
+                if self.display_debug_msg {
+                    format!(
+                        "Press [H] or tap here to hide help\n\
+                        {}\n\\n
+                        FPS: {:.0} \n\
+                        Frame time: {:.2} ms\n\
+                        Back End: {:?}\n\
+                        Graphics: {}\n\n\
+                        {}\n",
+                        self.game_debug_msg,
+                        frame_rate,
+                        avg_frame_time * 1000.0,
+                        device_resources.adapter.get_info().backend,
+                        device_resources.adapter.get_info().name.as_str(),
+                        self.game_hud_msg
+                    )
+                } else {
+                    format!(
+                        "Press [H] or tap here for help.\n\nFPS: {:.0}\n\n {}",
+                        frame_rate, self.game_hud_msg
+                    )
+                }
+            };
+
+            let section = TextSection::default()
+                .add_text(
+                    Text::new(&frame_time_string)
+                        .with_color([
+                            self.debug_msg_color.x,
+                            self.debug_msg_color.y,
+                            self.debug_msg_color.z,
+                            self.debug_msg_color.w,
+                        ])
+                        .with_scale(24.0 * 1.0),
+                )
+                .with_screen_position((10.0, 10.0));
+            device_resources.brush.resize_view(
+                game_config.window_width as f32,
+                game_config.window_height as f32,
                 &device_resources.queue,
-                vec![&section],
-            )
-            .unwrap();
-        device_resources.brush.draw(&mut render_pass);
+            );
+            let _ = &mut device_resources
+                .brush
+                .queue(
+                    &device_resources.device,
+                    &device_resources.queue,
+                    vec![&section],
+                )
+                .unwrap();
+            device_resources.brush.draw(&mut render_pass);
+        }
 
         // Frame rate update
         self.frame_count += 1;
@@ -656,6 +660,10 @@ impl<'a> KbRenderer<'a> {
             thickness,
             end_time: game_config.start_time.elapsed().as_secs_f32() + duration,
         });
+    }
+
+    pub fn set_allow_debug_text(&mut self, allow: bool) {
+        self.allow_debug_text = allow;
     }
 
     pub fn set_debug_game_msg(&mut self, msg: &str) {

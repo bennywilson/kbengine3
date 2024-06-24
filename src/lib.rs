@@ -42,6 +42,11 @@ where
     let one_micro = core::time::Duration::from_micros(1);
     let control_flow = ControlFlow::wait_duration(one_micro);
     event_loop.set_control_flow(control_flow);
+    
+    let window_size: winit::dpi::Size = winit::dpi::Size::new(winit::dpi::PhysicalSize::new(
+        game_config.window_width,
+        game_config.window_height,
+    ));
 
     #[cfg(target_arch = "wasm32")]
     let window = Arc::new({
@@ -53,16 +58,13 @@ where
         let canvas = dom_canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok();
         WindowBuilder::default()
             .with_canvas(canvas)
+            .with_inner_size(window_size)
             .build(&event_loop)
             .unwrap()
     });
 
     #[cfg(not(target_arch = "wasm32"))]
     let window = Arc::new({
-        let window_size: winit::dpi::Size = winit::dpi::Size::new(winit::dpi::PhysicalSize::new(
-            game_config.window_width,
-            game_config.window_height,
-        ));
         WindowBuilder::new()
             .with_inner_size(window_size)
             .build(&event_loop)
