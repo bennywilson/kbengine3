@@ -1019,7 +1019,7 @@ impl KbGameEngine for Example3DGame {
                     positions[i] + (positions[i] - center).normalize() * self.crosshair_error * 0.1;
                 self.game_objects[i].scale = scale;
             }
-            self.game_objects.truncate(8);
+            //self.game_objects.truncate(8);
 
             let ammo_count = player.get_ammo_count();
             let mut position = CgVec3::new(1.65, 0.0, 0.0);

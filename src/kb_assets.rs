@@ -260,6 +260,10 @@ impl KbAssetManager {
                 "map_21.png".to_string(),
                 include_bytes!("./../../key/game_assets/textures/map_21.png").to_vec(),
             );
+            file_to_byte_buffer.insert(
+                "timeline_atlas_1.png".to_string(),
+                include_bytes!("./../../key/game_assets/textures/timeline_atlas_1.png").to_vec(),
+            );
         }
 
         KbAssetManager {
