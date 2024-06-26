@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::log;
+
 use winit::{
     event::{ElementState, MouseButton},
     keyboard::{KeyCode, PhysicalKey},
@@ -68,12 +70,15 @@ impl KbInputManager {
                 frame_delta: (0.0, 0.0),
                 touch_state: KbButtonState::JustPressed,
             };
+            log!("Touch inserted");
             self.touch_id_to_info.insert(id, touch_info);
         } else if phase == winit::event::TouchPhase::Cancelled
             || phase == winit::event::TouchPhase::Ended
         {
             self.touch_id_to_info.remove(&id);
         } else if phase == winit::event::TouchPhase::Moved {
+            log!("Touch moved");
+
             let touch_info = &mut self.touch_id_to_info.get_mut(&id).unwrap();
             touch_info.frame_delta.0 = touch_info.current_pos.0 - location.x;
             touch_info.frame_delta.1 = touch_info.current_pos.1 - location.y;

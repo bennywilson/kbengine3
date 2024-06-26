@@ -192,6 +192,7 @@ where
                         id,
                         ..
                     }) => {
+                        log!("TOUCH EVENT!");
                         // let winit::dpi::LogicalPosition { x, y } = location;
                         input_manager.update_touch(*phase, *id, location.clone());
                     }
