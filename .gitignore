@@ -48,3 +48,5 @@ __pycache__/
 source_assets/mujoco_trajectories/*.hdf5
 
 node_modules/
+
+openvla_datasets/

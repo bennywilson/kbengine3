@@ -1063,6 +1063,30 @@ impl MujocoScene {
         })
     }
 
+    /// A body's world-frame position + orientation (MuJoCo's own `xpos`/
+    /// `xquat`, quaternion in `[w, x, y, z]` order) as of the last
+    /// `forward()`/`step()` -- e.g. right after
+    /// [`apply_trajectory_frame`](Self::apply_trajectory_frame), which always
+    /// ends with one. `None` if no body has this name. Native-only: offline
+    /// dataset export (see `crate::policy_dataset`) is the only caller today
+    /// and has no wasm story, same as the trajectory-cache module.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn body_world_pose(&self, name: &str) -> Option<([f64; 3], [f64; 4])> {
+        let model = self.mj_data.model();
+        let body_id = model.name_to_id(MjtObj::mjOBJ_BODY, name)?;
+        Some((self.mj_data.xpos()[body_id], self.mj_data.xquat()[body_id]))
+    }
+
+    /// A named hinge/slide joint's scalar `qpos`, as of the last
+    /// `forward()`/`step()`. `None` if no joint has this name (or it isn't a
+    /// 1-dof joint). Read-only counterpart to the per-joint write
+    /// [`apply_trajectory_frame`](Self::apply_trajectory_frame) already does;
+    /// native-only for the same reason as `body_world_pose` above.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn joint_qpos(&self, name: &str) -> Option<f64> {
+        Some(self.mj_data.joint(name)?.view(&self.mj_data).qpos[0])
+    }
+
     /// Writes one frame of a [`crate::trajectory::RetargetedClip`] straight
     /// into the sim's `qpos` (per joint, by name -- the clip was already
     /// remapped onto this model's own `joint_tracks` by

@@ -408,17 +408,6 @@
 				if (bsApp.mj_bridge_take_single_step_requested()) {
 					mujoco.mj_step(model, data);
 				}
-				// TEMP diagnostic (remove with the [policy apply] one): is the sim
-				// actually advancing? Throttled to ~1/sec. If steps=0 or qpos never
-				// changes while kinematic=false/playing=true, ctrl writes can't turn
-				// into motion no matter how correct the apply is.
-				if (!window.__bsStepLogT || now - window.__bsStepLogT > 1000) {
-					window.__bsStepLogT = now;
-					console.log(
-						`[sim step] steps=${steps} kinematic=${bsApp.mj_bridge_kinematic()} ` +
-						`playing=${bsApp.mj_bridge_playing()} qpos[0]=${data.qpos[0].toFixed(4)}`
-					);
-				}
 
 				bsApp.mj_bridge_set_geoms(
 					geomType,

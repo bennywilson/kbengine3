@@ -224,6 +224,63 @@ pub fn clear_startup_scene() {
     }
 }
 
+// --- Last-used picker folders ------------------------------------------------
+// Remembers which folder each file-picker category (scenes, splats, MuJoCo
+// models, ...) was last opened/saved from, so the next dialog for that
+// category starts there instead of the OS default. Native only: the web file
+// picker has no real filesystem path to remember, and the browser already
+// restores its own last-used folder per file input.
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_last_dir(category: &str) -> Option<std::path::PathBuf> {
+    let path = config_file_path()?.with_file_name("last_dirs.txt");
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .filter_map(|line| line.trim().split_once('='))
+        .find(|(name, _)| name.trim() == category)
+        .map(|(_, value)| std::path::PathBuf::from(value.trim()))
+}
+
+/// Remembers `dir` as the last-used folder for `category`. Best-effort, like
+/// [`EditorConfig::save`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_last_dir(category: &str, dir: &std::path::Path) {
+    let Some(path) = config_file_path() else {
+        return;
+    };
+    let path = path.with_file_name("last_dirs.txt");
+    let mut entries: Vec<(String, String)> = std::fs::read_to_string(&path)
+        .map(|text| {
+            text.lines()
+                .filter_map(|line| line.trim().split_once('='))
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let value = dir.to_string_lossy().into_owned();
+    match entries.iter_mut().find(|(k, _)| k == category) {
+        Some(entry) => entry.1 = value,
+        None => entries.push((category.to_string(), value)),
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let text: String = entries.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+    let _ = std::fs::write(path, text);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_last_dir(_category: &str) -> Option<std::path::PathBuf> {
+    None
+}
+
+// Never called on wasm (every save_last_dir call site is behind a native-only
+// cfg, since only native file handles expose a real path); kept for API
+// symmetry with load_last_dir.
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+pub fn save_last_dir(_category: &str, _dir: &std::path::Path) {}
+
 /// The per-user config file: `<config dir>/black_splat/editor_config.txt`,
 /// where the config dir is the platform's standard location (`%APPDATA%` on
 /// Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or
