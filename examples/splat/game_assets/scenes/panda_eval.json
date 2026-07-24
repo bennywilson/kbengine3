@@ -122,7 +122,7 @@
   "splats": [
     {
       "name": "office",
-      "path": "splats/office.ply",
+      "path": "game_assets/splats/office.ply",
       "params": {
         "falloff": 4.7812467,
         "scale": 3.0,
