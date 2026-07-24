@@ -292,6 +292,44 @@ pub struct MujocoScene {
     wireframe: bool,
 }
 
+/// Solves the 6x6 linear system `a * y = b` via Gauss-Jordan elimination
+/// with partial pivoting. Used only by
+/// [`MujocoScene::apply_policy_action`]'s damped-least-squares step, where
+/// `a` is always `J J^T + lambda^2 I` -- symmetric positive-definite by
+/// construction (the damping term keeps it non-singular), so partial
+/// pivoting alone is enough here without a more general solver.
+#[cfg(not(target_arch = "wasm32"))]
+fn solve6(mut a: [[f64; 6]; 6], mut b: [f64; 6]) -> [f64; 6] {
+    for col in 0..6 {
+        let pivot_row = (col..6)
+            .max_by(|&r1, &r2| a[r1][col].abs().partial_cmp(&a[r2][col].abs()).unwrap())
+            .unwrap();
+        a.swap(col, pivot_row);
+        b.swap(col, pivot_row);
+
+        let pivot = a[col][col];
+        if pivot.abs() < 1e-12 {
+            continue; // Degenerate row (shouldn't happen given the damping term) -- skip rather than divide by ~0.
+        }
+        for k in col..6 {
+            a[col][k] /= pivot;
+        }
+        b[col] /= pivot;
+
+        for row in 0..6 {
+            if row == col {
+                continue;
+            }
+            let factor = a[row][col];
+            for k in col..6 {
+                a[row][k] -= factor * a[col][k];
+            }
+            b[row] -= factor * b[col];
+        }
+    }
+    b
+}
+
 impl MujocoScene {
     /// Loads an MJCF file and everything it references, then parses it.
     /// Convenience wrapper over [`load_bundle`](Self::load_bundle) +
@@ -587,6 +625,24 @@ impl MujocoScene {
         wasm_bridge::watch_geom(_name);
     }
 
+    /// wasm's `apply_policy_action` equivalent of the above, for a body name
+    /// rather than a geom. Registered lazily by `apply_policy_action` itself
+    /// rather than needing a caller to do it up front -- see that method's
+    /// wasm branch.
+    #[cfg(target_arch = "wasm32")]
+    fn watch_body(&self, name: &str) {
+        wasm_bridge::watch_body(name);
+    }
+
+    /// Same idea, for an actuator name -- resolves to id/dof/qpos address/
+    /// ctrlrange all at once (see `wasm_bridge::ActuatorInfo`), since
+    /// `apply_policy_action` needs all of it and none of it is derivable
+    /// from the name alone without JS's model.
+    #[cfg(target_arch = "wasm32")]
+    fn watch_actuator(&self, name: &str) {
+        wasm_bridge::watch_actuator(name);
+    }
+
     /// Registers interest in a named joint so
     /// [`apply_joint_qvel`](Self::apply_joint_qvel) can resolve it. See
     /// [`watch_geom`](Self::watch_geom) for why this is needed on wasm.
@@ -739,6 +795,231 @@ impl MujocoScene {
                 wasm_bridge::apply_qvel(dof, delta);
             }
         }
+    }
+
+    /// Converts one policy action -- `[dx, dy, dz, drx, dry, drz, gripper]`,
+    /// a Cartesian delta for `ee_body`'s origin (position in meters,
+    /// small-angle rotation in radians) plus a gripper scalar, in
+    /// OpenVLA/Bridge's own convention (see [`crate::policy_client`]) --
+    /// into joint targets, and writes them into `ctrl` so this model's own
+    /// PD position actuators (e.g. panda.xml's `actuator1..7` plus its
+    /// tendon-coupled gripper actuator) drive the arm there over subsequent
+    /// physics steps. Doesn't step the sim itself -- call
+    /// [`step_once`](Self::step_once) (or let `tick_and_draw` run) after.
+    ///
+    /// Solves for the arm's joint-angle delta via a damped-least-squares
+    /// Jacobian pseudo-inverse (`dq = J^T (J J^T + lambda^2 I)^-1 dx`),
+    /// evaluated at `ee_body`'s current world-frame origin -- this assumes
+    /// `action`'s position/rotation deltas are world-frame too, since
+    /// that's the frame MuJoCo's own Jacobian comes in. Confirmed against
+    /// the actual WidowX/BridgeData deployment code OpenVLA was trained on
+    /// (`bridge_data_robot`'s `action2transform_local` + its
+    /// `delta_transform.dot(prev_transform)` composition order): despite an
+    /// intermediate conjugation trick that looks frame-local, the algebra
+    /// cancels out to a plain world-frame addition for position and a
+    /// world-frame (extrinsic) composition for rotation, matching this
+    /// function exactly. A fine-tune trained on a genuinely body-frame
+    /// action space would still need pre-rotating by `ee_body`'s current
+    /// orientation before reaching this function, but that's not the
+    /// convention OpenVLA/BridgeData itself uses. This is a per-step
+    /// approximation, not a full
+    /// differential-IK controller: it assumes deltas small enough that the
+    /// linearized Jacobian stays valid near the current pose, and enforces
+    /// neither joint limits nor self-collision itself -- both still apply
+    /// physically once `ctrl` is set and the sim steps, same as any other
+    /// out-of-range actuator target.
+    ///
+    /// `ee_body`/`arm_actuators`/`gripper_actuator` name this model's own
+    /// setup (panda.xml: `"hand"`, `["actuator1", .., "actuator7"]`,
+    /// `"actuator8"`) since none of it is discoverable from the action
+    /// vector's length alone -- a different MJCF needs different names.
+    /// `gripper_actuator`'s target is linearly interpolated from `action[6]`
+    /// clamped to `[0, 1]` (0 = open, 1 = closed) across that actuator's own
+    /// `ctrlrange` -- recalibrate this mapping if a different fine-tune's
+    /// `unnorm_key` uses a different gripper convention.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn apply_policy_action(
+        &mut self,
+        action: &[f32],
+        ee_body: &str,
+        arm_actuators: &[&str],
+        gripper_actuator: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            action.len() == 7,
+            "expected a 7-element [dx,dy,dz,drx,dry,drz,gripper] action, got {}",
+            action.len()
+        );
+        let n = arm_actuators.len();
+        anyhow::ensure!(n > 0, "arm_actuators must not be empty");
+
+        let model = self.mj_data.model();
+        let body_id = model
+            .name_to_id(MjtObj::mjOBJ_BODY, ee_body)
+            .ok_or_else(|| anyhow::anyhow!("no body named '{ee_body}'"))?;
+
+        // Each arm actuator names its driven joint via its own transmission
+        // (`actuator_trnid`); resolved here rather than taking joint names
+        // separately, so caller and Jacobian columns can't disagree about
+        // which joint an actuator's ctrl slot actually targets. Collected up
+        // front, alongside the gripper lookup below, so every use of
+        // `model` (and the immutable borrow of `self.mj_data` it holds)
+        // ends before the `ctrl_mut()`/`qpos()` calls further down.
+        let mut actuator_ids = Vec::with_capacity(n);
+        let mut dof_adrs = Vec::with_capacity(n);
+        let mut qpos_adrs = Vec::with_capacity(n);
+        for &name in arm_actuators {
+            let act_id = model
+                .name_to_id(MjtObj::mjOBJ_ACTUATOR, name)
+                .ok_or_else(|| anyhow::anyhow!("no actuator named '{name}'"))?;
+            anyhow::ensure!(
+                model.actuator_trntype()[act_id] == MjtTrn::mjTRN_JOINT,
+                "actuator '{name}' isn't a joint actuator"
+            );
+            let joint_id = model.actuator_trnid()[act_id][0] as usize;
+            anyhow::ensure!(
+                matches!(model.jnt_type()[joint_id], MjtJoint::mjJNT_HINGE | MjtJoint::mjJNT_SLIDE),
+                "actuator '{name}' drives a multi-dof joint, not supported here"
+            );
+            actuator_ids.push(act_id);
+            dof_adrs.push(model.jnt_dofadr()[joint_id] as usize);
+            qpos_adrs.push(model.jnt_qposadr()[joint_id] as usize);
+        }
+        let gripper_id = model
+            .name_to_id(MjtObj::mjOBJ_ACTUATOR, gripper_actuator)
+            .ok_or_else(|| anyhow::anyhow!("no actuator named '{gripper_actuator}'"))?;
+        let [gripper_lo, gripper_hi] = model.actuator_ctrlrange()[gripper_id];
+        let nv = model.ffi().nv as usize;
+
+        // `model` isn't touched again after this point, so its borrow of
+        // `self.mj_data` ends here and the writes below can borrow mutably.
+        //
+        // Forward kinematics first: xpos/xmat (and the frames mj_jac reads)
+        // are only ever as fresh as the last `forward`/`step`, and a scene
+        // that hasn't stepped yet (or had qpos written straight into it,
+        // e.g. by `apply_trajectory_frame`) would otherwise hand back a
+        // Jacobian computed against stale or zeroed transforms.
+        self.mj_data.forward();
+
+        // World-frame Jacobian of ee_body's origin -- mj_jac computes it in
+        // world coordinates already, matching the frame assumption above.
+        let point = self.mj_data.xpos()[body_id];
+        let (jacp, jacr) = self.mj_data.try_jac(true, true, &point, body_id)?;
+
+        // 6 x n task-space Jacobian: rows 0..3 translational, 3..6
+        // rotational, columns picked out at each arm joint's own dof
+        // address (each a 1-dof hinge/slide, checked above).
+        let mut j = [[0.0f64; 6]; /* n, capped below */ 32];
+        anyhow::ensure!(n <= j.len(), "too many arm actuators ({n}) for the fixed-size Jacobian buffer");
+        for (col, &dof) in dof_adrs.iter().enumerate() {
+            for row in 0..3 {
+                j[col][row] = jacp[row * nv + dof];
+            }
+            for row in 0..3 {
+                j[col][3 + row] = jacr[row * nv + dof];
+            }
+        }
+
+        // Damped least squares: solve (J J^T + lambda^2 I) y = dx for y,
+        // then dq = J^T y. The damping term trades a bit of tracking
+        // accuracy for staying well-conditioned near singularities (e.g. a
+        // fully outstretched arm), rather than blowing up like a bare
+        // pseudo-inverse would.
+        const LAMBDA_SQ: f64 = 1e-4;
+        let dx: [f64; 6] = std::array::from_fn(|i| action[i] as f64);
+
+        let mut jjt = [[0.0f64; 6]; 6];
+        for row in 0..6 {
+            for col in 0..6 {
+                let mut sum = 0.0;
+                for k in 0..n {
+                    sum += j[k][row] * j[k][col];
+                }
+                jjt[row][col] = sum + if row == col { LAMBDA_SQ } else { 0.0 };
+            }
+        }
+        let y = solve6(jjt, dx);
+
+        let dq: Vec<f64> = (0..n)
+            .map(|k| (0..6).map(|row| j[k][row] * y[row]).sum())
+            .collect();
+
+        for (i, &act_id) in actuator_ids.iter().enumerate() {
+            let current = self.mj_data.qpos()[qpos_adrs[i]];
+            self.mj_data.ctrl_mut()[act_id] = current + dq[i];
+        }
+
+        let t = (action[6] as f64).clamp(0.0, 1.0);
+        self.mj_data.ctrl_mut()[gripper_id] = gripper_lo + t * (gripper_hi - gripper_lo);
+
+        Ok(())
+    }
+
+    /// Wasm's half of the above. The Jacobian and `JJ^T` damped-least-squares
+    /// solve both need MuJoCo's own model/data, which live in the sibling
+    /// wasm module -- so unlike most of this file's wasm branches (which
+    /// only ship resolved *data* across and keep the math here), this one
+    /// ships the whole algorithm to JS (see `__bsMujocoApplyPolicyAction` in
+    /// `index.html`) and hands it nothing but plain resolved ids/addresses,
+    /// mirroring exactly what native computes above.
+    ///
+    /// `ee_body`/`arm_actuators`/`gripper_actuator` are (re-)registered via
+    /// `watch_body`/`watch_actuator` on every call rather than requiring a
+    /// caller to do it once up front: those watches only resolve once JS's
+    /// per-frame bridge loop next runs (see `index.html`), so a body/actuator
+    /// named for the first time in this same call returns `None` below and
+    /// this is a one-frame-late no-op the first time, then succeeds from the
+    /// next call on -- acceptable for a ~0.5s-interval policy loop.
+    #[cfg(target_arch = "wasm32")]
+    pub fn apply_policy_action(
+        &mut self,
+        action: &[f32],
+        ee_body: &str,
+        arm_actuators: &[&str],
+        gripper_actuator: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            action.len() == 7,
+            "expected a 7-element [dx,dy,dz,drx,dry,drz,gripper] action, got {}",
+            action.len()
+        );
+        let n = arm_actuators.len();
+        anyhow::ensure!(n > 0, "arm_actuators must not be empty");
+
+        self.watch_body(ee_body);
+        for &name in arm_actuators {
+            self.watch_actuator(name);
+        }
+        self.watch_actuator(gripper_actuator);
+
+        let body_id = wasm_bridge::named_body_id(ee_body)
+            .ok_or_else(|| anyhow::anyhow!("body '{ee_body}' not resolved by JS yet"))?;
+
+        let mut dof_adrs = Vec::with_capacity(n);
+        let mut qpos_adrs = Vec::with_capacity(n);
+        let mut actuator_ids = Vec::with_capacity(n);
+        for &name in arm_actuators {
+            let info = wasm_bridge::named_actuator_info(name)
+                .ok_or_else(|| anyhow::anyhow!("actuator '{name}' not resolved by JS yet"))?;
+            dof_adrs.push(info.dof_adr);
+            qpos_adrs.push(info.qpos_adr);
+            actuator_ids.push(info.id);
+        }
+        let gripper = wasm_bridge::named_actuator_info(gripper_actuator)
+            .ok_or_else(|| anyhow::anyhow!("actuator '{gripper_actuator}' not resolved by JS yet"))?;
+
+        let action64: Vec<f64> = action.iter().map(|&v| v as f64).collect();
+        wasm_bridge::apply_policy_action(
+            body_id as u32,
+            &dof_adrs,
+            &qpos_adrs,
+            &actuator_ids,
+            gripper.id,
+            gripper.ctrl_lo,
+            gripper.ctrl_hi,
+            &action64,
+        );
+        Ok(())
     }
 
     /// This model's joints in MuJoCo's own order: name + `qpos` width (1 for
@@ -1203,6 +1484,24 @@ mod wasm_bridge {
         pub qpos_adr: u32,
     }
 
+    /// Everything `apply_policy_action` needs about one named actuator,
+    /// resolved by JS in a single round trip (see
+    /// `mj_bridge_report_actuator_info`) rather than separate lookups for
+    /// id/dof/qpos/ctrlrange -- all of it lives in MuJoCo's own memory, not
+    /// ours.
+    #[derive(Clone, Copy)]
+    pub struct ActuatorInfo {
+        pub id: u32,
+        /// This actuator's driven joint's dof address (`jnt_dofadr`) --
+        /// column index into the Jacobian JS computes.
+        pub dof_adr: u32,
+        /// Same joint's qpos address, to read its current value before
+        /// adding the solved delta.
+        pub qpos_adr: u32,
+        pub ctrl_lo: f64,
+        pub ctrl_hi: f64,
+    }
+
     /// The parts of a mesh geom that don't change frame to frame, reported
     /// once per model load (see `mj_bridge_set_mesh_geom`). Everything else
     /// `MujocoScene::mesh_geoms` needs -- the world transform -- is already
@@ -1253,6 +1552,9 @@ mod wasm_bridge {
         // parsed model (see mj_bridge_report_geom_id/mj_bridge_report_joint_dof).
         static WATCHED_GEOMS: RefCell<HashMap<String, Option<usize>>> = RefCell::new(HashMap::new());
         static WATCHED_JOINTS: RefCell<HashMap<String, Option<u32>>> = RefCell::new(HashMap::new());
+        // Same idea for apply_policy_action's ee_body/actuator names.
+        static WATCHED_BODIES: RefCell<HashMap<String, Option<usize>>> = RefCell::new(HashMap::new());
+        static WATCHED_ACTUATORS: RefCell<HashMap<String, Option<ActuatorInfo>>> = RefCell::new(HashMap::new());
         // (playing, speed) -- JS's frame() loop polls this each frame to
         // gate/scale its own stepping, since the sim itself runs in JS.
         static PLAYBACK: RefCell<(bool, f32)> = const { RefCell::new((true, 1.0)) };
@@ -1327,8 +1629,55 @@ mod wasm_bridge {
         WATCHED_JOINTS.with(|m| m.borrow().get(name).copied().flatten())
     }
 
+    pub(super) fn watch_body(name: &str) {
+        WATCHED_BODIES.with(|m| {
+            m.borrow_mut().entry(name.to_string()).or_insert(None);
+        });
+    }
+
+    pub(super) fn named_body_id(name: &str) -> Option<usize> {
+        WATCHED_BODIES.with(|m| m.borrow().get(name).copied().flatten())
+    }
+
+    pub(super) fn watch_actuator(name: &str) {
+        WATCHED_ACTUATORS.with(|m| {
+            m.borrow_mut().entry(name.to_string()).or_insert(None);
+        });
+    }
+
+    pub(super) fn named_actuator_info(name: &str) -> Option<ActuatorInfo> {
+        WATCHED_ACTUATORS.with(|m| m.borrow().get(name).copied().flatten())
+    }
+
     pub(super) fn apply_qvel(dof_index: u32, delta: f64) {
         js_apply_qvel(dof_index, delta);
+    }
+
+    /// Ships the whole Jacobian damped-least-squares solve to JS in one
+    /// call -- see `MujocoScene::apply_policy_action`'s wasm branch and
+    /// `__bsMujocoApplyPolicyAction` in `index.html` for why this one
+    /// function carries the whole algorithm rather than just data.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn apply_policy_action(
+        body_id: u32,
+        dof_adrs: &[u32],
+        qpos_adrs: &[u32],
+        actuator_ids: &[u32],
+        gripper_id: u32,
+        gripper_lo: f64,
+        gripper_hi: f64,
+        action: &[f64],
+    ) {
+        js_apply_policy_action(
+            body_id,
+            dof_adrs,
+            qpos_adrs,
+            actuator_ids,
+            gripper_id,
+            gripper_lo,
+            gripper_hi,
+            action,
+        );
     }
 
     /// Bumped every time a model is staged. JS polls this and reloads when it
@@ -1433,6 +1782,38 @@ mod wasm_bridge {
         });
     }
 
+    #[wasm_bindgen]
+    pub fn mj_bridge_watched_body_names() -> Vec<String> {
+        WATCHED_BODIES.with(|m| m.borrow().keys().cloned().collect())
+    }
+
+    #[wasm_bindgen]
+    pub fn mj_bridge_report_body_id(name: String, id: u32) {
+        WATCHED_BODIES.with(|m| {
+            m.borrow_mut().insert(name, Some(id as usize));
+        });
+    }
+
+    #[wasm_bindgen]
+    pub fn mj_bridge_watched_actuator_names() -> Vec<String> {
+        WATCHED_ACTUATORS.with(|m| m.borrow().keys().cloned().collect())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[wasm_bindgen]
+    pub fn mj_bridge_report_actuator_info(
+        name: String,
+        id: u32,
+        dof_adr: u32,
+        qpos_adr: u32,
+        ctrl_lo: f64,
+        ctrl_hi: f64,
+    ) {
+        WATCHED_ACTUATORS.with(|m| {
+            m.borrow_mut().insert(name, Some(ActuatorInfo { id, dof_adr, qpos_adr, ctrl_lo, ctrl_hi }));
+        });
+    }
+
     /// Reports one mesh geom's static description, once per model load.
     ///
     /// JS has to resolve several things this side can't see. `mesh_name`
@@ -1528,6 +1909,23 @@ mod wasm_bridge {
         /// each one crosses into the other wasm module's memory.
         #[wasm_bindgen(js_namespace = window, js_name = "__bsMujocoSetQpos")]
         fn js_set_qpos(adrs: &[u32], values: &[f64]);
+
+        /// Computes `ee_body`'s Jacobian (`mj_jacBody`), solves the damped
+        /// least squares delta, and writes `ctrl` directly -- the JS-side
+        /// twin of `MujocoScene::apply_policy_action`'s native math. `action`
+        /// is the 7-element `[dx,dy,dz,drx,dry,drz,gripper]` vector; the rest
+        /// are already-resolved ids/addresses from `ActuatorInfo`.
+        #[wasm_bindgen(js_namespace = window, js_name = "__bsMujocoApplyPolicyAction")]
+        fn js_apply_policy_action(
+            body_id: u32,
+            dof_adrs: &[u32],
+            qpos_adrs: &[u32],
+            actuator_ids: &[u32],
+            gripper_id: u32,
+            gripper_lo: f64,
+            gripper_hi: f64,
+            action: &[f64],
+        );
     }
 }
 
@@ -1629,5 +2027,39 @@ mod tests {
             ("m/b.xml".to_string(), r#"<mujoco><include file="a.xml"/></mujoco>"#.to_string()),
         ];
         assert_eq!(find_root_mjcf(&files), None);
+    }
+
+    // Also exercised against the real vendored panda rather than a fixture
+    // (see PANDA_DIR above) -- a fake model with a hand-picked Jacobian
+    // could pass this test while a real singularity/near-singularity in the
+    // actual arm still breaks it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn policy_action_drives_arm_and_gripper_ctrl() {
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+        // +5cm x, -3cm z, no rotation, gripper fully closed.
+        let action = [0.05_f32, 0.0, -0.03, 0.0, 0.0, 0.0, 1.0];
+        scene.apply_policy_action(&action, "hand", &arm_actuators, "actuator8").unwrap();
+
+        let ctrl = scene.mj_data.ctrl();
+        // A nonzero Cartesian delta producing an all-zero joint delta would
+        // mean the IK silently did nothing (e.g. a Jacobian mismapped to the
+        // wrong columns).
+        assert!(
+            ctrl[..7].iter().any(|&c| c.abs() > 1e-6),
+            "expected at least one arm actuator target to move off zero, got {:?}",
+            &ctrl[..7]
+        );
+
+        let model = scene.mj_data.model();
+        let gripper_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, "actuator8").unwrap();
+        let [_, hi] = model.actuator_ctrlrange()[gripper_id];
+        assert_eq!(ctrl[gripper_id], hi, "gripper=1.0 (fully closed) should map to ctrlrange's max");
+
+        // Physics should tolerate the new ctrl targets, not blow up.
+        scene.step_once();
+        assert!(scene.mj_data.qpos().iter().all(|v| v.is_finite()), "qpos went non-finite after stepping");
     }
 }

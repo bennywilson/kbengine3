@@ -44,9 +44,23 @@ Run the examples from a command prompt:
 
 ## Running in a Browser (WASM)
 
-Each example has a `build_wasm.bat` that compiles to wasm, runs `wasm-bindgen`,
-and serves the result on <http://127.0.0.1:8000> (the built-in `serve.py` sends
-no-cache headers so you always get the fresh build — no incognito needed).
+The build system lives in `launcher/build.py` (the single source of truth for
+compiling to wasm, running `wasm-bindgen`, and copying `index.html` + runtime
+assets into the serve directory). Run any example's browser build with:
+
+```sh
+python launcher/build.py run <example> wasm    # e.g. run splat wasm
+```
+
+Each example serves on its own port, assigned in discovery order from 8000
+(`2d`→8000, `3d`→8001, `mujoco_test`→8002, `splat`→8003); `serve.py` sends
+no-cache headers so you always get the fresh build — no incognito needed. The
+splat demo also has a `build_wasm.bat` convenience wrapper that just invokes the
+launcher for it. Re-run the build after editing `index.html` — the browser
+loads the copy in the serve directory, which only a build refreshes.
+
+> The splat demo can talk to a local policy server for robot-policy control;
+> that server runs separately on port 8000 — see `policy_server/README.md`.
 
 **Which backend a demo uses matters for the browser:**
 

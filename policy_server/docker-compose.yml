@@ -1,0 +1,41 @@
+# Each model gets its own profile/service/Dockerfile (see openvla/) so
+# swapping models never means fighting another model's dependency pins in
+# the same image. Run one at a time:
+#
+#   docker compose --profile openvla up --build
+#
+# GPU passthrough is NVIDIA-only: Linux needs the nvidia-container-toolkit
+# installed, Windows needs WSL2 + the CUDA-on-WSL driver, and this doesn't
+# run at all on Mac (no CUDA). The `deploy.resources.reservations.devices`
+# block below is what asks Docker for a GPU; there's no CPU-only fallback
+# service since openvla-7b on CPU isn't practically usable (see server.py).
+services:
+  openvla:
+    profiles: ["openvla"]
+    build:
+      context: ./openvla
+    ports:
+      - "${OPENVLA_PORT:-8000}:8000"
+    environment:
+      MODEL_ID: ${MODEL_ID:-openvla/openvla-7b}
+      UNNORM_KEY: ${UNNORM_KEY:-bridge_orig}
+      ATTN_IMPLEMENTATION: ${ATTN_IMPLEMENTATION:-eager}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      # Only needed for gated/private Hugging Face repos; unset otherwise.
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      # Named volume, not bind mount -- survives `docker compose down` and
+      # is shared across model profiles (each caches under its own
+      # <org>--<repo> subdir, so there's no collision), meaning switching
+      # profiles or rebuilding never re-downloads weights already fetched.
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:

@@ -192,6 +192,19 @@
 				console.error("MuJoCo bridge: failed to report joint tracks:", err);
 			}
 
+			resolveWatchedNames();
+		}
+
+		// Resolves every name a MujocoActor has asked to watch (geoms,
+		// joints, bodies, actuators) against the *current* model. Called
+		// once from loadModel() and again every frame from frame() below --
+		// a watch registered after this model already loaded (e.g.
+		// apply_policy_action watching a body/actuator for the first time,
+		// well after the actor's scene finished loading) would otherwise
+		// never resolve until the next model reload, which for a
+		// policy-controlled actor might never happen again. Already-resolved
+		// names are just harmlessly re-reported with the same value.
+		function resolveWatchedNames() {
 			for (const name of bsApp.mj_bridge_watched_geom_names()) {
 				const geom = model.geom(name);
 				bsApp.mj_bridge_report_geom_id(name, geom.id);
@@ -201,6 +214,34 @@
 				const joint = model.jnt(name);
 				bsApp.mj_bridge_report_joint_dof(name, joint.dofadr);
 				joint.delete();
+			}
+			for (const name of bsApp.mj_bridge_watched_body_names()) {
+				const body = model.body(name);
+				bsApp.mj_bridge_report_body_id(name, body.id);
+				body.delete();
+			}
+			const actuatorTrnid = new Int32Array(model.actuator_trnid);
+			const jntDofadr = new Int32Array(model.jnt_dofadr);
+			const jntQposadr = new Int32Array(model.jnt_qposadr);
+			const actuatorCtrlrange = new Float64Array(model.actuator_ctrlrange);
+			for (const name of bsApp.mj_bridge_watched_actuator_names()) {
+				const act = model.actuator(name);
+				const actId = act.id;
+				act.delete();
+				// trnid[actId*2] is the driven joint id for a joint-transmission
+				// actuator (mjTRN_JOINT); the second slot is unused for that
+				// transmission type. Not re-validated against actuator_trntype
+				// here -- apply_policy_action's caller names its own model's
+				// actuators, same trust level as reportJointTracks above.
+				const jointId = actuatorTrnid[actId * 2];
+				bsApp.mj_bridge_report_actuator_info(
+					name,
+					actId,
+					jntDofadr[jointId],
+					jntQposadr[jointId],
+					actuatorCtrlrange[actId * 2],
+					actuatorCtrlrange[actId * 2 + 1],
+				);
 			}
 		}
 
@@ -221,6 +262,105 @@
 			mujoco.mj_forward(model, data);
 		};
 
+		// Gauss-Jordan with partial pivoting for a fixed 6x6 system --
+		// ported straight from src/mujoco.rs's `solve6`, which this must stay
+		// in sync with. `a` is consumed (rows swapped/scaled in place).
+		function solve6(a, b) {
+			b = b.slice();
+			for (let col = 0; col < 6; col++) {
+				let pivotRow = col;
+				for (let r = col + 1; r < 6; r++) {
+					if (Math.abs(a[r][col]) > Math.abs(a[pivotRow][col])) pivotRow = r;
+				}
+				[a[col], a[pivotRow]] = [a[pivotRow], a[col]];
+				[b[col], b[pivotRow]] = [b[pivotRow], b[col]];
+
+				const pivot = a[col][col];
+				if (Math.abs(pivot) < 1e-12) continue; // Degenerate row; skip like the Rust side.
+				for (let k = col; k < 6; k++) a[col][k] /= pivot;
+				b[col] /= pivot;
+
+				for (let row = 0; row < 6; row++) {
+					if (row === col) continue;
+					const factor = a[row][col];
+					for (let k = col; k < 6; k++) a[row][k] -= factor * a[col][k];
+					b[row] -= factor * b[col];
+				}
+			}
+			return b;
+		}
+
+		// JS twin of MujocoScene::apply_policy_action's native math -- see
+		// that method's wasm branch for why the whole algorithm lives here
+		// rather than just data. `dofAdrs`/`qposAdrs`/`actuatorIds` are
+		// already resolved (one entry per arm actuator, same order);
+		// `action` is the 7-element [dx,dy,dz,drx,dry,drz,gripper] vector.
+		window.__bsMujocoApplyPolicyAction = (
+			bodyId,
+			dofAdrs,
+			qposAdrs,
+			actuatorIds,
+			gripperId,
+			gripperLo,
+			gripperHi,
+			action,
+		) => {
+			if (!model || !data) return;
+			// Forward kinematics first, matching native: xpos and the frames
+			// mj_jacBody reads are only as fresh as the last forward/step.
+			mujoco.mj_forward(model, data);
+
+			const nv = model.nv;
+			const jacpBuf = new mujoco.DoubleBuffer(3 * nv);
+			const jacrBuf = new mujoco.DoubleBuffer(3 * nv);
+			mujoco.mj_jacBody(model, data, jacpBuf, jacrBuf, bodyId);
+			const jacp = jacpBuf.GetView();
+			const jacr = jacrBuf.GetView();
+
+			// 6 x n task-space Jacobian, one column per arm actuator's own
+			// dof address -- same layout as native's fixed-size buffer.
+			const n = dofAdrs.length;
+			const j = [];
+			for (let col = 0; col < n; col++) {
+				const dof = dofAdrs[col];
+				j.push([
+					jacp[dof], jacp[nv + dof], jacp[2 * nv + dof],
+					jacr[dof], jacr[nv + dof], jacr[2 * nv + dof],
+				]);
+			}
+
+			// Damped least squares: solve (J J^T + lambda^2 I) y = dx for y,
+			// then dq = J^T y -- see src/mujoco.rs's native apply_policy_action
+			// for the full rationale (this must stay numerically identical).
+			const LAMBDA_SQ = 1e-4;
+			const dx = Array.from(action.slice(0, 6));
+			const jjt = Array.from({ length: 6 }, () => new Array(6).fill(0));
+			for (let row = 0; row < 6; row++) {
+				for (let col = 0; col < 6; col++) {
+					let sum = 0;
+					for (let k = 0; k < n; k++) sum += j[k][row] * j[k][col];
+					jjt[row][col] = sum + (row === col ? LAMBDA_SQ : 0);
+				}
+			}
+			const y = solve6(jjt, dx);
+
+			const dq = new Array(n);
+			for (let k = 0; k < n; k++) {
+				let sum = 0;
+				for (let row = 0; row < 6; row++) sum += j[k][row] * y[row];
+				dq[k] = sum;
+			}
+
+			const qpos = data.qpos;
+			const ctrl = data.ctrl;
+			for (let i = 0; i < n; i++) {
+				ctrl[actuatorIds[i]] = qpos[qposAdrs[i]] + dq[i];
+			}
+
+			const t = Math.min(Math.max(action[6], 0), 1);
+			ctrl[gripperId] = gripperLo + t * (gripperHi - gripperLo);
+		};
+
 		function frame(now) {
 			const generation = bsApp.mj_bridge_model_generation();
 			if (generation !== lastGeneration) {
@@ -233,6 +373,16 @@
 			}
 
 			if (model) {
+				// Cheap (a handful of name lookups) and mostly redundant with
+				// loadModel()'s own pass above -- but a watch registered after
+				// this model already loaded (see resolveWatchedNames's doc
+				// comment) needs this to ever resolve at all.
+				try {
+					resolveWatchedNames();
+				} catch (err) {
+					console.error("MuJoCo bridge: failed to resolve watched names:", err);
+				}
+
 				if (bsApp.mj_bridge_take_reset_requested()) {
 					mujoco.mj_resetData(model, data);
 					accumulator = 0;
@@ -257,6 +407,17 @@
 				}
 				if (bsApp.mj_bridge_take_single_step_requested()) {
 					mujoco.mj_step(model, data);
+				}
+				// TEMP diagnostic (remove with the [policy apply] one): is the sim
+				// actually advancing? Throttled to ~1/sec. If steps=0 or qpos never
+				// changes while kinematic=false/playing=true, ctrl writes can't turn
+				// into motion no matter how correct the apply is.
+				if (!window.__bsStepLogT || now - window.__bsStepLogT > 1000) {
+					window.__bsStepLogT = now;
+					console.log(
+						`[sim step] steps=${steps} kinematic=${bsApp.mj_bridge_kinematic()} ` +
+						`playing=${bsApp.mj_bridge_playing()} qpos[0]=${data.qpos[0].toFixed(4)}`
+					);
 				}
 
 				bsApp.mj_bridge_set_geoms(

@@ -20,6 +20,7 @@ pub mod idb;
 pub mod input;
 #[cfg(feature = "mujoco")]
 pub mod mujoco;
+pub mod policy_client;
 pub mod renderer;
 pub mod resource;
 #[cfg(feature = "mujoco")]

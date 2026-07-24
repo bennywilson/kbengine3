@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ab_glyph = "0.2.24"
 anyhow = "1.0"
+base64 = "0.21"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 cfg-if = "1.0.0"
 cgmath = { version = "0.18", features = ["serde"] }
@@ -56,10 +57,17 @@ tracy_full = {version = "1.7.1", features = ["enable"]}
 # Optional (behind the "mujoco" feature) so games that don't use it aren't
 # forced to link/download MuJoCo.
 mujoco-rs = { version = "5.0.0", optional = true, default-features = false, features = ["auto-download-mujoco"] }
+# Policy-server client (src/policy_client.rs) only, not asset loading (that's
+# still std::fs on native, see src/assets.rs). No tls feature: we only ever
+# call http://localhost, and skipping it avoids an openssl/native-tls build
+# dependency. "blocking" because there's no ambient tokio runtime anywhere
+# in this engine to drive the async client (see policy_client.rs's doc
+# comment on why native uses the blocking client, wasm the async one).
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log = { version = "0.2.0", features = [] }
-reqwest = { version = "0.11" }
+reqwest = { version = "0.11", features = ["json"] }
 js-sys = "0.3"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"

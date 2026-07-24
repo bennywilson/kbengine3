@@ -31,6 +31,11 @@ __pycache__/
 # mujoco-rs auto-downloaded native binaries (examples/mujoco_test)
 .mujoco_dl/
 
+# Docker Desktop's WSL2 VM disk (images, containers, hf-cache volume incl.
+# downloaded model weights) -- relocated here off the C: drive, see
+# policy_server/. Entirely disposable/regenerable.
+.docker_data/
+
 # Retargeted trajectory clips, regenerated on demand from the source JSON
 # (see trajectory::cache)
 **/resources/trajectory_cache/

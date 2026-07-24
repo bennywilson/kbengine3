@@ -822,6 +822,212 @@ impl<'a> Renderer<'a> {
         self.debug_lines.retain_mut(|l| cur_time < l.end_time);
     }
 
+    /// Re-renders the world from `camera`'s viewpoint -- not the interactive
+    /// `game_camera` the window itself is showing -- through the same
+    /// tonemap/postprocess pass `render_frame` uses for the swapchain, into
+    /// a private `width`x`height` texture. Used to feed a policy server a
+    /// fixed, non-interactive camera view (see
+    /// [`crate::policy_client::query_policy`]) decoupled from wherever the
+    /// user's fly cam happens to be pointed, since a VLA policy's action
+    /// quality is highly sensitive to viewpoint -- see the module docs on
+    /// `MujocoScene::apply_policy_action` for why this can't just reuse
+    /// whatever `render_frame` last drew.
+    ///
+    /// `fov_deg` overrides `game_config.fov` for this render only -- the
+    /// interactive viewport's own FOV is restored along with everything else
+    /// once this returns, since `game_config` itself is never mutated.
+    ///
+    /// `width`/`height` need not match the window: `PostprocessPass` samples
+    /// its input by normalized UV, so this just resizes to fit -- if the
+    /// aspect ratio differs from the window's, the image stretches rather
+    /// than letterboxes. Fine for feeding a model that resizes its input
+    /// anyway (e.g. OpenVLA's own preprocessing); revisit if exact framing
+    /// ever matters.
+    ///
+    /// Native only -- see [`begin_capture_frame_png`](Self::begin_capture_frame_png)
+    /// for wasm's split-phase equivalent, needed because a GPU buffer only
+    /// finishes mapping asynchronously there (a callback driven by the
+    /// browser's own event loop, not something `device.poll` can block on
+    /// the way this does -- confirmed the hard way: calling this unmodified
+    /// on wasm doesn't error, it panics inside wgpu's own `WebBuffer::
+    /// get_mapped_range`, since the map genuinely hasn't completed yet).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn capture_frame_png(
+        &mut self,
+        game_config: &Config,
+        camera: &Camera,
+        fov_deg: f32,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<Vec<u8>> {
+        let (readback, capture_format, padded_bytes_per_row) =
+            self.begin_capture_frame_readback(game_config, camera, fov_deg, width, height)?;
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device_resources
+            .device
+            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })?;
+        let mapped = slice.get_mapped_range();
+        let png = encode_capture_png(&mapped, capture_format, width, height, padded_bytes_per_row)?;
+        drop(mapped);
+        readback.unmap();
+        Ok(png)
+    }
+
+    /// Renders + copies to a readback buffer -- the part of `capture_frame_png`
+    /// both targets can do synchronously while `&mut self` is still borrowed.
+    /// Split out so wasm's [`begin_capture_frame_png`](Self::begin_capture_frame_png)
+    /// can reuse it without duplicating the render/copy setup.
+    ///
+    /// Swaps in `camera` (and `fov_deg`), re-renders the world at the
+    /// viewport's *current* resolution -- same pass sequence
+    /// `bake_skylight_cubemap` uses per cube face: deferred gbuffer+lighting
+    /// or forward, then splats -- into the shared render textures, then
+    /// tonemaps that through `PostprocessPass` into a `width`x`height`
+    /// capture texture (postprocess samples by normalized UV, so the square
+    /// output just scales the wider viewport render to fit). Only the camera
+    /// is restored afterward; nothing here resizes the renderer.
+    ///
+    /// Deliberately does *not* resize the surface/render targets to
+    /// `width`x`height`: doing that mid-tick reconfigures the swapchain and
+    /// desyncs egui's scissor rect against the render area, which on wasm's
+    /// WebGPU backend spews `Scissor rect ... not contained` validation
+    /// errors, invalidates the frame's command buffers, and -- worst --
+    /// leaves the device wedged so the capture's own readback buffer never
+    /// finishes mapping, hanging the async policy task that awaits it. The
+    /// shared render textures get overwritten here, but `render_frame`
+    /// redraws them from scratch later the same frame, so the live viewport
+    /// is unaffected.
+    fn begin_capture_frame_readback(
+        &mut self,
+        game_config: &Config,
+        camera: &Camera,
+        fov_deg: f32,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<(wgpu::Buffer, wgpu::TextureFormat, u32)> {
+        // Must match the swapchain's own format, not an arbitrary display
+        // format of our choosing: PostprocessPass's pipeline was built
+        // against `surface_config.format` (postprocess.rs's `new`) and wgpu
+        // render pipelines are locked to the exact color-attachment format
+        // they were created with -- a mismatched target here doesn't
+        // silently reinterpret, it's a validation error at render-pass time.
+        let capture_format = self.device_resources.surface_config.format;
+        let capture_tex = Texture::new_render_texture_with_format(
+            &self.device_resources.device,
+            capture_format,
+            width,
+            height,
+        )?;
+
+        let saved_camera = self.game_camera.clone();
+        // Only `fov` is overridden; width/height/render_scale stay at the live
+        // viewport's values so no resize is needed (see this fn's doc comment).
+        let mut capture_config = game_config.clone();
+        capture_config.fov = fov_deg;
+        self.game_camera = camera.clone();
+
+        {
+            let mut ctx = RenderContext {
+                device: &mut self.device_resources,
+                assets: &mut self.asset_manager,
+                camera: &self.game_camera,
+                config: &capture_config,
+            };
+            if let (true, Some(gbuffer_pass)) =
+                (self.deferred_world_enabled, self.gbuffer_pass.as_mut())
+            {
+                gbuffer_pass.render(&mut ctx, &self.actor_map);
+                self.lighting_pass.as_mut().unwrap().render(
+                    &mut ctx,
+                    &self.light_map,
+                    &self.actor_map,
+                    self.shadow_pass.as_mut().unwrap(),
+                    &self.env_cubemaps,
+                );
+            } else {
+                self.model_pass
+                    .render(&mut ctx, &SceneLayer::World, None, &self.actor_map);
+            }
+            if let Some(splat_pass) = &mut self.gaussian_splat_pass {
+                if splat_pass.has_model() {
+                    splat_pass.render(&mut ctx);
+                    if let Some(composite_pass) = &mut self.splat_composite_pass {
+                        composite_pass.render(&mut ctx);
+                    }
+                }
+            }
+
+            self.postprocess_pass.render(&mut ctx, &capture_tex.view, Some(self.postprocess_mode.clone()));
+        }
+
+        self.game_camera = saved_camera;
+
+        let device = &self.device_resources.device;
+        let queue = &self.device_resources.queue;
+
+        // Rgba8 = 4 bytes/texel; rows must be padded to a 256-byte stride for
+        // a texture-to-buffer copy, unlike the cubemap dump's lucky 1024-byte
+        // rows (see dump_cube_texture_to_disk) -- unpadded here whenever
+        // width isn't a multiple of 64.
+        let unpadded_bytes_per_row = width * 4;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
+
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("frame capture readback"),
+            size: (padded_bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame capture copy") });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &capture_tex.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        Ok((readback, capture_format, padded_bytes_per_row))
+    }
+
+    /// Wasm's first half of `capture_frame_png`: renders + submits the copy
+    /// synchronously (identical to native, needs `&mut self`), then hands
+    /// back a [`PendingFrameCapture`] to finish off this borrow -- its own
+    /// `finish()` is `async` and needs no `Renderer` at all, so it can be
+    /// `wasm_bindgen_futures::spawn_local`'d as a `'static` task the same way
+    /// the policy HTTP call already is (see `tick_mujoco_actors`), rather
+    /// than requiring the whole frame-tick call chain to become async just
+    /// to await a GPU buffer map.
+    #[cfg(target_arch = "wasm32")]
+    pub fn begin_capture_frame_png(
+        &mut self,
+        game_config: &Config,
+        camera: &Camera,
+        fov_deg: f32,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<PendingFrameCapture> {
+        let (readback, capture_format, padded_bytes_per_row) =
+            self.begin_capture_frame_readback(game_config, camera, fov_deg, width, height)?;
+        Ok(PendingFrameCapture { readback, capture_format, width, height, padded_bytes_per_row })
+    }
+
     pub fn resize(&mut self, game_config: &Config) {
         log!(
             "Resizing window to {} x {}",
@@ -1690,4 +1896,149 @@ fn f16_to_f32(h: u16) -> f32 {
         _ => (mant as f32 / 1024.0 + 1.0) * 2f32.powi(exp as i32 - 15),
     };
     if sign == 1 { -val } else { val }
+}
+
+/// Shared by native's `capture_frame_png` and wasm's `PendingFrameCapture::
+/// finish` -- everything after the readback buffer is mapped: strip row
+/// padding (a texture-to-buffer copy pads each row to a 256-byte stride,
+/// unlike the cubemap dump's lucky 1024-byte rows) and encode as PNG.
+///
+/// BGRA is the common swapchain format on Windows/DX12 -- PNG needs RGBA
+/// byte order, so swap R/B per pixel while unpacking rather than handing the
+/// encoder channel-swapped data.
+fn encode_capture_png(
+    mapped: &[u8],
+    capture_format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    padded_bytes_per_row: u32,
+) -> anyhow::Result<Vec<u8>> {
+    let unpadded_bytes_per_row = width * 4;
+    let swap_rb =
+        matches!(capture_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+    anyhow::ensure!(
+        swap_rb || matches!(capture_format, wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb),
+        "capture_frame_png: unhandled swapchain format {capture_format:?}"
+    );
+
+    let mut rgba = vec![0u8; (unpadded_bytes_per_row * height) as usize];
+    for row in 0..height as usize {
+        let src_start = row * padded_bytes_per_row as usize;
+        let dst_start = row * unpadded_bytes_per_row as usize;
+        let src_row = &mapped[src_start..src_start + unpadded_bytes_per_row as usize];
+        let dst_row = &mut rgba[dst_start..dst_start + unpadded_bytes_per_row as usize];
+        if swap_rb {
+            for (src_px, dst_px) in src_row.chunks_exact(4).zip(dst_row.chunks_exact_mut(4)) {
+                dst_px[0] = src_px[2];
+                dst_px[1] = src_px[1];
+                dst_px[2] = src_px[0];
+                dst_px[3] = src_px[3];
+            }
+        } else {
+            dst_row.copy_from_slice(src_row);
+        }
+    }
+
+    let mut png_bytes = std::io::Cursor::new(Vec::new());
+    image::write_buffer_with_format(&mut png_bytes, &rgba, width, height, image::ColorType::Rgba8, image::ImageFormat::Png)?;
+    Ok(png_bytes.into_inner())
+}
+
+/// Decodes a `capture_frame_png`/`begin_capture_frame_png` PNG back into raw
+/// RGBA8 pixels, for callers that want to *display* a capture (e.g. a policy
+/// debug view showing exactly what was sent to the model) rather than ship
+/// it somewhere else. Plain CPU roundtrip -- these captures already left the
+/// GPU as PNG bytes for the network call, and at a policy loop's ~1-2Hz
+/// cadence a decode here costs nothing worth avoiding.
+pub fn decode_capture_png(png_bytes: &[u8]) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+    let img = image::load_from_memory_with_format(png_bytes, image::ImageFormat::Png)?.to_rgba8();
+    let (width, height) = img.dimensions();
+    Ok((img.into_raw(), width, height))
+}
+
+/// A frame capture whose GPU copy has already been submitted (by
+/// [`Renderer::begin_capture_frame_png`]) but whose readback buffer hasn't
+/// been mapped yet -- wasm can't wait for that synchronously (see that
+/// method's docs), so this carries just the plain, `'static` state
+/// [`finish`](Self::finish) needs, independent of `Renderer`'s borrow.
+#[cfg(target_arch = "wasm32")]
+pub struct PendingFrameCapture {
+    readback: wgpu::Buffer,
+    capture_format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    padded_bytes_per_row: u32,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl PendingFrameCapture {
+    /// Awaits the readback buffer's map, then encodes it as PNG -- the async
+    /// half `begin_capture_frame_png` couldn't do inline. Needs no `Renderer`
+    /// at all, so the caller can `wasm_bindgen_futures::spawn_local` this
+    /// (chained with the policy HTTP call) as its own `'static` task exactly
+    /// like that call already is, rather than threading an await point
+    /// through the whole (synchronous) frame-tick call chain.
+    pub async fn finish(self) -> anyhow::Result<Vec<u8>> {
+        let slice = self.readback.slice(..);
+        map_buffer_read(slice).await?;
+        let mapped = slice.get_mapped_range();
+        let png = encode_capture_png(&mapped, self.capture_format, self.width, self.height, self.padded_bytes_per_row)?;
+        drop(mapped);
+        self.readback.unmap();
+        Ok(png)
+    }
+}
+
+/// Awaits a [`wgpu::BufferSlice::map_async`] callback -- which, on wasm,
+/// only fires once the browser's own event loop gets to run it (there's no
+/// `device.poll` equivalent that blocks the way native's does; that's
+/// exactly what panicked when this file's capture path first tried it
+/// unmodified on wasm). A hand-rolled `Future` rather than pulling in a
+/// oneshot-channel crate for one call site: the callback stashes its result
+/// and wakes whatever task is waiting, which is all a single-shot future
+/// needs.
+#[cfg(target_arch = "wasm32")]
+async fn map_buffer_read(slice: wgpu::BufferSlice<'_>) -> anyhow::Result<()> {
+    use std::sync::{Arc, Mutex};
+
+    // Arc<Mutex<_>> rather than Rc<RefCell<_>> purely to satisfy wgpu's
+    // `map_async` callback bound (`WasmNotSend`, which this build's wgpu
+    // still resolves to real `Send` -- no `fragile-send-sync-*` feature
+    // enabled) -- wasm is single-threaded regardless, so the lock is never
+    // contended.
+    #[derive(Default)]
+    struct Shared {
+        result: Option<Result<(), wgpu::BufferAsyncError>>,
+        waker: Option<std::task::Waker>,
+    }
+
+    struct MapFuture(Arc<Mutex<Shared>>);
+    impl std::future::Future for MapFuture {
+        type Output = Result<(), wgpu::BufferAsyncError>;
+        fn poll(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Self::Output> {
+            let mut shared = self.0.lock().unwrap();
+            match shared.result.take() {
+                Some(result) => std::task::Poll::Ready(result),
+                None => {
+                    shared.waker = Some(cx.waker().clone());
+                    std::task::Poll::Pending
+                }
+            }
+        }
+    }
+
+    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared_cb = shared.clone();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let mut shared = shared_cb.lock().unwrap();
+        shared.result = Some(result);
+        if let Some(waker) = shared.waker.take() {
+            waker.wake();
+        }
+    });
+
+    MapFuture(shared).await.map_err(|e| anyhow::anyhow!("buffer map failed: {e}"))
 }

@@ -1,0 +1,24 @@
+# Pins straight from openvla/openvla's own requirements-min.txt -- the repo
+# is explicit that transformers/timm/tokenizers are version-sensitive
+# (newer transformers releases have broken OpenVLA's remote-code loading in
+# the past), so don't "helpfully" bump these without checking upstream.
+timm==0.9.10
+tokenizers==0.19.1
+transformers==4.40.1
+accelerate>=0.30.0
+# Pinned exactly, not just >=: OpenVLA's README states it was "developed and
+# thoroughly tested with" these two specific versions. Letting pip resolve
+# torch to whatever's newest (it'll happily grab a 2026-era release) causes
+# a vision-backbone position-embedding shape mismatch against timm 0.9.10 --
+# hit this firsthand as "size of tensor a (276) must match tensor b (275)".
+torch==2.2.0
+torchvision==0.17.0
+# torch 2.2.0 predates NumPy 2.0's C-API break; an unpinned numpy resolves to
+# 2.x and torch's compiled extensions crash with "Numpy is not available"
+# (RuntimeError from `_ARRAY_API not found`) as soon as any numpy call runs.
+numpy<2
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pillow>=10.0
+pydantic>=2.0

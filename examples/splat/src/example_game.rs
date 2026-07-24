@@ -6,12 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use black_splat::{
     egui, assets::*, config::*, editor::{self, EditorChoice, GizmoSpace, TransformGizmo}, engine::*,
-    fly_camera::*, game_object::*, input::*, mujoco::{MjcfBundle, MujocoScene}, renderer::*, resource::SceneLayer,
+    fly_camera::*, game_object::*, input::*, mujoco::{MjcfBundle, MujocoScene},
+    policy_client::PolicyResponse, renderer::*, resource::SceneLayer,
     touch_pads::*, trajectory::RetargetedClip, utils::*, log,
     passes::deferred::ShadowSettings,
     passes::gaussian_splat::SplatParams,
     passes::postprocess::PostProcessSettings,
 };
+use black_splat::policy_client::query_policy;
 
 use crate::editor_config::{self, EditorConfig, GIZMO_ACTIONS};
 use crate::resource_library::{self, MaterialFile};
@@ -672,6 +674,23 @@ struct SceneSplat {
     transform: ActorTransform,
 }
 
+/// Default fixed policy-camera placement, tuned for this project's actual
+/// franka_emika_panda placement (base bottom around (-0.236, 0.889, -0.230),
+/// column top -- before the first bend -- around y=1.53, arm reaching down
+/// +x) rather than a generic guess: pulled back in -x (behind the arm,
+/// "over the shoulder" of the reach direction) and up past the column top,
+/// angled down and across at the workspace so both the arm and whatever's
+/// on the table (e.g. an object around (0.25, 0.764, -0.002)) stay in
+/// frame. Re-tune per scene via the Policy Control panel if the actor's
+/// placed somewhere else.
+const DEFAULT_POLICY_CAMERA_POS: CgVec3 = CgVec3::new(-0.7, 2.0, -1.0);
+const DEFAULT_POLICY_CAMERA_TARGET: CgVec3 = CgVec3::new(0.15, 0.5, -0.10);
+/// How far in front of the fly cam "Snap to Fly Cam" places the look-at
+/// target -- arbitrary but in the same ballpark as the distance between
+/// `DEFAULT_POLICY_CAMERA_POS` and `DEFAULT_POLICY_CAMERA_TARGET` above, so
+/// the snapped framing is roughly as tight as the tuned default.
+const POLICY_CAMERA_SNAP_DISTANCE: f32 = 1.5;
+
 /// A MuJoCo physics scene as a scene object: an MJCF file rendered as
 /// wireframe lines (see `black_splat::mujoco::MujocoScene`), placed by a
 /// rigid transform on top of the MJCF's own local coordinates, with live
@@ -722,6 +741,66 @@ struct MujocoSceneActor {
     // native loads meshes inline, see `tick_mujoco_actors`).
     #[cfg(target_arch = "wasm32")]
     requested_meshes: std::collections::HashSet<String>,
+
+    // ---- Policy-server control (see policy_client.rs / MujocoScene::
+    // apply_policy_action) -- deliberately not in MujocoActorSnapshot/
+    // MujocoActorDto (no undo-snapshotting, no scene-file persistence) or
+    // inspect_properties' `changed` tracking, same as `clip_time` above:
+    // this is live/transient control state, not saved scene data.
+    /// Periodically captures the render, sends it + `policy_instruction` to
+    /// `policy_server_url`, and drives the arm from the response.
+    policy_enabled: bool,
+    policy_instruction: String,
+    policy_server_url: String,
+    /// Seconds between policy-server calls -- these run over HTTP plus a
+    /// model forward pass, several orders of magnitude slower than a
+    /// physics step, so this can't run every frame the way `clip_time` does.
+    policy_interval_secs: f32,
+    /// Comma-separated actuator names, in `MujocoScene::apply_policy_action`'s
+    /// `arm_actuators` order. Defaults match panda.xml; a different MJCF
+    /// needs different names here, same caveat as that function's own docs.
+    policy_arm_actuators_csv: String,
+    policy_gripper_actuator: String,
+    policy_ee_body: String,
+    /// Fixed, non-interactive camera the policy capture renders from --
+    /// deliberately decoupled from the user's own fly cam (see
+    /// `Renderer::capture_frame_png`'s docs on why a VLA policy needs a
+    /// stable viewpoint rather than whatever the user's currently looking
+    /// at). World-space position/look-at target, tuned by hand per scene
+    /// the same way `policy_ee_body` etc. are -- there's no camera
+    /// calibration published for the BridgeData/OpenVLA training distribution
+    /// to match exactly, just its rough convention (workspace + gripper both
+    /// in frame, roughly eye-level, moderate FOV).
+    policy_camera_pos: CgVec3,
+    policy_camera_target: CgVec3,
+    policy_camera_fov: f32,
+    /// Time accumulated since the last dispatch, like `clip_time`.
+    policy_time_since_last: f32,
+    /// Set once a request is dispatched, cleared when its response is
+    /// drained -- guards against firing a second request before the first
+    /// one (network + inference latency, not one frame) returns.
+    policy_pending: bool,
+    /// Shows a floating window with exactly the frame last sent to the
+    /// policy server -- lets you confirm the fixed camera is actually
+    /// framing what you think it is without guessing from the fly cam's
+    /// own (unrelated) view.
+    policy_debug_view: bool,
+    /// The decoded capture, re-uploaded each time a policy response is
+    /// drained (see `tick_mujoco_actors`). `egui::TextureHandle` owns the
+    /// GPU-side texture and frees it on drop, so this doubles as the
+    /// texture's lifetime -- not snapshotted/persisted like the rest of
+    /// this transient policy state.
+    policy_debug_texture: Option<egui::TextureHandle>,
+    /// The action vector from the most recently drained response (the raw
+    /// `[dx,dy,dz,drx,dry,drz,gripper]`), shown in the panel so it's
+    /// obvious at a glance whether the server is returning motion at all
+    /// and how large -- a constant tiny vector means a stub/canned server,
+    /// all-zeros means the model has nothing to do for this instruction.
+    policy_last_action: Option<Vec<f32>>,
+    /// Human-readable outcome of the most recent policy round trip
+    /// (applied / query failed / apply failed / no action), so failures
+    /// that only `log!` to an unseen terminal are visible in the panel too.
+    policy_status: String,
 }
 
 impl MujocoSceneActor {
@@ -747,6 +826,23 @@ impl MujocoSceneActor {
             mesh_model_cache: std::collections::HashMap::new(),
             #[cfg(target_arch = "wasm32")]
             requested_meshes: std::collections::HashSet::new(),
+            policy_enabled: false,
+            policy_instruction: String::new(),
+            policy_server_url: "http://localhost:8000".to_string(),
+            policy_interval_secs: 0.5,
+            policy_arm_actuators_csv: "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7"
+                .to_string(),
+            policy_gripper_actuator: "actuator8".to_string(),
+            policy_ee_body: "hand".to_string(),
+            policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
+            policy_camera_target: DEFAULT_POLICY_CAMERA_TARGET,
+            policy_camera_fov: 60.0,
+            policy_time_since_last: 0.0,
+            policy_pending: false,
+            policy_debug_view: false,
+            policy_debug_texture: None,
+            policy_last_action: None,
+            policy_status: String::new(),
         }
     }
 }
@@ -1615,6 +1711,16 @@ pub struct SplatGame {
     // later tick turns the bytes into a Model (see `tick_mujoco_actors`).
     #[cfg(target_arch = "wasm32")]
     pending_mujoco_meshes: Arc<Mutex<Vec<(String, String, Vec<u8>)>>>,
+    // Policy-server responses that finished since the last tick: (actor name,
+    // the exact PNG bytes that were sent, result). The HTTP call + model
+    // forward pass run off-thread (see tick_mujoco_actors); applying the
+    // response to the sim needs the actor's MujocoScene, which only exists
+    // on the main thread. The PNG rides along so a debug-view actor (see
+    // `policy_debug_view`) can display exactly what the model saw --
+    // carried unconditionally since it's cheap at this ~1-2Hz cadence, and
+    // whether to actually decode/display it is decided at drain time from
+    // the actor's current `policy_debug_view`, not baked in at dispatch.
+    pending_policy_actions: Arc<Mutex<Vec<(String, Vec<u8>, anyhow::Result<PolicyResponse>)>>>,
     // "Load .ply" plumbing.  The file dialog must run asynchronously (a browser
     // file input can't block the frame loop), so it drops its result here and
     // tick_frame picks it up: (file name, source path if one exists -- native
@@ -2568,6 +2674,27 @@ impl SplatGame {
                     mesh_model_cache: std::collections::HashMap::new(),
                     #[cfg(target_arch = "wasm32")]
                     requested_meshes: std::collections::HashSet::new(),
+                    // Not part of ObjectSnapshot (see the field comments on
+                    // MujocoSceneActor) -- restored to the same defaults
+                    // MujocoSceneActor::new uses, same as any other
+                    // undo-restored actor's non-snapshotted transient state.
+                    policy_enabled: false,
+                    policy_instruction: String::new(),
+                    policy_server_url: "http://localhost:8000".to_string(),
+                    policy_interval_secs: 0.5,
+                    policy_arm_actuators_csv:
+                        "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
+                    policy_gripper_actuator: "actuator8".to_string(),
+                    policy_ee_body: "hand".to_string(),
+                    policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
+                    policy_camera_target: DEFAULT_POLICY_CAMERA_TARGET,
+                    policy_camera_fov: 60.0,
+                    policy_time_since_last: 0.0,
+                    policy_pending: false,
+                    policy_debug_view: false,
+                    policy_debug_texture: None,
+                    policy_last_action: None,
+                    policy_status: String::new(),
                 });
                 // scene is None / loaded_path empty, so tick_mujoco_actors
                 // reloads it from xml_path on the next tick.
@@ -2742,6 +2869,72 @@ impl SplatGame {
     /// Details-panel edit, undo/redo, or scene load) and steps + wireframes
     /// every loaded one. Called once per frame from tick_frame_internal.
     fn tick_mujoco_actors(&mut self, renderer: &mut Renderer, game_config: &Config) {
+        // Policy-server responses that finished since the last tick: apply
+        // the action if the actor and its scene both still exist, and clear
+        // policy_pending either way so the next interval can dispatch again.
+        let finished_policy: Vec<(String, Vec<u8>, anyhow::Result<PolicyResponse>)> =
+            std::mem::take(&mut *self.pending_policy_actions.lock().unwrap());
+        for (name, png, result) in finished_policy {
+            let Some(actor) = self.scene_mujoco_actors.iter_mut().find(|a| a.name == name) else {
+                continue;
+            };
+            actor.policy_pending = false;
+            // Independent of whether the policy call itself succeeded below
+            // -- the point of the debug view is confirming what the camera
+            // captured, which happened regardless.
+            if actor.policy_debug_view {
+                match decode_capture_png(&png) {
+                    Ok((rgba, width, height)) => {
+                        let image = egui::ColorImage::from_rgba_unmultiplied(
+                            [width as usize, height as usize],
+                            &rgba,
+                        );
+                        actor.policy_debug_texture = Some(renderer.egui_ctx().load_texture(
+                            format!("policy_debug_{name}"),
+                            image,
+                            egui::TextureOptions::NEAREST,
+                        ));
+                    }
+                    Err(e) => log!("MuJoCo actor '{name}': policy debug frame decode failed: {e}"),
+                }
+            }
+            match result {
+                Ok(response) => {
+                    let Some(scene) = &mut actor.scene else {
+                        actor.policy_status = "response arrived but scene not loaded".to_string();
+                        continue;
+                    };
+                    match response.first_step() {
+                        Ok(step) => {
+                            actor.policy_last_action = Some(step.to_vec());
+                            let arm_actuators: Vec<&str> =
+                                actor.policy_arm_actuators_csv.split(',').map(str::trim).collect();
+                            match scene.apply_policy_action(
+                                step,
+                                &actor.policy_ee_body,
+                                &arm_actuators,
+                                &actor.policy_gripper_actuator,
+                            ) {
+                                Ok(()) => actor.policy_status = format!("applied ({})", response.model),
+                                Err(e) => {
+                                    log!("MuJoCo actor '{name}': apply_policy_action failed: {e}");
+                                    actor.policy_status = format!("apply failed: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log!("MuJoCo actor '{name}': policy response had no action: {e}");
+                            actor.policy_status = format!("no action: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    log!("MuJoCo actor '{name}': policy query failed: {e}");
+                    actor.policy_status = format!("query failed: {e}");
+                }
+            }
+        }
+
         // Mesh .obj bytes that arrived since the last tick, turned into Models
         // here on the render thread. Dropped on the floor if the actor is gone
         // or has since reloaded (a stale mesh belongs to a model that no
@@ -3039,6 +3232,80 @@ impl SplatGame {
                     mesh_actor.set_rotation(&geom.rotation);
                     mesh_actor.set_color(geom.rgba.into());
                     renderer.add_or_update_actor(mesh_actor);
+                }
+            }
+
+            // Periodic policy-server dispatch: capture this frame (actually
+            // last frame's -- see capture_frame_png's docs -- tick runs
+            // before render_frame, immaterial at this cadence), send it +
+            // the instruction, and apply whatever comes back once the drain
+            // at the top of this function picks up the result. Gated on not
+            // already having a request in flight -- unlike every other
+            // pending_* dispatch in this function, the round trip here is
+            // network + a model forward pass, not local disk/CPU work, so it
+            // can easily still be running several ticks later.
+            if actor.policy_enabled && actor.scene.is_some() && !actor.policy_pending {
+                actor.policy_time_since_last += game_config.delta_time;
+                if actor.policy_time_since_last >= actor.policy_interval_secs {
+                    actor.policy_time_since_last = 0.0;
+                    // Capture's render+copy is a GPU readback that must
+                    // happen on this (the render) thread -- see
+                    // capture_frame_png's/begin_capture_frame_png's docs.
+                    // The HTTP call is exactly the kind of I/O-bound work
+                    // this file already pushes off this thread (see the
+                    // MJCF/trajectory dispatch above); on wasm, finishing the
+                    // capture itself (awaiting the GPU buffer map) has to
+                    // join it there too, since only a 'static task can await
+                    // across browser-event-loop turns -- see
+                    // PendingFrameCapture's docs for why.
+                    let policy_camera = Camera::from_look(
+                        actor.policy_camera_pos,
+                        actor.policy_camera_target - actor.policy_camera_pos,
+                        CG_VEC3_UP,
+                    );
+                    #[cfg(not(target_arch = "wasm32"))]
+                    match renderer.capture_frame_png(game_config, &policy_camera, actor.policy_camera_fov, 224, 224) {
+                        Ok(png) => {
+                            actor.policy_pending = true;
+                            let name = actor.name.clone();
+                            let url = actor.policy_server_url.clone();
+                            let instruction = actor.policy_instruction.clone();
+                            let pending = self.pending_policy_actions.clone();
+                            let debug_png = png.clone();
+                            let task = async move {
+                                let result = query_policy(&url, &png, &instruction, None, None).await;
+                                pending.lock().unwrap().push((name, debug_png, result));
+                            };
+                            std::thread::spawn(move || pollster::block_on(task));
+                        }
+                        Err(e) => {
+                            log!("MuJoCo actor '{}': capture_frame_png failed: {e}", actor.name);
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    match renderer.begin_capture_frame_png(game_config, &policy_camera, actor.policy_camera_fov, 224, 224) {
+                        Ok(pending_capture) => {
+                            actor.policy_pending = true;
+                            let name = actor.name.clone();
+                            let url = actor.policy_server_url.clone();
+                            let instruction = actor.policy_instruction.clone();
+                            let pending = self.pending_policy_actions.clone();
+                            let task = async move {
+                                let (debug_png, result) = match pending_capture.finish().await {
+                                    Ok(png) => {
+                                        let debug_png = png.clone();
+                                        (debug_png, query_policy(&url, &png, &instruction, None, None).await)
+                                    }
+                                    Err(e) => (Vec::new(), Err(e)),
+                                };
+                                pending.lock().unwrap().push((name, debug_png, result));
+                            };
+                            wasm_bindgen_futures::spawn_local(task);
+                        }
+                        Err(e) => {
+                            log!("MuJoCo actor '{}': begin_capture_frame_png failed: {e}", actor.name);
+                        }
+                    }
                 }
             }
         }
@@ -3490,6 +3757,26 @@ impl SplatGame {
                 mesh_model_cache: std::collections::HashMap::new(),
                 #[cfg(target_arch = "wasm32")]
                 requested_meshes: std::collections::HashSet::new(),
+                // Not part of the scene-file DTO (see the field comments on
+                // MujocoSceneActor) -- every loaded scene starts with policy
+                // control off, same as MujocoSceneActor::new's defaults.
+                policy_enabled: false,
+                policy_instruction: String::new(),
+                policy_server_url: "http://localhost:8000".to_string(),
+                policy_interval_secs: 0.5,
+                policy_arm_actuators_csv:
+                    "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
+                policy_gripper_actuator: "actuator8".to_string(),
+                policy_ee_body: "hand".to_string(),
+                policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
+                policy_camera_target: DEFAULT_POLICY_CAMERA_TARGET,
+                policy_camera_fov: 60.0,
+                policy_time_since_last: 0.0,
+                policy_pending: false,
+                policy_debug_view: false,
+                policy_debug_texture: None,
+                policy_last_action: None,
+                policy_status: String::new(),
             });
         }
 
@@ -3753,6 +4040,7 @@ impl GameEngine for SplatGame {
             pending_mujoco_trajectories: Arc::new(Mutex::new(Vec::new())),
             #[cfg(target_arch = "wasm32")]
             pending_mujoco_meshes: Arc::new(Mutex::new(Vec::new())),
+            pending_policy_actions: Arc::new(Mutex::new(Vec::new())),
             picked_mujoco_trajectory: Arc::new(Mutex::new(None)),
             scene_actors: Vec::new(),
             scene_lights: Vec::new(),
@@ -5207,6 +5495,87 @@ impl GameEngine for SplatGame {
                                                 } else if m.xml_path.is_empty() {
                                                     ui.label("Set an XML Path to load a scene.");
                                                 }
+
+                                                ui.separator();
+                                                ui.label("Policy Control");
+                                                // Live control state, same as clip_time's scrub
+                                                // slider above -- deliberately not flagged for undo.
+                                                ui.checkbox(&mut m.policy_enabled, "Enabled");
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Instruction");
+                                                    ui.text_edit_singleline(&mut m.policy_instruction);
+                                                });
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Server URL");
+                                                    ui.text_edit_singleline(&mut m.policy_server_url);
+                                                });
+                                                ui.add(
+                                                    egui::Slider::new(&mut m.policy_interval_secs, 0.1..=5.0)
+                                                        .text("Interval (s)"),
+                                                );
+                                                ui.horizontal(|ui| {
+                                                    ui.label("EE Body");
+                                                    ui.text_edit_singleline(&mut m.policy_ee_body);
+                                                });
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Arm Actuators");
+                                                    ui.text_edit_singleline(&mut m.policy_arm_actuators_csv);
+                                                });
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Gripper Actuator");
+                                                    ui.text_edit_singleline(&mut m.policy_gripper_actuator);
+                                                });
+                                                ui.label("Camera (fixed, non-interactive -- decoupled from the fly cam)");
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Position");
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.x).speed(0.02).prefix("x: "));
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.y).speed(0.02).prefix("y: "));
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.z).speed(0.02).prefix("z: "));
+                                                });
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Look At");
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.x).speed(0.02).prefix("x: "));
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.y).speed(0.02).prefix("y: "));
+                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.z).speed(0.02).prefix("z: "));
+                                                });
+                                                ui.add(
+                                                    egui::Slider::new(&mut m.policy_camera_fov, 30.0..=100.0)
+                                                        .text("Camera FOV"),
+                                                );
+                                                if ui.button("Snap to Fly Cam").clicked() {
+                                                    let (_, view_dir, _) = self.game_camera.calculate_view_matrix();
+                                                    m.policy_camera_pos = self.game_camera.get_position();
+                                                    m.policy_camera_target =
+                                                        m.policy_camera_pos + view_dir * POLICY_CAMERA_SNAP_DISTANCE;
+                                                }
+                                                ui.checkbox(&mut m.policy_debug_view, "Show Debug View");
+                                                if m.policy_pending {
+                                                    ui.label("Waiting on policy server…");
+                                                }
+                                                if !m.policy_status.is_empty() {
+                                                    ui.label(format!("Last: {}", m.policy_status));
+                                                }
+                                                if let Some(action) = &m.policy_last_action {
+                                                    let nums = action
+                                                        .iter()
+                                                        .map(|v| format!("{v:+.3}"))
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ");
+                                                    ui.label(format!("Action: [{nums}]"));
+                                                }
+                                                if m.policy_debug_view {
+                                                    if let Some(texture) = &m.policy_debug_texture {
+                                                        let size = texture.size_vec2();
+                                                        egui::Window::new(format!("Policy Camera: {}", m.name))
+                                                            .default_size(size * 2.0)
+                                                            .resizable(true)
+                                                            .show(ui.ctx(), |ui| {
+                                                                ui.image((texture.id(), size));
+                                                            });
+                                                    } else {
+                                                        ui.label("Waiting for first captured frame…");
+                                                    }
+                                                }
                                             }
                                         }
                                         Some(Selection::PostProcess) => {
@@ -6450,7 +6819,7 @@ impl GameEngine for SplatGame {
                 // filesystem).  Reject anything else rather than panic in the
                 // glb parser.
                 #[cfg(target_arch = "wasm32")]
-                let shandle = if bytes.starts_with(b"glTF") {
+                let handle = if bytes.starts_with(b"glTF") {
                     // Persist to IndexedDB in the background (bytes already in
                     // hand), and upload from those bytes for this session.
                     let (p, b) = (path.clone(), bytes.clone());
@@ -6462,7 +6831,7 @@ impl GameEngine for SplatGame {
                     None
                 };
 
-                self.status = Some(match shandle {
+                self.status = Some(match handle {
                     // The model is registered in the renderer's AssetManager by
                     // the load above; add its catalog entry so it lists too.
                     Some(_) => {
