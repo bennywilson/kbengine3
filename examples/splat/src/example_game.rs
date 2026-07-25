@@ -9,6 +9,7 @@ use black_splat::{
     fly_camera::*, game_object::*, input::*, mujoco::{MjcfBundle, MujocoScene},
     policy_client::PolicyResponse, renderer::*, resource::SceneLayer,
     touch_pads::*, trajectory::RetargetedClip, utils::*, log,
+    passes::ambient::AmbientSettings,
     passes::deferred::ShadowSettings,
     passes::gaussian_splat::SplatParams,
     passes::postprocess::PostProcessSettings,
@@ -25,9 +26,7 @@ const ADD_OBJECT_DISTANCE: f32 = 5.0;
 fn shadow_settings_from_config(config: &EditorConfig) -> ShadowSettings {
     ShadowSettings {
         resolution: config.shadow_resolution,
-        num_cascades: config.shadow_cascades,
-        distance: config.shadow_distance,
-        density: config.shadow_density,
+        depth_bias: config.shadow_depth_bias,
     }
 }
 
@@ -379,12 +378,19 @@ fn draw_mode_switch(ui: &mut egui::Ui, editor_mode: &mut bool) {
     }
 }
 
-/// Whether this browser reports a touch screen.  Finger-friendly GUI sizing
-/// should only kick in on actual touch devices; desktop browsers keep egui's
-/// defaults so the GUI matches the native desktop build.
+/// Whether a finger is this browser's *primary* pointer.  Finger-friendly GUI
+/// sizing should only kick in there; desktop browsers keep egui's defaults so
+/// the GUI matches the native desktop build.  `pointer: coarse` rather than
+/// `maxTouchPoints > 0` because the latter is true for any touch-capable
+/// laptop or touch monitor, whose users still drive the GUI with a trackpad.
 #[cfg(target_arch = "wasm32")]
 fn is_touch_device() -> bool {
-    web_sys::window().is_some_and(|w| w.navigator().max_touch_points() > 0)
+    web_sys::window().is_some_and(|w| {
+        w.match_media("(pointer: coarse)")
+            .ok()
+            .flatten()
+            .is_some_and(|m| m.matches())
+    })
 }
 
 /// Saves `json` through the browser's File System Access API
@@ -1080,6 +1086,8 @@ struct SceneFile {
     mujoco_actors: Vec<MujocoActorDto>,
     #[serde(default)]
     post_process: Option<PostProcessDto>,
+    #[serde(default)]
+    ambient: Option<AmbientDto>,
 }
 
 /// Serialized scene-wide post-process / tonemap settings (see PostProcessSettings).
@@ -1092,6 +1100,14 @@ struct PostProcessDto {
     highlight_curve: f32,
     midtone_curve: f32,
     shadow_offset: f32,
+    // Scenes saved before the upscale sharpen existed get the engine default
+    // rather than 0.0, which would silently leave them unsharpened.
+    #[serde(default = "default_sharpen_strength")]
+    sharpen_strength: f32,
+}
+
+fn default_sharpen_strength() -> f32 {
+    PostProcessSettings::default().sharpen_strength
 }
 
 impl PostProcessDto {
@@ -1104,6 +1120,7 @@ impl PostProcessDto {
             highlight_curve: s.highlight_curve,
             midtone_curve: s.midtone_curve,
             shadow_offset: s.shadow_offset,
+            sharpen_strength: s.sharpen_strength,
         }
     }
 
@@ -1116,10 +1133,87 @@ impl PostProcessDto {
             highlight_curve: self.highlight_curve,
             midtone_curve: self.midtone_curve,
             shadow_offset: self.shadow_offset,
+            sharpen_strength: self.sharpen_strength,
         };
         // A hand-edited file could carry a non-invertible curve; snap it back.
         s.enforce_invertible();
         s
+    }
+}
+
+/// Serialized screen-space AO / diffuse-GI toggles (see AmbientSettings).
+#[derive(Serialize, Deserialize)]
+struct AmbientDto {
+    ssao_enabled: bool,
+    ssgi_enabled: bool,
+    // Scenes saved before this existed get the engine default (1.0) rather
+    // than 0.0, which would silently zero out their GI.
+    #[serde(default = "default_gi_intensity")]
+    gi_intensity: f32,
+    // Scenes saved before sample/blur controls existed get the engine
+    // defaults rather than 0, which would zero out AO/GI or disable the
+    // denoise blur entirely.
+    #[serde(default = "default_ao_samples")]
+    ao_samples: u32,
+    #[serde(default = "default_gi_samples")]
+    gi_samples: u32,
+    #[serde(default = "default_denoise_radius")]
+    denoise_radius: u32,
+    #[serde(default = "default_denoise_strength")]
+    denoise_strength: f32,
+    #[serde(default = "default_denoise_iterations")]
+    denoise_iterations: u32,
+}
+
+fn default_gi_intensity() -> f32 {
+    AmbientSettings::default().gi_intensity
+}
+
+fn default_ao_samples() -> u32 {
+    AmbientSettings::default().ao_samples
+}
+
+fn default_gi_samples() -> u32 {
+    AmbientSettings::default().gi_samples
+}
+
+fn default_denoise_radius() -> u32 {
+    AmbientSettings::default().denoise_radius
+}
+
+fn default_denoise_strength() -> f32 {
+    AmbientSettings::default().denoise_strength
+}
+
+fn default_denoise_iterations() -> u32 {
+    AmbientSettings::default().denoise_iterations
+}
+
+impl AmbientDto {
+    fn from_settings(s: &AmbientSettings) -> Self {
+        Self {
+            ssao_enabled: s.ssao_enabled,
+            ssgi_enabled: s.ssgi_enabled,
+            gi_intensity: s.gi_intensity,
+            ao_samples: s.ao_samples,
+            gi_samples: s.gi_samples,
+            denoise_radius: s.denoise_radius,
+            denoise_strength: s.denoise_strength,
+            denoise_iterations: s.denoise_iterations,
+        }
+    }
+
+    fn to_settings(&self) -> AmbientSettings {
+        AmbientSettings {
+            ssao_enabled: self.ssao_enabled,
+            ssgi_enabled: self.ssgi_enabled,
+            gi_intensity: self.gi_intensity,
+            ao_samples: self.ao_samples,
+            gi_samples: self.gi_samples,
+            denoise_radius: self.denoise_radius,
+            denoise_strength: self.denoise_strength,
+            denoise_iterations: self.denoise_iterations,
+        }
     }
 }
 
@@ -1137,6 +1231,8 @@ struct ActorDto {
     scale: [f32; 3],
     #[serde(default)]
     model: Option<String>, // resource display name, or none for an empty actor
+    #[serde(default)]
+    material: Option<String>, // material library name, or none for the model's default
     #[serde(default)]
     layer: u32, // SceneLayer choice index
     #[serde(default)]
@@ -1160,6 +1256,13 @@ struct LightDto {
     #[serde(default = "default_light_spot_angle")]
     spot_angle: f32,
     casts_shadow: bool,
+    // Directional-light cascade controls.
+    #[serde(default = "default_light_shadow_cascades")]
+    shadow_cascades: u32,
+    #[serde(default = "default_light_shadow_distance")]
+    shadow_distance: f32,
+    #[serde(default = "default_light_shadow_density")]
+    shadow_density: f32,
 }
 
 // Serde defaults for lights in pre-lighting scene files (match Light::new).
@@ -1171,6 +1274,15 @@ fn default_light_range() -> f32 {
 }
 fn default_light_spot_angle() -> f32 {
     30.0
+}
+fn default_light_shadow_cascades() -> u32 {
+    3
+}
+fn default_light_shadow_distance() -> f32 {
+    75.0
+}
+fn default_light_shadow_density() -> f32 {
+    1.0
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1280,6 +1392,9 @@ fn default_startup_scene() -> SceneFile {
             range: default_light_range(),
             spot_angle: default_light_spot_angle(),
             casts_shadow: false,
+            shadow_cascades: default_light_shadow_cascades(),
+            shadow_distance: default_light_shadow_distance(),
+            shadow_density: default_light_shadow_density(),
         }],
         particles: Vec::new(),
         splats: vec![SplatDto {
@@ -1292,6 +1407,7 @@ fn default_startup_scene() -> SceneFile {
         }],
         mujoco_actors: Vec::new(),
         post_process: None,
+        ambient: None,
     }
 }
 
@@ -1756,6 +1872,10 @@ pub struct SplatGame {
     // Scene-wide post-process / tonemap settings -- the singleton "Post Process"
     // scene object.  Pushed to the renderer each frame
     scene_post_process: PostProcessSettings,
+    // Screen-space AO / diffuse-GI toggles, edited alongside Post Process in
+    // the same panel. Not a selectable scene object (no undo/redo) -- it's a
+    // renderer-wide switch, not per-scene-object state.
+    scene_ambient: AmbientSettings,
 
     // Undo/redo history
     undo_stack: UndoStack,
@@ -3857,6 +3977,12 @@ impl SplatGame {
                 .find(|(_, h)| *h == handle)
                 .map(|(name, _)| name.clone())
         };
+        let material_name = |handle: MaterialHandle| -> Option<String> {
+            self.material_library
+                .iter()
+                .find(|m| m.handle == handle)
+                .map(|m| m.name.clone())
+        };
         SceneFile {
             version: SCENE_FORMAT_VERSION,
             camera: Some(CameraDto {
@@ -3872,6 +3998,7 @@ impl SplatGame {
                     rotation: quat_arr(a.get_rotation()),
                     scale: vec3_arr(a.get_scale()),
                     model: model_name(a.get_model()),
+                    material: material_name(a.get_material()),
                     layer: a.get_layer().0.choice_index() as u32,
                     shadow_catcher: a.is_shadow_catcher(),
                 })
@@ -3890,6 +4017,9 @@ impl SplatGame {
                     range: l.get_range(),
                     spot_angle: l.get_spot_angle(),
                     casts_shadow: l.casts_shadow(),
+                    shadow_cascades: l.shadow_cascades(),
+                    shadow_distance: l.shadow_distance(),
+                    shadow_density: l.shadow_density(),
                 })
                 .collect(),
             particles: self
@@ -3930,6 +4060,7 @@ impl SplatGame {
                 })
                 .collect(),
             post_process: Some(PostProcessDto::from_settings(&self.scene_post_process)),
+            ambient: Some(AmbientDto::from_settings(&self.scene_ambient)),
         }
     }
 
@@ -4038,6 +4169,8 @@ impl SplatGame {
         // it in apply_scene_objects.
         self.scene_post_process = PostProcessSettings::default();
         renderer.set_post_process_settings(&self.scene_post_process);
+        self.scene_ambient = AmbientSettings::default();
+        renderer.set_ambient_settings(&self.scene_ambient);
     }
 
     /// Rebuilds the editable scene objects (actors / lights / particles +
@@ -4069,6 +4202,11 @@ impl SplatGame {
                         .push((self.scene_actors.len(), model.clone())),
                 }
             }
+            if let Some(material) = &dto.material {
+                if let Some(res) = self.material_library.iter().find(|m| &m.name == material) {
+                    actor.set_material(&res.handle);
+                }
+            }
             actor.set_layer(&SceneLayer::from_choice_index(dto.layer as usize), &None);
             actor.set_shadow_catcher(dto.shadow_catcher);
             renderer.add_or_update_actor(&actor);
@@ -4087,6 +4225,9 @@ impl SplatGame {
             light.set_range(dto.range);
             light.set_spot_angle(dto.spot_angle);
             light.set_casts_shadow(dto.casts_shadow);
+            light.set_shadow_cascades(dto.shadow_cascades);
+            light.set_shadow_distance(dto.shadow_distance);
+            light.set_shadow_density(dto.shadow_density);
             renderer.add_or_update_light(&light);
             self.scene_lights.push(light);
         }
@@ -4171,6 +4312,12 @@ impl SplatGame {
             self.scene_post_process = pp.to_settings();
         }
         renderer.set_post_process_settings(&self.scene_post_process);
+        // Same story for the ambient AO/GI toggles: absent in older scenes,
+        // keep whatever's currently running.
+        if let Some(amb) = &scene.ambient {
+            self.scene_ambient = amb.to_settings();
+        }
+        renderer.set_ambient_settings(&self.scene_ambient);
     }
 
     /// The world transform a splat DTO describes (scale collapsed to uniform).
@@ -4431,6 +4578,7 @@ impl GameEngine for SplatGame {
             scene_lights: Vec::new(),
             scene_particles: Vec::new(),
             scene_post_process: PostProcessSettings::default(),
+            scene_ambient: AmbientSettings::default(),
             undo_stack: UndoStack::default(),
             pending_gizmo_edit: None,
             pending_property_edit: None,
@@ -4710,24 +4858,20 @@ impl GameEngine for SplatGame {
         // --- GUI (egui, same on native + web) ---
         let ctx = renderer.egui_ctx().clone();
 
-        // Web pixels-per-point: egui defaults ppp to the browser's
-        // devicePixelRatio, so the UI's on-screen size swings with the user's
-        // monitor DPI / browser zoom -- on a HiDPI display (DPR 2) the fixed
-        // 1920x1080 canvas has half the layout "points" and every panel
-        // balloons, unlike native where the window is logical-sized. Pin ppp to
-        // a fixed design-space *height* instead so layout is deterministic
-        // regardless of DPR: a shorter design space = fewer points = bigger
-        // widgets. Desktop mirrors native's default 720-pt-tall window; phones
-        // and tablets get a shorter, finger-friendly space plus enlarged
-        // interactive sizing (on the global style so dropdown popups inherit
-        // it). Bump WEB_DESIGN_H down to make the desktop web UI larger.
+        // Web pixels-per-point: the canvas is sized in *physical* pixels
+        // (`css_px * devicePixelRatio`, see index.html), so egui needs ppp =
+        // DPR for one point to equal one CSS pixel -- which is what
+        // egui_winit's window-scale-factor ppp gives the native build, so the
+        // two match at any window size. Touch devices then get a flat zoom
+        // bump plus enlarged interactive sizing (on the global style so
+        // dropdown popups inherit it). Raise TOUCH_ZOOM for a bigger phone UI.
         #[cfg(target_arch = "wasm32")]
         {
-            const WEB_DESIGN_H: f32 = 720.0; // desktop: match native's default
-            const TOUCH_DESIGN_H: f32 = 480.0; // phones/tablets: bigger UI
+            const TOUCH_ZOOM: f32 = 1.5;
             let touch = is_touch_device();
-            let design_h = if touch { TOUCH_DESIGN_H } else { WEB_DESIGN_H };
-            ctx.set_pixels_per_point((game_config.window_height as f32 / design_h).max(0.5));
+            let dpr = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio() as f32);
+            let zoom = if touch { TOUCH_ZOOM } else { 1.0 };
+            ctx.set_pixels_per_point((dpr * zoom).max(0.5));
             if touch {
                 ctx.all_styles_mut(|s| {
                     s.spacing.button_padding = egui::vec2(16.0, 12.0);
@@ -6016,6 +6160,23 @@ impl GameEngine for SplatGame {
                                             }
                                             selection_edited |= changed;
                                             details_edited |= changed;
+
+                                            ui.separator();
+                                            ui.label(
+                                                egui::RichText::new("Screen-Space Ambient")
+                                                    .strong(),
+                                            );
+                                            let ambient_changed = editor::draw_properties(
+                                                ui,
+                                                &mut self.scene_ambient,
+                                                &model_catalog,
+                                                &material_resources,
+                                                selected_model,
+                                                &mut model_pick_request,
+                                            );
+                                            if ambient_changed {
+                                                renderer.set_ambient_settings(&self.scene_ambient);
+                                            }
                                         }
                                         None => {
                                             ui.label("Nothing selected.");
@@ -6247,9 +6408,9 @@ impl GameEngine for SplatGame {
                                             .text("sprint ×"),
                                         );
 
-                                        // Global shadow quality; per-light
-                                        // casting stays on the light's own
-                                        // "Casts Shadow" checkbox in Details.
+                                        // Global shadow map size; casting and
+                                        // the cascade controls stay on the
+                                        // light's own properties in Details.
                                         ui.add_space(12.0);
                                         ui.label(egui::RichText::new("Shadows").strong());
                                         let mut shadows_changed = false;
@@ -6274,31 +6435,16 @@ impl GameEngine for SplatGame {
                                         shadows_changed |= ui
                                             .add(
                                                 egui::Slider::new(
-                                                    &mut self.editor_config.shadow_cascades,
-                                                    1..=4,
-                                                )
-                                                .text("cascades"),
-                                            )
-                                            .changed();
-                                        shadows_changed |= ui
-                                            .add(
-                                                egui::Slider::new(
-                                                    &mut self.editor_config.shadow_distance,
-                                                    10.0..=300.0,
+                                                    &mut self.editor_config.shadow_depth_bias,
+                                                    0.0..=0.02,
                                                 )
                                                 .logarithmic(true)
-                                                .text("distance"),
+                                                .text("depth bias"),
                                             )
-                                            .changed();
-                                        // Shadow-catcher darkness: how black the
-                                        // CG objects' shadows land on the splats.
-                                        shadows_changed |= ui
-                                            .add(
-                                                egui::Slider::new(
-                                                    &mut self.editor_config.shadow_density,
-                                                    0.0..=4.0,
-                                                )
-                                                .text("density"),
+                                            .on_hover_text(
+                                                "Too low: shadow acne on flat surfaces. \
+                                                 Too high: shadows detach from thin casters \
+                                                 (looks like the shadow is floating).",
                                             )
                                             .changed();
                                         if shadows_changed {
@@ -7425,6 +7571,15 @@ impl GameEngine for SplatGame {
         // whose result arrives via `picked_ply` on a later tick.
         if do_load || (raw_hotkeys_ok && input_manager.get_key_state("l").just_pressed()) {
             self.open_ply_picker();
+        }
+
+        // [B] cycles the splat perf bisect (see SplatBisect): each step drops one
+        // stage of the splat pass so the fps delta prices that stage.  The HUD
+        // banners whichever stage is currently being skipped.
+        if raw_hotkeys_ok && input_manager.get_key_state("b").just_pressed() {
+            if let Some(label) = renderer.cycle_splat_bisect() {
+                log!("Splat bisect: {label}");
+            }
         }
         let picked = self.picked_ply.lock().unwrap().take();
         if let Some((file_name, path, bytes)) = picked {

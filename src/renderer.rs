@@ -10,7 +10,7 @@ use crate::{
     utils::*,
     log,
     passes::{
-        bullet_hole::*, deferred::*, gaussian_splat::*, line::*, model::*,
+        ambient::*, bullet_hole::*, deferred::*, gaussian_splat::*, line::*, model::*,
         postprocess::*, splat_composite::*, sprite::*, sunbeam::*,
     },
     PERF_SCOPE,
@@ -36,6 +36,10 @@ pub struct Renderer<'a> {
     // gaussian_splat_pass below).
     gbuffer_pass: Option<GBufferPass>,
     shadow_pass: Option<ShadowPass>,
+    // Local screen-space AO + diffuse GI, read by lighting_pass's skylight
+    // shader (see passes::ambient). Built/rendered alongside the rest of the
+    // deferred trio; None wherever they are.
+    ambient_pass: Option<AmbientPass>,
     lighting_pass: Option<LightingPass>,
     // Games opt in via set_deferred_world_enabled (the splat editor does; it
     // registers scene lights).  Off, World-layer actors render through the
@@ -172,14 +176,25 @@ impl<'a> Renderer<'a> {
         // GL (the 2D demo's backend) can't run the deferred shadow/lighting
         // pipeline -- see the field comments on gbuffer_pass et al.
         let deferred_supported = device_resources.adapter.get_info().backend != wgpu::Backend::Gl;
-        let (gbuffer_pass, shadow_pass, lighting_pass) = if deferred_supported {
+        let (gbuffer_pass, shadow_pass, ambient_pass, lighting_pass) = if deferred_supported {
             let gbuffer_pass = GBufferPass::new(&device_resources, &mut asset_manager).await;
             let shadow_pass = ShadowPass::new(&device_resources, &mut asset_manager).await;
-            let lighting_pass =
-                LightingPass::new(&device_resources, &mut asset_manager, &shadow_pass).await;
-            (Some(gbuffer_pass), Some(shadow_pass), Some(lighting_pass))
+            let ambient_pass = AmbientPass::new(&device_resources, &mut asset_manager).await;
+            let lighting_pass = LightingPass::new(
+                &device_resources,
+                &mut asset_manager,
+                &shadow_pass,
+                &ambient_pass,
+            )
+            .await;
+            (
+                Some(gbuffer_pass),
+                Some(shadow_pass),
+                Some(ambient_pass),
+                Some(lighting_pass),
+            )
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
 
         let debug_lines = Vec::<Line>::new();
@@ -200,6 +215,7 @@ impl<'a> Renderer<'a> {
             model_with_holes_pass,
             gbuffer_pass,
             shadow_pass,
+            ambient_pass,
             lighting_pass,
             deferred_world_enabled: false,
             postprocess_pass,
@@ -472,10 +488,21 @@ impl<'a> Renderer<'a> {
             } else {
                 ""
             };
+            // Loud banner while a splat stage is being skipped, so a bisect run
+            // can never be mistaken for a real frame time.  Empty when off.
+            let bisect_banner = self
+                .gaussian_splat_pass
+                .as_ref()
+                .map(|p| p.bisect())
+                .filter(|b| *b != SplatBisect::Off)
+                .map_or(String::new(), |b| {
+                    format!("*** SPLAT BISECT: {} ***\n", b.label())
+                });
+
             let frame_time_string = {
                 if self.display_debug_msg {
                     format!(
-                        "{hint}{}\n\
+                        "{hint}{bisect_banner}{}\n\
                         FPS: {:.0} \n\
                         Frame time: {:.2} ms\n\
                         Back End: {:?}\n\
@@ -489,7 +516,10 @@ impl<'a> Renderer<'a> {
                         self.game_hud_msg
                     )
                 } else {
-                    format!("{hint}FPS: {:.0}\n\n {}", frame_rate, self.game_hud_msg)
+                    format!(
+                        "{hint}{bisect_banner}FPS: {:.0}\n\n {}",
+                        frame_rate, self.game_hud_msg
+                    )
                 }
             };
 
@@ -639,6 +669,14 @@ impl<'a> Renderer<'a> {
                 gbuffer_pass.render(&mut ctx, &self.actor_map);
             }
             {
+                PERF_SCOPE!("Ambient AO+GI");
+                self.ambient_pass.as_mut().unwrap().render(
+                    &mut ctx,
+                    &self.light_map,
+                    &self.env_cubemaps,
+                );
+            }
+            {
                 PERF_SCOPE!("Deferred Lighting");
                 self.lighting_pass.as_mut().unwrap().render(
                     &mut ctx,
@@ -692,20 +730,30 @@ impl<'a> Renderer<'a> {
         if let Some(splat_pass) = &mut self.gaussian_splat_pass {
             if splat_pass.has_model() {
                 PERF_SCOPE!("Gaussian Splats");
-                splat_pass.render(&mut ctx);
-                if let Some(composite_pass) = &mut self.splat_composite_pass {
-                    composite_pass.settings = pp_settings;
-                    composite_pass.render(&mut ctx);
+                // Only composite when the pass actually drew: a frustum-culled
+                // cloud leaves the scratch buffer untouched, and compositing it
+                // would put the previous frame's splats back on screen.
+                if splat_pass.render(&mut ctx) {
+                    if let Some(composite_pass) = &mut self.splat_composite_pass {
+                        composite_pass.settings = pp_settings;
+                        composite_pass.render(&mut ctx);
+                    }
+                    splats_rendered = true;
                 }
-                splats_rendered = true;
             }
         }
 
         // Shadow-catcher overlay: darkens the just-composited splats where an
         // invisible catcher proxy received a CG object's shadow this frame.
         // Only meaningful in the deferred path (which produced the catcher
-        // depth + shadow); a no-op where no catcher was rendered.
-        if splats_rendered && self.deferred_world_enabled {
+        // depth + shadow).  With no catcher in the scene the shader resolves to
+        // a multiply by 1, so skip the whole full-screen pass (and its submit)
+        // rather than pay for a guaranteed no-op every frame.
+        let has_shadow_catcher = self
+            .actor_map
+            .values()
+            .any(|actor| actor.is_shadow_catcher());
+        if splats_rendered && self.deferred_world_enabled && has_shadow_catcher {
             if let Some(shadow_pass) = self.shadow_pass.as_mut() {
                 PERF_SCOPE!("Shadow Catcher Overlay");
                 shadow_pass.render_catcher_overlay(&mut ctx);
@@ -1041,10 +1089,15 @@ impl<'a> Renderer<'a> {
         if let Some(shadow_pass) = self.shadow_pass.as_mut() {
             shadow_pass.resize(&self.device_resources);
         }
-        if let (Some(lighting_pass), Some(shadow_pass)) =
-            (self.lighting_pass.as_mut(), self.shadow_pass.as_ref())
-        {
-            lighting_pass.resize(&self.device_resources, shadow_pass);
+        if let Some(ambient_pass) = self.ambient_pass.as_mut() {
+            ambient_pass.resize(&self.device_resources);
+        }
+        if let (Some(lighting_pass), Some(shadow_pass), Some(ambient_pass)) = (
+            self.lighting_pass.as_mut(),
+            self.shadow_pass.as_ref(),
+            self.ambient_pass.as_ref(),
+        ) {
+            lighting_pass.resize(&self.device_resources, shadow_pass, ambient_pass);
         }
         self.sunbeam_pass.resize(&mut self.device_resources, &self.asset_manager);
         if let Some(composite_pass) = self.splat_composite_pass.as_mut() {
@@ -1160,6 +1213,11 @@ impl<'a> Renderer<'a> {
                 .as_mut()
                 .unwrap()
                 .render(&mut ctx, &filtered_actors);
+            self.ambient_pass.as_mut().unwrap().render(
+                &mut ctx,
+                &self.light_map,
+                &self.env_cubemaps,
+            );
             self.lighting_pass.as_mut().unwrap().render(
                 &mut ctx,
                 &self.light_map,
@@ -1168,8 +1226,7 @@ impl<'a> Renderer<'a> {
                 &self.env_cubemaps,
             );
             if let Some(splat_pass) = &mut self.gaussian_splat_pass {
-                if splat_pass.has_model() {
-                    splat_pass.render(&mut ctx);
+                if splat_pass.has_model() && splat_pass.render(&mut ctx) {
                     if let Some(composite_pass) = &mut self.splat_composite_pass {
                         composite_pass.render(&mut ctx);
                     }
@@ -1209,6 +1266,24 @@ impl<'a> Renderer<'a> {
         // an empty scene, not that the shader is wrong).
         #[cfg(not(target_arch = "wasm32"))]
         Self::dump_cube_texture_to_disk(&self.device_resources, &cube_texture, FACE_SIZE, light_id);
+
+        // Diffuse irradiance: a 9-term SH projection of mip 0, reduced
+        // entirely on the GPU and written straight into `sh_buffer` -- no
+        // CPU readback, so this runs identically on native and wasm.
+        self.lighting_pass
+            .as_ref()
+            .unwrap()
+            .project_skylight_sh_gpu(&self.device_resources, &cube_texture);
+        #[cfg(not(target_arch = "wasm32"))]
+        Self::log_skylight_sh_dc(&self.device_resources, &cube_texture);
+
+        // Specular roughness: GPU-only GGX-prefiltered mip chain, works on
+        // every backend including wasm.
+        self.lighting_pass.as_ref().unwrap().prefilter_skylight_mips(
+            &self.device_resources,
+            &cube_texture,
+            FACE_SIZE,
+        );
 
         self.env_cubemaps.insert(light_id, cube_texture);
         self.game_camera = saved_camera;
@@ -1340,6 +1415,49 @@ impl<'a> Renderer<'a> {
         readback.unmap();
     }
 
+    /// Logs the DC (average radiance) term of a freshly GPU-projected SH
+    /// buffer -- a cheap 144-byte readback purely for bake-time sanity
+    /// checking (a NaN/zero here means the projection compute pass is
+    /// broken, not that the shader is wrong). Native only: the debug value
+    /// isn't worth the blocking `map_async` wasm can't do; the SH buffer
+    /// itself is GPU-only and used identically on both platforms.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn log_skylight_sh_dc(device_resources: &DeviceResources, cube_texture: &CubeTexture) {
+        let device = &device_resources.device;
+        let queue = &device_resources.queue;
+        let size = cube_texture.sh_buffer.size();
+
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("skylight SH DC readback"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("skylight SH DC copy"),
+        });
+        encoder.copy_buffer_to_buffer(&cube_texture.sh_buffer, 0, &readback, 0, size);
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        let mapped = slice.get_mapped_range();
+        let sh: &[[f32; 4]] = bytemuck::cast_slice(&mapped);
+        log!(
+            "bake_skylight_cubemap: SH L00 (average radiance) = ({:.3}, {:.3}, {:.3})",
+            sh[0][0],
+            sh[0][1],
+            sh[0][2]
+        );
+        drop(mapped);
+        readback.unmap();
+    }
+
     /// Frees a skylight's baked environment cubemap, if it has one. Unlike
     /// `Light::use_env_cubemap` (a soft, reversible toggle), this drops the
     /// GPU texture; the light falls back to its analytic gradient until
@@ -1357,9 +1475,10 @@ impl<'a> Renderer<'a> {
         self.deferred_world_enabled = enabled;
     }
 
-    /// Sets the shadow quality settings (cascade count, tile resolution,
-    /// cascade distance); applied at the start of the next frame. A no-op on
-    /// the GL backend, which has no shadow pass to configure.
+    /// Sets the global shadow quality settings (the shadow tile resolution);
+    /// applied at the start of the next frame. A no-op on the GL backend,
+    /// which has no shadow pass to configure. Cascade count, distance and
+    /// catcher density live on the directional light itself.
     pub fn set_shadow_settings(&mut self, settings: &ShadowSettings) {
         if let Some(shadow_pass) = self.shadow_pass.as_mut() {
             shadow_pass.request_settings(settings);
@@ -1671,6 +1790,14 @@ impl<'a> Renderer<'a> {
             .map_or(0, |g| g.active_splat_count())
     }
 
+    /// Advances the splat pass's diagnostic bisect setting (see `SplatBisect`)
+    /// and returns its label for display.  Returns None with no splat pipeline.
+    pub fn cycle_splat_bisect(&mut self) -> Option<&'static str> {
+        self.gaussian_splat_pass
+            .as_mut()
+            .map(|p| p.cycle_bisect().label())
+    }
+
     pub fn set_gaussian_splat_params(&mut self, params: &SplatParams) {
         if let Some(splat_pass) = &mut self.gaussian_splat_pass {
             splat_pass.set_params(params);
@@ -1855,6 +1982,16 @@ impl<'a> Renderer<'a> {
     /// The current scene post-process/tonemap settings.
     pub fn post_process_settings(&self) -> PostProcessSettings {
         self.postprocess_pass.settings
+    }
+
+    /// Sets the screen-space AO / diffuse-GI toggles (see `AmbientSettings`).
+    pub fn set_ambient_settings(&mut self, settings: &AmbientSettings) {
+        self.ambient_pass.as_mut().unwrap().settings = *settings;
+    }
+
+    /// The current screen-space AO / diffuse-GI toggles.
+    pub fn ambient_settings(&self) -> AmbientSettings {
+        self.ambient_pass.as_ref().unwrap().settings
     }
 
     pub async fn add_sprite_pass(

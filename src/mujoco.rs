@@ -1979,7 +1979,7 @@ mod tests {
     #[test]
     fn every_panda_mesh_resolves_to_a_file_that_exists() {
         let refs = scan_mjcf(panda_dir(), &read("panda.xml"));
-        assert_eq!(refs.meshes.len(), 56);
+        assert_eq!(refs.meshes.len(), 59);
         for (name, path) in &refs.meshes {
             assert!(path.exists(), "mesh {name} -> {} does not exist", path.display());
         }

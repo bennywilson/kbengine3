@@ -7,8 +7,8 @@
       0.62914366
     ],
     "rotation": [
-      -536.61975,
-      25.600018,
+      -533.5597,
+      37.47999,
       0.0
     ]
   },
@@ -99,8 +99,8 @@
       "spot_angle": 30.0,
       "casts_shadow": true,
       "shadow_cascades": 3,
-      "shadow_distance": 75.0,
-      "shadow_density": 1.0
+      "shadow_distance": 10.0,
+      "shadow_density": 0.5
     }
   ],
   "particles": [],
