@@ -978,10 +978,13 @@ struct MujocoSceneActor {
     requested_meshes: std::collections::HashSet<String>,
 
     // ---- Policy-server control (see policy_client.rs / MujocoScene::
-    // apply_policy_action) -- deliberately not in MujocoActorSnapshot/
+    // apply_policy_action) -- mostly not in MujocoActorSnapshot/
     // MujocoActorDto (no undo-snapshotting, no scene-file persistence) or
     // inspect_properties' `changed` tracking, same as `clip_time` above:
-    // this is live/transient control state, not saved scene data.
+    // this is live/transient control state, not saved scene data. The
+    // exceptions are `policy_instruction`, `policy_interval_secs`, and the
+    // `policy_camera_*` triple below, which DO round-trip through
+    // MujocoActorDto -- see that struct's comment for why.
     /// Periodically captures the render, sends it + `policy_instruction` to
     /// `policy_server_url`, and drives the arm from the response.
     policy_enabled: bool,
@@ -1006,6 +1009,10 @@ struct MujocoSceneActor {
     /// calibration published for the BridgeData/OpenVLA training distribution
     /// to match exactly, just its rough convention (workspace + gripper both
     /// in frame, roughly eye-level, moderate FOV).
+    /// Round-trips through MujocoActorDto (see that struct's comment) --
+    /// this framing IS the observation distribution a fine-tuned checkpoint
+    /// was trained on, so losing it isn't just an inconvenience the way
+    /// losing e.g. the fly cam's position would be.
     policy_camera_pos: CgVec3,
     policy_camera_target: CgVec3,
     policy_camera_fov: f32,
@@ -1502,16 +1509,26 @@ struct MujocoActorDto {
     #[serde(default = "default_true")]
     wireframe: bool,
     // The rest of the policy-control state stays out of the scene file on
-    // purpose (see MujocoSceneActor's field comments) -- these two are here
-    // because they describe the *task*, not a transient run: the instruction
-    // has to match the string a checkpoint was fine-tuned on, and the interval
-    // has to match the control rate its actions were exported at. Retyping
-    // either from memory is an easy way to silently evaluate a model out of
-    // distribution.
+    // purpose (see MujocoSceneActor's field comments) -- these fields are
+    // here because they describe the *task and observation*, not a transient
+    // run: the instruction has to match the string a checkpoint was
+    // fine-tuned on, the interval has to match the control rate its actions
+    // were exported at, and the camera has to match the viewpoint its
+    // training images were captured from. Retyping any of these from memory
+    // is an easy way to silently evaluate a model out of distribution --
+    // the camera triple especially, since re-deriving it (e.g. eyeballing a
+    // new "Snap to Fly Cam") changes the actual pixels a policy sees, not
+    // just a label.
     #[serde(default)]
     policy_instruction: String,
     #[serde(default = "default_policy_interval")]
     policy_interval_secs: f32,
+    #[serde(default = "default_policy_camera_pos")]
+    policy_camera_pos: [f32; 3],
+    #[serde(default = "default_policy_camera_target")]
+    policy_camera_target: [f32; 3],
+    #[serde(default = "default_policy_camera_fov")]
+    policy_camera_fov: f32,
 }
 
 fn default_true() -> bool {
@@ -1522,6 +1539,15 @@ fn default_speed_one() -> f32 {
 }
 fn default_policy_interval() -> f32 {
     DEFAULT_POLICY_INTERVAL_SECS
+}
+fn default_policy_camera_pos() -> [f32; 3] {
+    vec3_arr(DEFAULT_POLICY_CAMERA_POS)
+}
+fn default_policy_camera_target() -> [f32; 3] {
+    vec3_arr(DEFAULT_POLICY_CAMERA_TARGET)
+}
+fn default_policy_camera_fov() -> f32 {
+    60.0
 }
 
 /// The scene the editor opens when the user hasn't saved a startup scene of
@@ -4390,6 +4416,9 @@ impl SplatGame {
                     wireframe: m.wireframe,
                     policy_instruction: m.policy_instruction.clone(),
                     policy_interval_secs: m.policy_interval_secs,
+                    policy_camera_pos: vec3_arr(m.policy_camera_pos),
+                    policy_camera_target: vec3_arr(m.policy_camera_target),
+                    policy_camera_fov: m.policy_camera_fov,
                 })
                 .collect(),
             post_process: Some(PostProcessDto::from_settings(&self.scene_post_process)),
@@ -4606,8 +4635,9 @@ impl SplatGame {
                 // Mostly not part of the scene-file DTO (see the field comments on
                 // MujocoSceneActor) -- every loaded scene starts with policy
                 // control off, same as MujocoSceneActor::new's defaults. The
-                // instruction and interval are the exceptions: they describe the
-                // task, so they round-trip through the scene file.
+                // instruction, interval, and camera triple are the exceptions:
+                // they describe the task and observation, so they round-trip
+                // through the scene file.
                 policy_enabled: false,
                 policy_instruction: dto.policy_instruction.clone(),
                 policy_server_url: "http://localhost:8000".to_string(),
@@ -4616,9 +4646,9 @@ impl SplatGame {
                     "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
                 policy_gripper_actuator: "actuator8".to_string(),
                 policy_ee_body: "hand".to_string(),
-                policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
-                policy_camera_target: DEFAULT_POLICY_CAMERA_TARGET,
-                policy_camera_fov: 60.0,
+                policy_camera_pos: arr_vec3(dto.policy_camera_pos),
+                policy_camera_target: arr_vec3(dto.policy_camera_target),
+                policy_camera_fov: dto.policy_camera_fov,
                 policy_time_since_last: 0.0,
                 policy_pending: false,
                 show_camera_preview: false,
@@ -4964,7 +4994,7 @@ impl GameEngine for SplatGame {
             show_settings: false,
             rebinding: None,
             confirm_reset: false,
-            active_tab: None,
+            active_tab: Some(EditorTab::Scene),
             resources_open: false,
             browser_filters: std::collections::HashSet::new(),
             browser_folder: String::new(),

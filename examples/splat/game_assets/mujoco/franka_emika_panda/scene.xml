@@ -16,6 +16,45 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <!-- The ToolHang demos' free-jointed objects (stand/frame/tool_root in
+    panda.xml) carry their raw world-frame positions straight from robomimic's
+    capture (see tools/robomimic_to_trajectory.py's module doc for why it
+    doesn't remap them), and that source frame's Z=0 isn't this scene's floor
+    height. Measured across all 200 converted demos, the lowest any object
+    ever reaches is Z=-0.106 (tool/frame_root) and Z=-0.033 (stand_root); with
+    the floor at the previous pos="0 0 0" default, every demo starts (and
+    spends most of its time) with objects several cm *inside* the floor
+    plane. Kinematic trajectory playback never noticed, since it only ever
+    overwrites qpos and never resolves contacts, but the instant real physics
+    steps (policy control, or anything else with the clip not actively
+    driving qpos), MuJoCo's contact solver meets that penetration and throws
+    the object out with a large corrective impulse.
+
+    The floor height itself is not a free choice, though: this scene is
+    composited against a real Gaussian splat table (see the scene JSON's
+    "Shadow Catcher" actor, an invisible plane calibrated to the splat's real
+    table surface for shadow grounding, see game_object.rs's shadow_catcher
+    field doc). Given this MuJoCo actor's own placement in that scene
+    (position.y = 0.88861984) versus the Shadow Catcher's (position.y =
+    0.7636116), and mj_vec3's mujoco-Z-to-engine-Y mapping (mujoco.rs), the
+    real table sits at mujoco-local Z = 0.7636116 - 0.88861984 = -0.125
+    relative to this file's origin, not an arbitrary "clear the worst case"
+    value. An earlier pass here used -0.15, which does clear -0.106 with more
+    margin, but sits 2.5cm below the real table, so objects visibly sink into
+    the splat once physics settles them onto it. -0.125 matches the real
+    table and still clears the worst recorded penetration (-0.106) by about
+    2cm; if that thinner margin ever reproduces the same explosion for a
+    demo whose objects dip lower than -0.106 (or tumble further sideways
+    than an unrotated pose implies), the actual mesh AABBs would need
+    checking rather than pushing this number lower again. NOTE: this
+    deliberately does not touch panda.xml's robot base (fixed at pos="0 0 0")
+    or the trajectory data itself, since the recorded arm-to-object kinematic
+    correspondence already lines up correctly using those raw coordinates;
+    shifting either one to "fix" the floor height would misalign the hand's
+    reach from the objects it's grasping instead. The tradeoff is a visible
+    gap under the robot's base now that the floor sits below it; a pedestal
+    geom filling that gap would be a reasonable follow-up if the gap looks
+    wrong, but isn't needed to stop the explosion. -->
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.125"/>
   </worldbody>
 </mujoco>
