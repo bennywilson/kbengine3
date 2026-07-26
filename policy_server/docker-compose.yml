@@ -19,6 +19,10 @@ services:
     environment:
       MODEL_ID: ${MODEL_ID:-openvla/openvla-7b}
       UNNORM_KEY: ${UNNORM_KEY:-bridge_orig}
+      # Optional: serve a LoRA adapter over MODEL_ID instead of a merged
+      # checkpoint, with its matching action statistics. See server.py.
+      ADAPTER_DIR: ${ADAPTER_DIR:-}
+      DATASET_STATS: ${DATASET_STATS:-}
       ATTN_IMPLEMENTATION: ${ATTN_IMPLEMENTATION:-eager}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
       # Only needed for gated/private Hugging Face repos; unset otherwise.
@@ -29,6 +33,23 @@ services:
       # <org>--<repo> subdir, so there's no collision), meaning switching
       # profiles or rebuilding never re-downloads weights already fetched.
       - hf-cache:/root/.cache/huggingface
+      # Bind mount for locally fine-tuned checkpoints (see tools/build_rlds_dataset.py
+      # + vla-scripts/finetune.py) -- these live on the host, not the HF Hub, so
+      # there's nothing for the named volume above to cache. Read-only: this
+      # container only ever needs to load weights, never write them. Windows'
+      # bind mounts go through WSL2's virtualized filesystem bridge, which is
+      # much slower for a multi-GB sequential read than the containerd VM's own
+      # disk -- treat /models as a *source* to copy from once (see `checkpoints`
+      # volume + its comment below), not something to point MODEL_ID at directly
+      # for routine startups.
+      - ${LOCAL_CHECKPOINTS_DIR:-../../openvla_runs}:/models:ro
+      # Fast native cache for fine-tuned checkpoints, mirroring why `hf-cache`
+      # above is a named volume and not a bind mount. One-time setup: copy a
+      # checkpoint in from the (slow) /models bind mount above, e.g.
+      #   docker compose --profile openvla run --rm openvla \
+      #     cp -r "/models/lora_run1/openvla-7b+black_splat_tool_hang+b1+lr-0.0005+lora-r32+dropout-0.0+q-4bit" /checkpoints/
+      # then point MODEL_ID (`.env`) at /checkpoints/<name> instead of /models/<name>.
+      - checkpoints:/checkpoints
     deploy:
       resources:
         reservations:
@@ -39,3 +60,4 @@ services:
 
 volumes:
   hf-cache:
+  checkpoints:

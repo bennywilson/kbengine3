@@ -5,7 +5,12 @@
 timm==0.9.10
 tokenizers==0.19.1
 transformers==4.40.1
-accelerate>=0.30.0
+# Pinned exactly rather than `>=0.30.0`: newer accelerate's `dispatch_model`
+# calls `.to(device)` on the loaded model, which transformers 4.40.1 refuses
+# outright for 4-/8-bit bitsandbytes models ("`.to` is not supported for
+# `4-bit` ... models"), so QUANTIZE_4BIT loading fails at startup. 0.30.1 is
+# contemporaneous with the pinned transformers above.
+accelerate==0.30.1
 # Pinned exactly, not just >=: OpenVLA's README states it was "developed and
 # thoroughly tested with" these two specific versions. Letting pip resolve
 # torch to whatever's newest (it'll happily grab a 2026-era release) causes
@@ -17,6 +22,16 @@ torchvision==0.17.0
 # 2.x and torch's compiled extensions crash with "Numpy is not available"
 # (RuntimeError from `_ARRAY_API not found`) as soon as any numpy call runs.
 numpy<2
+
+# 4-bit (NF4) quantized loading -- see server.py's QUANTIZE_4BIT. Pinned, not
+# `>=`: releases from 0.44 on declare `torch>=2.4` and will silently drag the
+# pinned torch 2.2.0 above up with them, breaking the whole version chain
+# (hit exactly this while setting up the fine-tuning environment).
+bitsandbytes==0.43.1
+# Serving a LoRA adapter on top of the base model (see server.py's ADAPTER_DIR).
+# Same version openvla/openvla pins for training, so an adapter written by
+# finetune.py loads back with the PEFT that produced it.
+peft==0.11.1
 
 fastapi>=0.110
 uvicorn[standard]>=0.29

@@ -40,13 +40,24 @@ __pycache__/
 # (see trajectory::cache)
 **/resources/trajectory_cache/
 
-# Robomimic demo datasets. These are converter input only -- the engine reads
-# the committed JSON under examples/splat/game_assets/mujoco/trajectories/,
-# never the HDF5 (see tools/robomimic_to_trajectory.py, which documents the
-# source URL + demo id for each). Re-download only if you need to convert a
-# different demo. lift_ph_low_dim.hdf5 predates this rule and stays tracked.
+# Robomimic demo datasets. These are converter input only -- see
+# tools/robomimic_to_trajectory.py, which documents the source URL + demo id
+# for each. lift_ph_low_dim.hdf5 predates this rule and stays tracked.
 source_assets/mujoco_trajectories/*.hdf5
+
+# Bulk `--all`-converted trajectory JSON (one subfolder per robomimic task,
+# see setup.sh's convert_trajectories) -- deterministically regenerated from
+# the gitignored HDF5 above, so there's no reason to carry ~50-60MB of
+# regenerable JSON per task in git history. The three hand-picked, already
+# playtested single-demo JSON files at the top of trajectories/ (e.g.
+# tool_hang_demo_56.json) are a separate, deliberately small, committed
+# sample set -- unaffected by this rule.
+examples/splat/game_assets/mujoco/trajectories/tool_hang/
 
 node_modules/
 
 openvla_datasets/
+
+# Local docker-compose overrides (machine-specific checkpoint paths) -- see
+# policy_server/.env's own header comment.
+policy_server/.env

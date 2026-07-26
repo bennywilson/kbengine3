@@ -2,13 +2,13 @@
   "version": 1,
   "camera": {
     "position": [
-      0.18088159,
-      1.2000579,
-      0.39854848
+      -0.21691608,
+      1.3000342,
+      -0.6463069
     ],
     "rotation": [
-      -155.02077,
-      6.7000337,
+      -313.78058,
+      27.399893,
       0.0
     ]
   },
@@ -139,9 +139,9 @@
         "max_sh_degree": 2.0
       },
       "position": [
+        1.6432076,
         0.0,
-        0.0,
-        0.0
+        -0.335104
       ],
       "rotation": [
         0.0,
@@ -153,14 +153,19 @@
         1.0,
         1.0,
         1.0
+      ],
+      "flip": [
+        true,
+        false,
+        true
       ]
     }
   ],
   "mujoco_actors": [
     {
       "name": "Mujoco Actor 2",
-      "xml_path": "mujoco_scenes/franka_emika_panda/scene.xml",
-      "trajectory_path": "",
+      "xml_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\franka_emika_panda\\scene.xml",
+      "trajectory_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\trajectories\\tool_hang\\demo_1.json",
       "position": [
         -0.23630975,
         0.88861984,
@@ -175,7 +180,9 @@
       "playing": false,
       "speed": 1.0,
       "looping": true,
-      "wireframe": false
+      "wireframe": false,
+      "policy_instruction": "Pick up red hook and insert into tan holder then pick up blue tool and hang it on the red hook.",
+      "policy_interval_secs": 0.2
     }
   ],
   "post_process": {

@@ -1,0 +1,8 @@
+# Deps for tools/build_rlds_dataset.py only -- the manifest.jsonl -> RLDS/TFDS
+# conversion step. Kept separate from policy_server/openvla/requirements.txt
+# since that's the (much lighter) inference server's deps, and this pulls in
+# all of tensorflow just to write TFRecords in the shape finetune.py expects.
+tensorflow
+tensorflow-datasets
+pillow
+numpy
