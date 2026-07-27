@@ -1022,6 +1022,64 @@ impl MujocoScene {
         Ok(())
     }
 
+    /// Freezes each named arm actuator's `ctrl` at the joint's own current
+    /// `qpos` -- zero commanded motion, not a real policy step. Call this
+    /// the instant physics starts driving the arm (kinematic just went
+    /// false, e.g. Policy Control was just enabled): this model's actuators
+    /// are position servos (`biastype="affine"`, gains up to 4500 -- see
+    /// panda.xml), chasing `ctrl - qpos` every step. An untouched `ctrl` --
+    /// 0 on a fresh session, since MuJoCo never initializes it otherwise --
+    /// read against `qpos` sitting anywhere but zero (the "standing" home
+    /// pose, or wherever "Reset to Trajectory Start" left it) is a huge
+    /// instantaneous error, and the arm visibly collapses toward it well
+    /// before OpenVLA's first HTTP response can land and write a real
+    /// target. `apply_policy_action` itself can't prevent this: nothing
+    /// calls it until that first response arrives, and physics has already
+    /// been stepping for however many ticks the round trip takes.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn hold_current_pose(&mut self, arm_actuators: &[&str]) -> anyhow::Result<()> {
+        let model = self.mj_data.model();
+        let mut actuator_ids = Vec::with_capacity(arm_actuators.len());
+        let mut qpos_adrs = Vec::with_capacity(arm_actuators.len());
+        for &name in arm_actuators {
+            let act_id = model
+                .name_to_id(MjtObj::mjOBJ_ACTUATOR, name)
+                .ok_or_else(|| anyhow::anyhow!("no actuator named '{name}'"))?;
+            let joint_id = model.actuator_trnid()[act_id][0] as usize;
+            actuator_ids.push(act_id);
+            qpos_adrs.push(model.jnt_qposadr()[joint_id] as usize);
+        }
+        // `model`'s borrow of `self.mj_data` ends here (same reasoning as
+        // `apply_policy_action` above), so the writes below can borrow
+        // mutably.
+        for (&act_id, &qpos_adr) in actuator_ids.iter().zip(&qpos_adrs) {
+            self.mj_data.ctrl_mut()[act_id] = self.mj_data.qpos()[qpos_adr];
+        }
+        Ok(())
+    }
+
+    /// Wasm's half of the above: JS holds `data.qpos`/`data.ctrl`, so this
+    /// just resolves each actuator's ids/addresses (same lazy
+    /// watch-then-resolve pattern as `apply_policy_action`'s wasm branch)
+    /// and ships them over for `__bsMujocoHoldCurrentPose` in `index.html`
+    /// to do the actual `ctrl[id] = qpos[adr]` writes.
+    #[cfg(target_arch = "wasm32")]
+    pub fn hold_current_pose(&mut self, arm_actuators: &[&str]) -> anyhow::Result<()> {
+        for &name in arm_actuators {
+            self.watch_actuator(name);
+        }
+        let mut qpos_adrs = Vec::with_capacity(arm_actuators.len());
+        let mut actuator_ids = Vec::with_capacity(arm_actuators.len());
+        for &name in arm_actuators {
+            let info = wasm_bridge::named_actuator_info(name)
+                .ok_or_else(|| anyhow::anyhow!("actuator '{name}' not resolved by JS yet"))?;
+            qpos_adrs.push(info.qpos_adr);
+            actuator_ids.push(info.id);
+        }
+        wasm_bridge::hold_current_pose(&qpos_adrs, &actuator_ids);
+        Ok(())
+    }
+
     /// This model's joints in MuJoCo's own order: name + `qpos` width (1 for
     /// a hinge/slide, 4 for a ball, 7 for a free joint). This is the layout
     /// [`crate::trajectory::TrajectoryClip::retarget`] remaps a trajectory
@@ -1677,6 +1735,13 @@ mod wasm_bridge {
         js_apply_qvel(dof_index, delta);
     }
 
+    /// See `MujocoScene::hold_current_pose`'s wasm branch: ships already-
+    /// resolved qpos addresses + actuator ids to `__bsMujocoHoldCurrentPose`,
+    /// which writes `ctrl[actuator_ids[i]] = qpos[qpos_adrs[i]]` for each.
+    pub(super) fn hold_current_pose(qpos_adrs: &[u32], actuator_ids: &[u32]) {
+        js_hold_current_pose(qpos_adrs, actuator_ids);
+    }
+
     /// Ships the whole Jacobian damped-least-squares solve to JS in one
     /// call -- see `MujocoScene::apply_policy_action`'s wasm branch and
     /// `__bsMujocoApplyPolicyAction` in `index.html` for why this one
@@ -1950,6 +2015,14 @@ mod wasm_bridge {
             gripper_hi: f64,
             action: &[f64],
         );
+
+        /// Writes `ctrl[actuator_ids[i]] = qpos[qpos_adrs[i]]` for each
+        /// entry -- the JS-side twin of `MujocoScene::hold_current_pose`'s
+        /// native math. No forward kinematics needed: unlike
+        /// `js_apply_policy_action`, this doesn't touch xpos/the Jacobian,
+        /// just directly-addressed qpos/ctrl slots.
+        #[wasm_bindgen(js_namespace = window, js_name = "__bsMujocoHoldCurrentPose")]
+        fn js_hold_current_pose(qpos_adrs: &[u32], actuator_ids: &[u32]);
     }
 }
 
@@ -2085,5 +2158,55 @@ mod tests {
         // Physics should tolerate the new ctrl targets, not blow up.
         scene.step_once();
         assert!(scene.mj_data.qpos().iter().all(|v| v.is_finite()), "qpos went non-finite after stepping");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn hold_current_pose_freezes_ctrl_at_qpos_and_stops_the_servo_yank() {
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+
+        let (act_ids, qpos_adrs): (Vec<usize>, Vec<usize>) = {
+            let model = scene.mj_data.model();
+            arm_actuators
+                .iter()
+                .map(|&name| {
+                    let act_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, name).unwrap();
+                    let joint_id = model.actuator_trnid()[act_id][0] as usize;
+                    (act_id, model.jnt_qposadr()[joint_id] as usize)
+                })
+                .unzip()
+        };
+
+        // Deliberately move qpos away from ctrl's zero default -- reproducing
+        // the exact mismatch that made the arm "keel over" the instant
+        // physics started stepping, before OpenVLA's first response could
+        // ever write a real ctrl target (a fresh scene's ctrl starts at 0;
+        // qpos doesn't, once it's away from the model's own zero pose).
+        let target_qpos = [0.3_f64, -0.4, 0.5, -1.8, 0.2, 1.9, -0.6];
+        for (&adr, &q) in qpos_adrs.iter().zip(&target_qpos) {
+            scene.mj_data.qpos_mut()[adr] = q;
+        }
+        assert!(scene.mj_data.ctrl()[..7].iter().all(|&c| c == 0.0), "test assumes ctrl starts at 0");
+
+        scene.hold_current_pose(&arm_actuators).unwrap();
+        for (&act_id, &adr) in act_ids.iter().zip(&qpos_adrs) {
+            assert_eq!(
+                scene.mj_data.ctrl()[act_id],
+                scene.mj_data.qpos()[adr],
+                "actuator {act_id}'s ctrl should match its joint's qpos after holding pose"
+            );
+        }
+
+        // With ctrl held at qpos, a step should barely move the arm --
+        // nothing like the large single-step excursion this same qpos with
+        // an unheld (zero) ctrl would cause under a kp=2000-4500 position
+        // servo (see panda.xml's <actuator> gains).
+        scene.step_once();
+        for (&adr, &before) in qpos_adrs.iter().zip(&target_qpos) {
+            let moved = (scene.mj_data.qpos()[adr] - before).abs();
+            assert!(moved < 0.01, "actuator moved {moved} rad in one step despite ctrl holding its pose");
+        }
     }
 }

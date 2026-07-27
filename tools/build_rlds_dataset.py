@@ -37,6 +37,7 @@ what `policy_dataset.rs` already computed.
 import argparse
 import json
 import pathlib
+import shutil
 import sys
 
 try:
@@ -177,9 +178,10 @@ class BlackSplatToolHang(tfds.core.GeneratorBasedBuilder):
         "2.0.0": "Stride 4 (~5Hz): actions accumulated over 4 frames, see DEFAULT_STRIDE.",
     }
 
-    def __init__(self, *, source_dir, stride=DEFAULT_STRIDE, **kwargs):
+    def __init__(self, *, source_dir, stride=DEFAULT_STRIDE, holdout=frozenset(), **kwargs):
         self.source_dir = pathlib.Path(source_dir)
         self.stride = stride
+        self.holdout = holdout
         super().__init__(**kwargs)
 
     def _info(self) -> tfds.core.DatasetInfo:
@@ -239,6 +241,8 @@ class BlackSplatToolHang(tfds.core.GeneratorBasedBuilder):
     def _generate_examples(self, path: pathlib.Path):
         for manifest_path in sorted(path.glob("demo_*/manifest.jsonl")):
             demo_name = manifest_path.parent.name
+            if demo_name in self.holdout:
+                continue
             steps = _load_episode(manifest_path, self.stride)
             if not steps:
                 continue
@@ -282,6 +286,15 @@ def main():
         help="Keep every Nth exported frame, accumulating the actions in between "
         "(default: %(default)s). Bump the builder's VERSION when changing this.",
     )
+    parser.add_argument(
+        "--holdout",
+        default="",
+        help="Comma-separated demo folder names (e.g. demo_3,demo_17) to exclude from "
+        "training and reserve for tools/eval_openvla.py -- the model never sees these, "
+        "so evaluating against them measures generalization rather than memorization. "
+        "Written to <data-dir>/holdout.json every run (even empty) so eval_openvla.py "
+        "always reads the current truth rather than a stale list from an earlier build.",
+    )
     args = parser.parse_args()
 
     if args.stride < 1:
@@ -289,12 +302,34 @@ def main():
     source_dir = pathlib.Path(args.data_dir).resolve()
     if not source_dir.is_dir():
         sys.exit(f"No such directory: {source_dir}")
-    n_demos = len(list(source_dir.glob("demo_*/manifest.jsonl")))
-    if n_demos == 0:
+    all_demos = {p.parent.name for p in source_dir.glob("demo_*/manifest.jsonl")}
+    if not all_demos:
         sys.exit(f"No demo_*/manifest.jsonl found under {source_dir}")
-    print(f"==> Building RLDS dataset from {n_demos} demo(s) in {source_dir} (stride {args.stride})")
 
-    builder = BlackSplatToolHang(source_dir=source_dir, stride=args.stride, data_dir=args.output_dir)
+    holdout = {name.strip() for name in args.holdout.split(",") if name.strip()}
+    unknown = holdout - all_demos
+    if unknown:
+        sys.exit(f"--holdout names not found under {source_dir}: {', '.join(sorted(unknown))}")
+    (source_dir / "holdout.json").write_text(json.dumps(sorted(holdout)))
+
+    n_demos = len(all_demos) - len(holdout)
+    if n_demos == 0:
+        sys.exit(f"--holdout excludes every demo under {source_dir} -- nothing left to train on")
+    print(
+        f"==> Building RLDS dataset from {n_demos} demo(s) in {source_dir} (stride {args.stride})"
+        + (f", holding out {len(holdout)}: {', '.join(sorted(holdout))}" if holdout else "")
+    )
+
+    # TFDS keys its cache by (name, version, data_dir) and silently reuses
+    # whatever's already there -- rerunning after re-exporting demos, or
+    # changing --holdout, would otherwise train on stale data with no
+    # warning. Force a real rebuild every time instead.
+    output_root = pathlib.Path(args.output_dir).expanduser() if args.output_dir else pathlib.Path.home() / "tensorflow_datasets"
+    stale = output_root / "black_splat_tool_hang" / str(BlackSplatToolHang.VERSION)
+    if stale.exists():
+        shutil.rmtree(stale)
+
+    builder = BlackSplatToolHang(source_dir=source_dir, stride=args.stride, holdout=holdout, data_dir=args.output_dir)
     builder.download_and_prepare()
     print(f"==> Done. Dataset written to {builder.data_path}")
 

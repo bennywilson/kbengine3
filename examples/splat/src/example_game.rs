@@ -1,26 +1,46 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use cgmath::InnerSpace;
 
 use serde::{Deserialize, Serialize};
 
+use black_splat::policy_client::query_policy;
 use black_splat::{
-    egui, assets::*, config::*, editor::{self, EditorChoice, GizmoSpace, TransformGizmo}, engine::*,
-    fly_camera::*, game_object::*, input::*, mujoco::{MjcfBundle, MujocoScene},
-    policy_client::PolicyResponse, renderer::*, resource::SceneLayer,
-    touch_pads::*, trajectory::RetargetedClip, utils::*, log,
+    assets::*,
+    config::*,
+    editor::{self, EditorChoice, GizmoSpace, TransformGizmo},
+    egui,
+    engine::*,
+    fly_camera::*,
+    game_object::*,
+    input::*,
+    log,
+    mujoco::{MjcfBundle, MujocoScene},
     passes::ambient::AmbientSettings,
     passes::deferred::ShadowSettings,
     passes::gaussian_splat::SplatParams,
     passes::postprocess::PostProcessSettings,
+    policy_client::PolicyResponse,
+    renderer::*,
+    resource::SceneLayer,
+    touch_pads::*,
+    trajectory::RetargetedClip,
+    utils::*,
 };
-use black_splat::policy_client::query_policy;
 
 use crate::editor_config::{self, EditorConfig, GIZMO_ACTIONS};
 use crate::resource_library::{self, MaterialFile};
 
 // How far in front of the camera a newly added game object is dropped.
 const ADD_OBJECT_DISTANCE: f32 = 5.0;
+
+// How long the scene must go unchanged (and finish any in-flight asset
+// loads) before a dirty skylight cubemap auto-rebakes. Long enough that
+// dragging a color/position value doesn't fire a bake per frame; short
+// enough that it's not a noticeable wait once you stop editing.
+const BAKE_SETTLE_DEBOUNCE_SECS: f32 = 0.5;
 
 /// The renderer-side shadow settings an EditorConfig describes.
 fn shadow_settings_from_config(config: &EditorConfig) -> ShadowSettings {
@@ -169,8 +189,7 @@ fn browser_tile(
     selected: bool,
     dirty: bool,
 ) -> egui::Response {
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(TILE_W, TILE_H), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(TILE_W, TILE_H), egui::Sense::click());
     let painter = ui.painter_at(rect);
     let bg = if selected {
         ui.visuals().selection.bg_fill
@@ -408,8 +427,8 @@ async fn save_with_fs_access_api(json: &str) -> Result<(), ()> {
     use wasm_bindgen::{JsCast, JsValue};
 
     let window = web_sys::window().ok_or(())?;
-    let picker = js_sys::Reflect::get(&window, &JsValue::from_str("showSaveFilePicker"))
-        .map_err(|_| ())?;
+    let picker =
+        js_sys::Reflect::get(&window, &JsValue::from_str("showSaveFilePicker")).map_err(|_| ())?;
     let picker: js_sys::Function = picker.dyn_into().map_err(|_| ())?;
 
     // One await step: call `method` on `target` and wait out the promise.
@@ -463,7 +482,9 @@ async fn save_with_fs_access_api(json: &str) -> Result<(), ()> {
 // "game_assets/models/barrel.glb" -> "barrel" for resource lists.
 fn resource_display_name(path: &str) -> String {
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    file.rsplit_once('.').map_or(file, |(stem, _)| stem).to_string()
+    file.rsplit_once('.')
+        .map_or(file, |(stem, _)| stem)
+        .to_string()
 }
 
 /// Which tab of the right-hand editor panel is showing.  (Resources is a
@@ -611,6 +632,7 @@ struct MujocoActorSnapshot {
     speed: f32,
     looping: bool,
     wireframe: bool,
+    documentation: String,
 }
 
 /// One undoable editor action.  `Edit` covers both gizmo-transform drags and
@@ -748,7 +770,8 @@ const PANDA_FINGER_OPEN_QPOS: f64 = 0.04;
 /// distort what OpenVLA sees. Shared so both call sites can't drift apart.
 fn policy_capture_dims(game_config: &Config) -> (u32, u32) {
     let height: u32 = 224;
-    let width: u32 = (height as f32 * (game_config.window_width as f32 / game_config.window_height as f32))
+    let width: u32 = (height as f32
+        * (game_config.window_width as f32 / game_config.window_height as f32))
         .round()
         .max(1.0) as u32;
     (width, height)
@@ -764,7 +787,8 @@ fn policy_capture_dims(game_config: &Config) -> (u32, u32) {
 /// before the error is readable. Native-only: wasm has no process to spawn.
 #[cfg(not(target_arch = "wasm32"))]
 fn launch_policy_server(mode: &str) {
-    let policy_server_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../policy_server");
+    let policy_server_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../policy_server");
     let script = policy_server_dir.join("run_server.bat");
     let result = std::process::Command::new("cmd")
         .args(["/C", "start", "Policy Server"])
@@ -780,13 +804,113 @@ fn launch_policy_server(mode: &str) {
     }
 }
 
+/// Launches `tools/rebuild_rlds_dataset.bat <scene_name>` in its own visible
+/// console window, same rationale as `launch_policy_server` above: it
+/// streams real tensorflow-datasets build output and can take a while, so it
+/// needs a terminal of its own rather than tying up the editor. This is the
+/// step that turns a fresh "Re-export Existing…" pass into something
+/// `finetune.py` can actually train on -- the engine never touches TFDS
+/// itself. `scene_name` must match the namespace the exports actually live
+/// under (see `policy_dataset::export_dir_for`) -- pass
+/// `current_scene_name`'s current value, not something guessed. Native-only:
+/// wasm has no process to spawn, and this
+/// whole export pipeline is already native-only (see
+/// `MujocoSceneActor::export_pending`'s docs).
+#[cfg(not(target_arch = "wasm32"))]
+fn launch_rlds_rebuild(scene_name: &str, holdout_demos: &str) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = repo_root.join("tools").join("rebuild_rlds_dataset.bat");
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", "start", "Rebuild TFDS Dataset"])
+        .arg("cmd")
+        .arg("/K")
+        .arg(&script)
+        .arg(scene_name);
+    if !holdout_demos.is_empty() {
+        cmd.arg(holdout_demos);
+    }
+    let result = cmd.current_dir(&repo_root).spawn();
+    match result {
+        Ok(_) => log!("Launched TFDS rebuild for scene '{scene_name}' -- watch the new console window for progress/errors."),
+        Err(e) => log!("Failed to launch TFDS rebuild: {e}"),
+    }
+}
+
+/// Launches `tools/eval_openvla.bat <scene_name> <adapter_dir>` in its own
+/// visible console window, same rationale as the other launch_* helpers:
+/// running inference over the whole held-out set takes a while and streams
+/// its own progress/report. Requires the current scene's TFDS dataset to
+/// have been rebuilt with a non-empty holdout (see `launch_rlds_rebuild`) --
+/// `eval_openvla.py` aborts on its own with a clear message otherwise,
+/// rather than silently evaluating on training data.
+#[cfg(not(target_arch = "wasm32"))]
+fn launch_eval(scene_name: &str, adapter_dir: &str) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = repo_root.join("tools").join("eval_openvla.bat");
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "Eval OpenVLA"])
+        .arg("cmd")
+        .arg("/K")
+        .arg(&script)
+        .arg(scene_name)
+        .arg(adapter_dir)
+        .current_dir(&repo_root)
+        .spawn();
+    match result {
+        Ok(_) => log!("Launched eval for scene '{scene_name}' -- watch the new console window for the report."),
+        Err(e) => log!("Failed to launch eval: {e}"),
+    }
+}
+
+/// Launches `tools/retrain_openvla.bat <scene_name> [resume_adapter_dir]` in
+/// its own visible console window, same rationale as `launch_rlds_rebuild`
+/// above: a LoRA fine-tune runs for a long time (hours) and needs a terminal
+/// of its own, not something tying up the editor. Runs natively against
+/// whatever TFDS dataset `Rebuild TFDS Dataset…` most recently produced for
+/// `scene_name` -- this doesn't rebuild it, so a stale rebuild trains on
+/// stale data. `scene_name` must match the namespace those exports live
+/// under, same requirement as `launch_rlds_rebuild`.
+///
+/// `resume_adapter_dir`, if non-empty, continues LoRA weights from an
+/// existing adapter checkpoint (e.g.
+/// `D:\openvla_runs\lora_run2\adapter-tmp\openvla-7b+...+q-4bit`) instead of
+/// starting from scratch -- see `finetune.py`'s `--resume_adapter_dir`
+/// (loads via `PeftModel.from_pretrained(..., is_trainable=True)`; doesn't
+/// restore optimizer state or the step counter, just the learned weights).
+///
+/// Native-only for the same reason as `launch_rlds_rebuild`: wasm has no
+/// process to spawn.
+#[cfg(not(target_arch = "wasm32"))]
+fn launch_finetune(scene_name: &str, resume_adapter_dir: &str) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = repo_root.join("tools").join("retrain_openvla.bat");
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", "start", "Fine-tune OpenVLA"])
+        .arg("cmd")
+        .arg("/K")
+        .arg(&script)
+        .arg(scene_name);
+    if !resume_adapter_dir.is_empty() {
+        cmd.arg(resume_adapter_dir);
+    }
+    let result = cmd.current_dir(&repo_root).spawn();
+    match result {
+        Ok(_) => log!("Launched fine-tune for scene '{scene_name}' -- watch the new console window for the training curve."),
+        Err(e) => log!("Failed to launch fine-tune: {e}"),
+    }
+}
+
 /// The fixed, non-interactive camera an actor's `policy_camera_pos`/
 /// `policy_camera_target` describe -- shared by every capture path (live
 /// policy eval, the "Show Camera Preview" checkbox, training-data export) so they
 /// can't drift apart the way three separate inline constructions eventually
 /// would.
 fn policy_camera_for(actor: &MujocoSceneActor) -> Camera {
-    Camera::from_look(actor.policy_camera_pos, actor.policy_camera_target - actor.policy_camera_pos, CG_VEC3_UP)
+    Camera::from_look(
+        actor.policy_camera_pos,
+        actor.policy_camera_target - actor.policy_camera_pos,
+        CG_VEC3_UP,
+    )
 }
 
 /// Decodes a just-captured PNG and uploads it as `actor`'s shared camera-
@@ -795,10 +919,16 @@ fn policy_camera_for(actor: &MujocoSceneActor) -> Camera {
 /// never ambiguous regardless of which of the three capture paths produced
 /// it. Logs and leaves the previous texture/label in place on a decode
 /// failure, rather than clearing a possibly-still-useful preview.
-fn set_camera_preview(actor: &mut MujocoSceneActor, renderer: &mut Renderer, png: &[u8], label: String) {
+fn set_camera_preview(
+    actor: &mut MujocoSceneActor,
+    renderer: &mut Renderer,
+    png: &[u8],
+    label: String,
+) {
     match decode_capture_png(png) {
         Ok((rgba, width, height)) => {
-            let image = egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
+            let image =
+                egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
             actor.camera_preview_texture = Some(renderer.egui_ctx().load_texture(
                 format!("camera_preview_{}", actor.name),
                 image,
@@ -806,7 +936,10 @@ fn set_camera_preview(actor: &mut MujocoSceneActor, renderer: &mut Renderer, png
             ));
             actor.camera_preview_label = label;
         }
-        Err(e) => log!("MuJoCo actor '{}': camera preview decode failed: {e}", actor.name),
+        Err(e) => log!(
+            "MuJoCo actor '{}': camera preview decode failed: {e}",
+            actor.name
+        ),
     }
 }
 
@@ -820,17 +953,154 @@ fn set_camera_preview(actor: &mut MujocoSceneActor, renderer: &mut Renderer, png
 /// color that might clash.
 fn draw_console_text(ui: &mut egui::Ui, id: &str, text: &str, max_height: f32) {
     let mut buf = text.to_string();
-    egui::ScrollArea::vertical().id_salt(id).max_height(max_height).stick_to_bottom(true).show(
-        ui,
-        |ui| {
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .max_height(max_height)
+        .stick_to_bottom(true)
+        .show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(&mut buf)
                     .font(egui::TextStyle::Monospace)
                     .desired_width(f32::INFINITY)
                     .interactive(false),
             );
-        },
-    );
+        });
+}
+
+/// Minimal inline-bold renderer for read-only documentation text: `**word**`
+/// renders emphasized (matching this file's existing `.strong()` convention
+/// for headers elsewhere); everything else renders as plain text. Not a
+/// general Markdown parser -- just enough to make a short usage cheatsheet
+/// easier to scan. Assumes well-formed (evenly paired) `**`; an unpaired
+/// trailing `**` just leaves the rest of the text emphasized, no panic.
+fn documentation_layout_job(ui: &egui::Ui, text: &str) -> egui::text::LayoutJob {
+    let body_color = ui.visuals().text_color();
+    let strong_color = ui.visuals().strong_text_color();
+    let font_id = egui::TextStyle::Body.resolve(ui.style());
+    let mut job = egui::text::LayoutJob::default();
+    let mut bold = false;
+    for segment in text.split("**") {
+        if !segment.is_empty() {
+            job.append(
+                segment,
+                0.0,
+                egui::TextFormat {
+                    font_id: font_id.clone(),
+                    color: if bold { strong_color } else { body_color },
+                    ..Default::default()
+                },
+            );
+        }
+        bold = !bold;
+    }
+    job
+}
+
+/// Draws an object's type label (e.g. "Actor", "Mujoco Actor") right under
+/// its Name field, with a book-icon "Documentation" toggle button on the same
+/// line -- shared by every selectable type that carries a `documentation`
+/// field (see `Actor`/`MujocoSceneActor::documentation`). The button's label
+/// is dimmed when there's no documentation yet so browsing actors gives an
+/// at-a-glance signal of which ones have notes, without disabling it -- it
+/// still needs to be clickable to open it. When expanded, renders
+/// `documentation` read-only (via `documentation_layout_job`) in a scroll
+/// area that fills the rest of the panel's available height, so a longer
+/// doc doesn't get squeezed into a tiny fixed box -- editing (if ever
+/// needed) is via the scene JSON or a type's default text, not this viewer.
+/// `id` scopes the scroll position (e.g. the object's name) so switching
+/// selection doesn't inherit another object's scroll offset.
+fn draw_type_and_documentation(
+    ui: &mut egui::Ui,
+    id: &str,
+    type_name: &str,
+    documentation: &str,
+    show_documentation: &mut bool,
+) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(type_name).weak());
+        ui.separator();
+        let label = if documentation.is_empty() {
+            egui::RichText::new("📖 Documentation").weak()
+        } else {
+            egui::RichText::new("📖 Documentation")
+        };
+        if ui
+            .add(egui::Button::new(label).selected(*show_documentation))
+            .clicked()
+        {
+            *show_documentation = !*show_documentation;
+        }
+    });
+    if *show_documentation {
+        egui::ScrollArea::vertical()
+            .id_salt(format!("doc_scroll_{id}"))
+            .max_height(ui.available_height())
+            .show(ui, |ui| {
+                if documentation.is_empty() {
+                    ui.label(egui::RichText::new("No documentation for this object.").weak());
+                } else {
+                    let mut job = documentation_layout_job(ui, documentation);
+                    job.wrap.max_width = ui.available_width();
+                    ui.label(job);
+                }
+            });
+        ui.separator();
+    }
+}
+
+/// Accent color for every collapsible section header drawn via
+/// `section_card` (Transform, Trajectory Playback, Camera, Task, Live Policy
+/// Evaluation, Training Data Export in the Mujoco Actor Details panel) --
+/// one consistent hue so the panel reads as a single tool rather than a
+/// patchwork of per-section palettes.
+const SECTION_ACCENT: egui::Color32 = egui::Color32::from_rgb(114, 172, 224);
+
+/// Background fill for a `section_card`: `panel_fill` nudged toward white in
+/// dark mode / toward black in light mode, rather than a hardcoded gray --
+/// same reasoning as `draw_console_text`'s doc comment on not baking in an
+/// absolute color that only looks right in the current theme.
+fn section_card_fill(ui: &egui::Ui) -> egui::Color32 {
+    let panel = ui.visuals().panel_fill;
+    let delta: i16 = if ui.visuals().dark_mode { 12 } else { -12 };
+    let nudge = |c: u8| (i16::from(c) + delta).clamp(0, 255) as u8;
+    egui::Color32::from_rgb(nudge(panel.r()), nudge(panel.g()), nudge(panel.b()))
+}
+
+/// Wraps `add_contents` in a foldable, subtly-elevated card -- the shared
+/// look for every top-level group in the Mujoco Actor Details panel (see
+/// `SECTION_ACCENT`/`section_card_fill`). Fold state persists per `id` via
+/// egui's own memory, so folding sections you've already configured (Camera,
+/// Task, Live Policy Evaluation) once is what brings Trajectory Playback and
+/// Training Data Export next to each other on screen, without physically
+/// reordering fields that Task/Camera still feed into. `id` must be unique
+/// per actor *and* section (e.g. include the actor's index) -- the panel Ui
+/// itself is reused across whichever actor is selected, so an id scoped only
+/// by section title would share one fold state across every actor. Use the
+/// actor's index, not its name: name is a live-edited text field, so keying
+/// off it would reset every card's fold state on each keystroke.
+fn section_card(
+    ui: &mut egui::Ui,
+    id: &str,
+    icon: &str,
+    title: &str,
+    default_open: bool,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Frame::group(ui.style())
+        .fill(section_card_fill(ui))
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            egui::CollapsingHeader::new(
+                egui::RichText::new(format!("{icon} {title}"))
+                    .color(SECTION_ACCENT)
+                    .strong(),
+            )
+            .id_salt(id)
+            .default_open(default_open)
+            .show(ui, add_contents);
+        });
+    ui.add_space(6.0);
 }
 
 /// Appends one line to `actor`'s policy log, trimming from the front once
@@ -852,9 +1122,11 @@ fn push_policy_log(actor: &mut MujocoSceneActor, line: String) {
 /// per tick from here on (see that function's export continuation).
 /// No-op beyond a status message if there's no bound scene/clip, the
 /// configured `policy_ee_body` doesn't exist on this model, or the output
-/// directory/manifest can't be created.
+/// directory/manifest can't be created. `scene_namespace` scopes the output
+/// folder (see `policy_dataset::export_dir_for`) -- pass the caller's
+/// `current_scene_name` (or its "unsaved" fallback).
 #[cfg(not(target_arch = "wasm32"))]
-fn start_export(actor: &mut MujocoSceneActor) {
+fn start_export(actor: &mut MujocoSceneActor, scene_namespace: &str) {
     let Some((scene, clip)) = actor.scene.as_mut().zip(actor.clip.clone()) else {
         actor.export_status = "Export needs a loaded scene + bound trajectory".to_string();
         return;
@@ -865,15 +1137,26 @@ fn start_export(actor: &mut MujocoSceneActor) {
     for i in 0..frame_count {
         scene.apply_trajectory_frame(&clip, i);
         let Some(pose) = scene.body_world_pose(&actor.policy_ee_body) else {
-            actor.export_status = format!("Export aborted: no body named '{}'", actor.policy_ee_body);
+            actor.export_status =
+                format!("Export aborted: no body named '{}'", actor.policy_ee_body);
             return;
         };
         let finger_qpos = scene.joint_qpos("finger_joint1").unwrap_or(0.0);
         poses.push(pose);
-        grippers.push(black_splat::policy_dataset::gripper_closedness(finger_qpos, PANDA_FINGER_OPEN_QPOS));
+        grippers.push(black_splat::policy_dataset::gripper_closedness(
+            finger_qpos,
+            PANDA_FINGER_OPEN_QPOS,
+        ));
     }
 
-    let dir = black_splat::policy_dataset::export_dir_for(&actor.trajectory_path);
+    let dir = black_splat::policy_dataset::export_dir_for(scene_namespace, &actor.trajectory_path);
+    // Wipe any previous export of this same clip first: build_rlds_dataset.py
+    // only ever reads the files a fresh manifest.jsonl actually lists, so a
+    // shorter re-export (e.g. after a stride change) wouldn't corrupt the
+    // rebuilt dataset by itself -- but it would leave orphaned frame_*.png
+    // files behind forever, which is worth not doing. Errors are ignored
+    // (e.g. the directory not existing yet on a first export).
+    let _ = std::fs::remove_dir_all(&dir);
     let manifest = match black_splat::policy_dataset::ManifestWriter::create(&dir) {
         Ok(m) => m,
         Err(e) => {
@@ -900,7 +1183,10 @@ fn start_export(actor: &mut MujocoSceneActor) {
 fn finish_export(actor: &mut MujocoSceneActor) {
     if let Some(manifest) = &mut actor.export_manifest {
         if let Err(e) = manifest.flush() {
-            log!("MuJoCo actor '{}': export manifest flush failed: {e}", actor.name);
+            log!(
+                "MuJoCo actor '{}': export manifest flush failed: {e}",
+                actor.name
+            );
         }
     }
     actor.export_status = format!(
@@ -920,7 +1206,10 @@ fn abort_export(actor: &mut MujocoSceneActor, reason: String) {
     if let Some(manifest) = &mut actor.export_manifest {
         let _ = manifest.flush();
     }
-    log!("MuJoCo actor '{}': training-data export aborted: {reason}", actor.name);
+    log!(
+        "MuJoCo actor '{}': training-data export aborted: {reason}",
+        actor.name
+    );
     actor.export_status = format!("Export aborted: {reason}");
     actor.export_pending = false;
     actor.export_manifest = None;
@@ -961,6 +1250,17 @@ struct MujocoSceneActor {
     // Whether primitive geoms draw as wireframe lines (mesh geoms always
     // render regardless -- see `MujocoScene::set_wireframe`).
     wireframe: bool,
+    /// Free-form operator notes about this actor -- e.g. why its policy
+    /// camera or floor height is calibrated the way it is, which checkpoint
+    /// it's meant to be evaluated against, anything else future-you would
+    /// otherwise have to re-derive from scratch (see this project's own
+    /// camera-settings scare as the motivating example). Optional, persisted
+    /// via MujocoActorDto since it's genuinely scene data, not transient
+    /// run state.
+    documentation: String,
+    /// Whether the documentation editor below is currently expanded --
+    /// UI-only, not persisted/undo-snapshotted (same as `show_camera_preview`).
+    show_documentation: bool,
     scene: Option<MujocoScene>,
     // Real triangle-mesh actors for the scene's mesh-type geoms (registered
     // into the renderer's own actor map, see `tick_mujoco_actors`) -- index-
@@ -1085,6 +1385,27 @@ struct MujocoSceneActor {
     /// "Exporting frame 12/468…" or "Wrote 468 tuples to ...".
     #[cfg(not(target_arch = "wasm32"))]
     export_status: String,
+    /// Adapter checkpoint dir to resume a fine-tune from (see
+    /// `launch_finetune`'s `--resume_adapter_dir`), e.g.
+    /// `D:\openvla_runs\lora_run2\adapter-tmp\openvla-7b+...+q-4bit`. Empty
+    /// means start LoRA weights from scratch. Transient UI input, not
+    /// scene data -- not persisted, mirrors `export_status`.
+    #[cfg(not(target_arch = "wasm32"))]
+    resume_adapter_dir: String,
+    /// Comma-separated demo names (e.g. `demo_3,demo_17`) to exclude from
+    /// the next TFDS rebuild and reserve for `tools/eval_openvla.py` -- see
+    /// `build_rlds_dataset.py`'s `--holdout`. Empty means no holdout (train
+    /// on everything, same as before this existed). Transient UI input,
+    /// not persisted, mirrors `resume_adapter_dir`.
+    #[cfg(not(target_arch = "wasm32"))]
+    holdout_demos: String,
+    /// Adapter checkpoint dir to evaluate against the current holdout set
+    /// (see `launch_eval`'s `tools/eval_openvla.py --adapter-dir`). Same
+    /// shape/validation as `resume_adapter_dir`, separate field since
+    /// resuming and evaluating are usually different checkpoints. Transient
+    /// UI input, not persisted.
+    #[cfg(not(target_arch = "wasm32"))]
+    eval_adapter_dir: String,
     /// Remaining trajectory-clip paths for a "Batch Export…" run, front of
     /// the queue first -- drained one clip at a time by `tick_mujoco_actors`
     /// once the previous clip's export finishes (or is skipped, e.g. a clip
@@ -1112,6 +1433,8 @@ impl MujocoSceneActor {
             playing: true,
             speed: 1.0,
             wireframe: true,
+            documentation: default_mujoco_documentation(),
+            show_documentation: false,
             scene: None,
             mesh_geom_actors: Vec::new(),
             mesh_model_cache: std::collections::HashMap::new(),
@@ -1121,8 +1444,8 @@ impl MujocoSceneActor {
             policy_instruction: String::new(),
             policy_server_url: "http://localhost:8000".to_string(),
             policy_interval_secs: DEFAULT_POLICY_INTERVAL_SECS,
-            policy_arm_actuators_csv: "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7"
-                .to_string(),
+            policy_arm_actuators_csv:
+                "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
             policy_gripper_actuator: "actuator8".to_string(),
             policy_ee_body: "hand".to_string(),
             policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
@@ -1151,6 +1474,12 @@ impl MujocoSceneActor {
             #[cfg(not(target_arch = "wasm32"))]
             export_status: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
+            resume_adapter_dir: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            holdout_demos: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            eval_adapter_dir: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             export_queue: Vec::new(),
         }
     }
@@ -1174,8 +1503,9 @@ impl MujocoSceneActor {
 
 impl editor::EditorInspect for MujocoSceneActor {
     fn inspect_properties(&mut self, visitor: &mut dyn editor::PropertyVisitor) -> bool {
+        // Name is drawn manually by the Details panel instead (above the
+        // Type + Documentation row, itself above these).
         let mut changed = false;
-        changed |= visitor.edit_text("Name", &mut self.name);
         // XML Path is set only via the Details panel's Browse… button (see
         // the custom UI in EditorTab::Details), not typed here.
         changed |= visitor.edit_vec3("Position", &mut self.position);
@@ -1379,6 +1709,9 @@ struct ActorDto {
     layer: u32, // SceneLayer choice index
     #[serde(default)]
     shadow_catcher: bool,
+    /// Optional free-form operator notes -- see `Actor::documentation`.
+    #[serde(default)]
+    documentation: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1508,6 +1841,9 @@ struct MujocoActorDto {
     looping: bool,
     #[serde(default = "default_true")]
     wireframe: bool,
+    /// Optional free-form operator notes -- see `MujocoSceneActor::documentation`.
+    #[serde(default = "default_mujoco_documentation")]
+    documentation: String,
     // The rest of the policy-control state stays out of the scene file on
     // purpose (see MujocoSceneActor's field comments) -- these fields are
     // here because they describe the *task and observation*, not a transient
@@ -1548,6 +1884,59 @@ fn default_policy_camera_target() -> [f32; 3] {
 }
 fn default_policy_camera_fov() -> f32 {
     60.0
+}
+/// Baseline usage notes every Mujoco Actor ships with (see
+/// `MujocoSceneActor::documentation`) -- overwrite freely per actor, this is
+/// just the "how do these controls even work" answer that's easy to forget
+/// between sessions. `**word**` renders emphasized (see
+/// `draw_type_and_documentation`'s read-only viewer) -- not real Markdown,
+/// just enough inline bold to make a cheatsheet scannable.
+fn default_mujoco_documentation() -> String {
+    "**Running a trajectory** (kinematic playback, no physics)\n\
+     1. Set **Trajectory** (Browse…) to a clip .json.\n\
+     2. Make sure **Enabled** (under Policy Control) is off.\n\
+     3. Check **Playing**. The clip drives qpos directly each frame; \
+     physics is off while a clip is bound and Policy is disabled.\n\
+     \n\
+     **Running a policy** (live inference against a policy server)\n\
+     1. Start a server (**Start Stub Server**, or **Start OpenVLA Server \
+     (Docker)**) and wait for \"Uvicorn running\" in its window.\n\
+     2. Set **Server URL**, **Instruction**, and the policy camera \
+     (**policy_camera_pos**/**target**/**fov**) -- the camera MUST match \
+     whatever viewpoint the serving checkpoint was actually trained on, or \
+     the model is seeing out-of-distribution input.\n\
+     3. Optional: set **Trajectory** to a clip and click **Reset to \
+     Trajectory Start** so the sim begins from a real recorded pose instead \
+     of the MJCF's own (often ungrounded) defaults.\n\
+     4. Check **Enabled**. This alone drives physics -- Playing only still \
+     matters for kinematic clip scrubbing while Policy is off, it isn't \
+     needed alongside Enabled.\n\
+     \n\
+     **Re-exporting training data** (after changing the camera, floor \
+     height, or anything else that invalidates previously captured frames)\n\
+     1. Reposition the policy camera to a clear external workspace view, \
+     not over-the-shoulder -- that self-occludes the exact thing being \
+     grasped. Check framing at a few points mid-trajectory too, not just \
+     frame 0, via **Show Camera Preview**.\n\
+     2. **Save Scene…** (Ctrl+S) -- this both persists the camera settings \
+     and sets the scene name your exports land under \
+     (resources/openvla_datasets/<scene name>/), so give the scene a \
+     meaningful name here if this is really a new setup, not a re-save of \
+     an existing one.\n\
+     3. Click **Re-export Existing…** under Training Data Export -- it \
+     finds every previously-exported clip already under this scene's \
+     folder and re-queues them, no re-picking files.\n\
+     4. Wait for the queue to drain (the status line shows progress).\n\
+     5. Click **Rebuild TFDS Dataset (<scene name>)…** -- repackages this \
+     scene's exports into the TFDS format finetune.py trains on, and \
+     writes it to a matching per-scene output folder so two scenes' builds \
+     can't overwrite each other. Bump build_rlds_dataset.py's dataset \
+     VERSION constant too if this is a meaningfully different capture \
+     (new camera, new stride), so TFDS doesn't serve cached shards from \
+     the old one.\n\
+     6. Retrain, pointing finetune.py's --data_root_dir (or an OXE mixture \
+     entry) at this scene's TFDS output folder."
+        .to_string()
 }
 
 /// The scene the editor opens when the user hasn't saved a startup scene of
@@ -1602,6 +1991,44 @@ fn quat_arr(q: CgQuat) -> [f32; 4] {
 fn arr_quat(a: [f32; 4]) -> CgQuat {
     // cgmath's Quaternion::new is (w, xi, yj, zk); the array is (x, y, z, w).
     CgQuat::new(a[3], a[0], a[1], a[2])
+}
+
+// A cheap per-tick hash of everything a skylight bake actually captures:
+// every light (a bake's deferred-lighting render sees them all, not just the
+// skylight being baked) and every actor that isn't excluded from the capture
+// (matches Renderer::bake_skylight_cubemap's own filtered_actors -- editing a
+// shadow-catcher or an env-capture-excluded actor genuinely can't change what
+// a bake sees, so those don't count as dirty). MuJoCo actors are a separate
+// list (`scene_mujoco_actors`) not included here: they move every physics
+// tick, and treating that as "dirty" would mean any policy rollout keeps the
+// debounce timer perpetually reset, silently starving batches/training of
+// the GPU cycles a rebake costs instead of ever settling.
+fn scene_bake_fingerprint(actors: &[Actor], lights: &[Light]) -> u64 {
+    let mut h = DefaultHasher::new();
+    let capture_actors = actors
+        .iter()
+        .filter(|a| !a.is_shadow_catcher() && !a.is_excluded_from_env_capture());
+    for actor in capture_actors {
+        vec3_arr(actor.get_position()).map(f32::to_bits).hash(&mut h);
+        quat_arr(actor.get_rotation()).map(f32::to_bits).hash(&mut h);
+        vec3_arr(actor.get_scale()).map(f32::to_bits).hash(&mut h);
+        actor.get_model().hash(&mut h);
+        actor.get_material().hash(&mut h);
+    }
+    h.write_u8(0xFF); // separator so an actor/light count shuffle can't collide
+    for light in lights {
+        vec3_arr(light.get_position()).map(f32::to_bits).hash(&mut h);
+        quat_arr(light.get_rotation()).map(f32::to_bits).hash(&mut h);
+        light.get_light_type().choice_index().hash(&mut h);
+        vec3_arr(light.get_color()).map(f32::to_bits).hash(&mut h);
+        vec3_arr(light.get_color2()).map(f32::to_bits).hash(&mut h);
+        light.get_intensity().to_bits().hash(&mut h);
+        light.casts_shadow().hash(&mut h);
+        light.shadow_cascades().hash(&mut h);
+        light.shadow_distance().to_bits().hash(&mut h);
+        light.use_env_cubemap().hash(&mut h);
+    }
+    h.finish()
 }
 
 /// Built-in particle-system presets the Add menu offers.  Each preset's texture
@@ -1798,7 +2225,11 @@ fn draw_particle_params_ui(
         })
         .show_ui(ui, |ui| {
             changed |= ui
-                .selectable_value(&mut params.blend_mode, ParticleBlendMode::Additive, "Additive")
+                .selectable_value(
+                    &mut params.blend_mode,
+                    ParticleBlendMode::Additive,
+                    "Additive",
+                )
                 .changed();
             changed |= ui
                 .selectable_value(
@@ -1978,7 +2409,8 @@ fn draw_outliner_section(
                     edit_resp.request_focus();
                     *name_edit_focus = false;
                 }
-                let finish = edit_resp.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let finish =
+                    edit_resp.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
                 if finish || cancel {
                     let new_name = name_edit_buffer.trim();
@@ -1992,8 +2424,7 @@ fn draw_outliner_section(
                 let label_resp = ui.selectable_label(highlighted, name.as_str());
                 if label_resp.clicked() {
                     // Ctrl+click joins/leaves the multi-selection.
-                    let additive =
-                        ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+                    let additive = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
                     *select_out = Some((this, additive));
                 }
                 if label_resp.double_clicked() {
@@ -2003,9 +2434,7 @@ fn draw_outliner_section(
                 }
             }
             if ui
-                .small_button(
-                    egui::RichText::new("✕").color(egui::Color32::from_rgb(235, 80, 80)),
-                )
+                .small_button(egui::RichText::new("✕").color(egui::Color32::from_rgb(235, 80, 80)))
                 .clicked()
             {
                 *delete_out = Some(this);
@@ -2094,6 +2523,14 @@ pub struct SplatGame {
     // Whether a user-saved startup scene exists (drives the Settings tab UI;
     // cached so native doesn't stat the config file every frame).
     has_custom_startup: bool,
+    // File stem of the last scene explicitly saved-as or loaded this session
+    // (e.g. "panda_scene"), restored from `editor_config::load_startup_scene_name`
+    // on a launch that auto-loads a saved startup scene, or None otherwise
+    // (a brand new, never-named scene). Namespaces training-data exports (see
+    // `policy_dataset::export_dir_for`) so switching to a differently-calibrated
+    // scene (a new policy camera, a different MJCF) can't silently mix its
+    // exports into an older scene's folder.
+    current_scene_name: Option<String>,
     // Resource highlighted in the bottom Resources panel: shown in the right
     // panel's Resource inspector tab, and (for models) offered to the Details
     // panel's Model row as a one-click assignment.
@@ -2237,12 +2674,27 @@ pub struct SplatGame {
     // Reassigned when the matching model finishes uploading.
     pending_actor_models: Vec<(usize, String)>,
     picker_state: Arc<Mutex<PickerState>>,
-    // "Load Scene" plumbing: the picked JSON file's bytes land here for a later
-    // tick to parse (the file dialog runs async, like the .ply picker).
-    picked_scene: Arc<Mutex<Option<Vec<u8>>>>,
+    // "Load Scene" plumbing: the picked file's (name, bytes) land here for a
+    // later tick to parse (the file dialog runs async, like the .ply picker).
+    // The name is the file stem (e.g. "panda_scene"), used to set
+    // `current_scene_name` once the load actually succeeds.
+    picked_scene: Arc<Mutex<Option<(String, Vec<u8>)>>>,
     // Settings > "Choose start-up scene…" plumbing: the picked file's bytes are
-    // validated and persisted as the startup scene on a later tick.
-    picked_startup: Arc<Mutex<Option<Vec<u8>>>>,
+    // validated and persisted as the startup scene on a later tick. Shares
+    // `open_scene_picker_into`'s (name, bytes) shape with `picked_scene`
+    // above, but the name is unused here -- the startup scene never has a
+    // meaningful "current scene name" (see `current_scene_name`'s field doc).
+    picked_startup: Arc<Mutex<Option<(String, Vec<u8>)>>>,
+    // "Save Scene…" plumbing: the file stem the user actually saved to lands
+    // here once the (async, native-only) save dialog completes, for a later
+    // tick to copy into `current_scene_name`. Native-only because the wasm
+    // save path (the File System Access API, or its download fallback) has
+    // no reliable way to recover the chosen name -- and the only consumer of
+    // `current_scene_name`, training-data export, is native-only anyway (see
+    // `MujocoSceneActor::export_pending`'s docs), so there's nothing to wire
+    // up on wasm regardless.
+    #[cfg(not(target_arch = "wasm32"))]
+    saved_scene_name: Arc<Mutex<Option<String>>>,
     // Splat clouds a scene load requested: their .ply bytes are fetched on a
     // background task (native thread / wasm fetch) and applied here in a later
     // tick, since cloud creation must happen on the render thread.
@@ -2259,6 +2711,15 @@ pub struct SplatGame {
     // Editor vs game mode.  Editor: the full menu bar + debug overlay are always
     // shown.  Game: only the small mode switch remains, for an unobstructed view.
     editor_mode: bool,
+    // Countdown to the next auto-rebake pass over every skylight with
+    // `use_env_cubemap` on: reset to `BAKE_SETTLE_DEBOUNCE_SECS` whenever
+    // `scene_bake_fingerprint` changes or an asset is still loading, ticked
+    // down otherwise, and fires (then goes back to None) when it reaches
+    // zero. None means settled -- nothing pending.
+    bake_settle_timer: Option<f32>,
+    // The fingerprint last observed, so the tick knows whether anything
+    // bake-relevant changed since the previous frame.
+    last_scene_bake_fingerprint: u64,
 }
 
 impl SplatGame {
@@ -2455,8 +2916,10 @@ impl SplatGame {
                 if let Some(parent) = files.first().and_then(|f| f.path().parent()) {
                     editor_config::save_last_dir("mujoco_trajectory", parent);
                 }
-                let paths: Vec<String> =
-                    files.iter().map(|f| f.path().to_string_lossy().into_owned()).collect();
+                let paths: Vec<String> = files
+                    .iter()
+                    .map(|f| f.path().to_string_lossy().into_owned())
+                    .collect();
                 *picked.lock().unwrap() = Some((actor_name, paths));
             }
         };
@@ -2521,9 +2984,7 @@ impl SplatGame {
             Selection::Light(i) => self.scene_lights.get(i).map(|l| l.get_name().to_string()),
             Selection::Particle(i) => self.scene_particles.get(i).map(|p| p.name.clone()),
             Selection::Splat(i) => self.scene_splats.get(i).map(|s| s.name.clone()),
-            Selection::MujocoActor(i) => {
-                self.scene_mujoco_actors.get(i).map(|m| m.name.clone())
-            }
+            Selection::MujocoActor(i) => self.scene_mujoco_actors.get(i).map(|m| m.name.clone()),
             Selection::PostProcess => Some("Post Process".to_string()),
         }
     }
@@ -2643,8 +3104,7 @@ impl SplatGame {
             Selection::Splat(i) => {
                 if let Some(splat) = self.scene_splats.get_mut(i) {
                     splat.transform.position = new_pos;
-                    splat.transform.rotation =
-                        (delta_rot * splat.transform.rotation).normalize();
+                    splat.transform.rotation = (delta_rot * splat.transform.rotation).normalize();
                     // Uniform scale only (non-uniform cloud scale is only
                     // approximate).
                     let uniform = (splat.transform.scale.x * scale_mult.x).max(0.001);
@@ -2686,10 +3146,7 @@ impl SplatGame {
                 .scene_splats
                 .get(i)
                 .map(|s| (s.transform.position, 4.0)),
-            Selection::MujocoActor(i) => self
-                .scene_mujoco_actors
-                .get(i)
-                .map(|m| (m.position, 1.5)),
+            Selection::MujocoActor(i) => self.scene_mujoco_actors.get(i).map(|m| (m.position, 1.5)),
             Selection::PostProcess => None,
         }
     }
@@ -2837,8 +3294,7 @@ impl SplatGame {
     /// Spawns a particle system from resource `preset` (an index into
     /// particle_resources) ahead of the camera and selects it (Add menu).
     fn add_particle(&mut self, preset: usize, renderer: &mut Renderer) {
-        let Some(preset_name) = self.particle_resources.get(preset).map(|r| r.name.clone())
-        else {
+        let Some(preset_name) = self.particle_resources.get(preset).map(|r| r.name.clone()) else {
             return;
         };
         self.next_object_num += 1;
@@ -2961,10 +3417,12 @@ impl SplatGame {
                     ObjectSnapshot::Particle(p.clone()),
                 )
             }),
-            Selection::Splat(i) => self
-                .scene_splats
-                .get(i)
-                .map(|s| (ObjectRef::Splat(s.name.clone()), ObjectSnapshot::Splat(s.clone()))),
+            Selection::Splat(i) => self.scene_splats.get(i).map(|s| {
+                (
+                    ObjectRef::Splat(s.name.clone()),
+                    ObjectSnapshot::Splat(s.clone()),
+                )
+            }),
             Selection::MujocoActor(i) => self.scene_mujoco_actors.get(i).map(|m| {
                 (
                     ObjectRef::MujocoActor(m.name.clone()),
@@ -2978,6 +3436,7 @@ impl SplatGame {
                         speed: m.speed,
                         looping: m.looping,
                         wireframe: m.wireframe,
+                        documentation: m.documentation.clone(),
                     }),
                 )
             }),
@@ -3021,7 +3480,7 @@ impl SplatGame {
         }
     }
 
-    /// Overwrites `obj` with `snapshot`'s data and pushes the change to 
+    /// Overwrites `obj` with `snapshot`'s data and pushes the change to
     /// the renderer.
     fn restore_snapshot(
         &mut self,
@@ -3233,6 +3692,8 @@ impl SplatGame {
                     playing: m.playing,
                     speed: m.speed,
                     wireframe: m.wireframe,
+                    documentation: m.documentation.clone(),
+                    show_documentation: false,
                     scene: None,
                     mesh_geom_actors: Vec::new(),
                     mesh_model_cache: std::collections::HashMap::new(),
@@ -3247,7 +3708,8 @@ impl SplatGame {
                     policy_server_url: "http://localhost:8000".to_string(),
                     policy_interval_secs: DEFAULT_POLICY_INTERVAL_SECS,
                     policy_arm_actuators_csv:
-                        "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
+                        "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7"
+                            .to_string(),
                     policy_gripper_actuator: "actuator8".to_string(),
                     policy_ee_body: "hand".to_string(),
                     policy_camera_pos: DEFAULT_POLICY_CAMERA_POS,
@@ -3275,6 +3737,12 @@ impl SplatGame {
                     export_manifest: None,
                     #[cfg(not(target_arch = "wasm32"))]
                     export_status: String::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    resume_adapter_dir: String::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    holdout_demos: String::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    eval_adapter_dir: String::new(),
                     #[cfg(not(target_arch = "wasm32"))]
                     export_queue: Vec::new(),
                 });
@@ -3480,8 +3948,11 @@ impl SplatGame {
                                 .map(|v| format!("{v:+.3}"))
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            let arm_actuators: Vec<&str> =
-                                actor.policy_arm_actuators_csv.split(',').map(str::trim).collect();
+                            let arm_actuators: Vec<&str> = actor
+                                .policy_arm_actuators_csv
+                                .split(',')
+                                .map(str::trim)
+                                .collect();
                             match scene.apply_policy_action(
                                 step,
                                 &actor.policy_ee_body,
@@ -3496,7 +3967,10 @@ impl SplatGame {
                                     log!("MuJoCo actor '{name}': apply_policy_action failed: {e}");
                                     push_policy_log(
                                         actor,
-                                        format!("[{}] [{action_str}] -> apply failed: {e}", response.model),
+                                        format!(
+                                            "[{}] [{action_str}] -> apply failed: {e}",
+                                            response.model
+                                        ),
                                     );
                                 }
                             }
@@ -3544,12 +4018,15 @@ impl SplatGame {
             let finished: Vec<(String, anyhow::Result<Vec<u8>>)> =
                 std::mem::take(&mut *self.pending_camera_previews.lock().unwrap());
             for (name, result) in finished {
-                let Some(actor) = self.scene_mujoco_actors.iter_mut().find(|a| a.name == name) else {
+                let Some(actor) = self.scene_mujoco_actors.iter_mut().find(|a| a.name == name)
+                else {
                     continue;
                 };
                 actor.preview_pending = false;
                 match result {
-                    Ok(png) => set_camera_preview(actor, renderer, &png, "Camera Preview".to_string()),
+                    Ok(png) => {
+                        set_camera_preview(actor, renderer, &png, "Camera Preview".to_string())
+                    }
                     Err(e) => log!("MuJoCo actor '{name}': preview capture failed: {e}"),
                 }
             }
@@ -3767,7 +4244,25 @@ impl SplatGame {
                 // missing wire: both flags existed and were documented, neither
                 // was ever set from here.
                 scene.set_playing(actor.playing || actor.policy_enabled);
-                scene.set_kinematic(actor.clip.is_some() && !actor.policy_enabled);
+                let now_kinematic = actor.clip.is_some() && !actor.policy_enabled;
+                if scene.is_kinematic() && !now_kinematic {
+                    // Physics is about to start stepping this tick for the
+                    // first time -- freeze ctrl at the current pose first
+                    // (see MujocoScene::hold_current_pose's doc) so the
+                    // position servos don't yank toward whatever ctrl was
+                    // last left at (0, most likely) before a real command --
+                    // from OpenVLA, or a later frame of this same clip --
+                    // exists to write it.
+                    let arm_actuators: Vec<&str> = actor
+                        .policy_arm_actuators_csv
+                        .split(',')
+                        .map(str::trim)
+                        .collect();
+                    if let Err(e) = scene.hold_current_pose(&arm_actuators) {
+                        log!("MuJoCo actor '{}': hold_current_pose failed: {e}", actor.name);
+                    }
+                }
+                scene.set_kinematic(now_kinematic);
             }
             if let (Some(scene), Some(clip)) = (&mut actor.scene, &actor.clip) {
                 if let Some(idx) = export_idx {
@@ -3828,8 +4323,11 @@ impl SplatGame {
                 #[cfg(not(target_arch = "wasm32"))]
                 for geom in &mesh_geoms {
                     if !actor.mesh_model_cache.contains_key(&geom.mesh_path) {
-                        let handle = pollster::block_on(renderer.load_model(&geom.mesh_path, false));
-                        actor.mesh_model_cache.insert(geom.mesh_path.clone(), handle);
+                        let handle =
+                            pollster::block_on(renderer.load_model(&geom.mesh_path, false));
+                        actor
+                            .mesh_model_cache
+                            .insert(geom.mesh_path.clone(), handle);
                     }
                 }
 
@@ -3862,7 +4360,9 @@ impl SplatGame {
                 // actors with the wrong geoms.
                 if actor.mesh_geom_actors.is_empty()
                     && !mesh_geoms.is_empty()
-                    && mesh_geoms.iter().all(|g| actor.mesh_model_cache.contains_key(&g.mesh_path))
+                    && mesh_geoms
+                        .iter()
+                        .all(|g| actor.mesh_model_cache.contains_key(&g.mesh_path))
                 {
                     for geom in &mesh_geoms {
                         let handle = actor.mesh_model_cache[&geom.mesh_path];
@@ -3951,13 +4451,17 @@ impl SplatGame {
                             let pending = self.pending_policy_actions.clone();
                             let debug_png = png.clone();
                             let task = async move {
-                                let result = query_policy(&url, &png, &instruction, None, None).await;
+                                let result =
+                                    query_policy(&url, &png, &instruction, None, None).await;
                                 pending.lock().unwrap().push((name, debug_png, result));
                             };
                             std::thread::spawn(move || pollster::block_on(task));
                         }
                         Err(e) => {
-                            log!("MuJoCo actor '{}': capture_frame_png failed: {e}", actor.name);
+                            log!(
+                                "MuJoCo actor '{}': capture_frame_png failed: {e}",
+                                actor.name
+                            );
                         }
                     }
                     #[cfg(target_arch = "wasm32")]
@@ -3978,7 +4482,11 @@ impl SplatGame {
                                 let (debug_png, result) = match pending_capture.finish().await {
                                     Ok(png) => {
                                         let debug_png = png.clone();
-                                        (debug_png, query_policy(&url, &png, &instruction, None, None).await)
+                                        (
+                                            debug_png,
+                                            query_policy(&url, &png, &instruction, None, None)
+                                                .await,
+                                        )
                                     }
                                     Err(e) => (Vec::new(), Err(e)),
                                 };
@@ -3987,7 +4495,10 @@ impl SplatGame {
                             wasm_bindgen_futures::spawn_local(task);
                         }
                         Err(e) => {
-                            log!("MuJoCo actor '{}': begin_capture_frame_png failed: {e}", actor.name);
+                            log!(
+                                "MuJoCo actor '{}': begin_capture_frame_png failed: {e}",
+                                actor.name
+                            );
                         }
                     }
                 }
@@ -4012,8 +4523,13 @@ impl SplatGame {
                     capture_width,
                     capture_height,
                 ) {
-                    Ok(png) => set_camera_preview(actor, renderer, &png, "Camera Preview".to_string()),
-                    Err(e) => log!("MuJoCo actor '{}': preview capture_frame_png failed: {e}", actor.name),
+                    Ok(png) => {
+                        set_camera_preview(actor, renderer, &png, "Camera Preview".to_string())
+                    }
+                    Err(e) => log!(
+                        "MuJoCo actor '{}': preview capture_frame_png failed: {e}",
+                        actor.name
+                    ),
                 }
                 #[cfg(target_arch = "wasm32")]
                 match renderer.begin_capture_frame_png(
@@ -4033,7 +4549,10 @@ impl SplatGame {
                         });
                     }
                     Err(e) => {
-                        log!("MuJoCo actor '{}': preview begin_capture_frame_png failed: {e}", actor.name);
+                        log!(
+                            "MuJoCo actor '{}': preview begin_capture_frame_png failed: {e}",
+                            actor.name
+                        );
                     }
                 }
             }
@@ -4065,11 +4584,19 @@ impl SplatGame {
                     Ok(png) => {
                         let filename = format!("frame_{idx:06}.png");
                         if actor.show_camera_preview {
-                            set_camera_preview(actor, renderer, &png, format!("Dataset Export -- {filename}"));
+                            set_camera_preview(
+                                actor,
+                                renderer,
+                                &png,
+                                format!("Dataset Export -- {filename}"),
+                            );
                         }
                         let frame_path = actor.export_dir.join(&filename);
                         if let Err(e) = std::fs::write(&frame_path, &png) {
-                            abort_export(actor, format!("couldn't write {}: {e}", frame_path.display()));
+                            abort_export(
+                                actor,
+                                format!("couldn't write {}: {e}", frame_path.display()),
+                            );
                             continue;
                         }
                         let action = black_splat::policy_dataset::action_from_poses(
@@ -4082,7 +4609,8 @@ impl SplatGame {
                             instruction: actor.policy_instruction.clone(),
                             action,
                         };
-                        let append_result = actor.export_manifest.as_mut().map(|m| m.append(&record));
+                        let append_result =
+                            actor.export_manifest.as_mut().map(|m| m.append(&record));
                         match append_result {
                             Some(Ok(())) => {
                                 actor.export_frame_idx += 1;
@@ -4092,7 +4620,9 @@ impl SplatGame {
                                     actor.export_poses.len() - 1
                                 );
                             }
-                            Some(Err(e)) => abort_export(actor, format!("manifest write failed: {e}")),
+                            Some(Err(e)) => {
+                                abort_export(actor, format!("manifest write failed: {e}"))
+                            }
                             None => abort_export(actor, "manifest writer missing".to_string()),
                         }
                     }
@@ -4131,8 +4661,18 @@ impl SplatGame {
                         // way this queue entry is done with; move past it so
                         // a bad clip can't wedge the whole batch.
                         actor.export_queue.remove(0);
-                        if actor.clip.is_some() {
-                            start_export(actor);
+                        if let (true, Some(scene_namespace)) =
+                            (actor.clip.is_some(), self.current_scene_name.as_deref())
+                        {
+                            start_export(actor, scene_namespace);
+                        } else if actor.clip.is_some() {
+                            // Scene name vanished mid-batch (e.g. a new/unnamed
+                            // scene got loaded while this was running) -- skip
+                            // rather than silently falling back to an "unsaved"
+                            // bucket, same reasoning as the Export panel's gate.
+                            actor.export_status = format!(
+                                "Batch: skipped '{next_path}' -- scene name was lost mid-batch"
+                            );
                         } else {
                             actor.export_status =
                                 format!("Batch: skipped '{next_path}' (failed to load/retarget)");
@@ -4295,7 +4835,13 @@ impl SplatGame {
             .scene_actors
             .iter()
             .enumerate()
-            .map(|(i, a)| (Selection::Actor(i), a.get_position(), radius_of(a.get_scale())))
+            .map(|(i, a)| {
+                (
+                    Selection::Actor(i),
+                    a.get_position(),
+                    radius_of(a.get_scale()),
+                )
+            })
             .chain(
                 self.scene_particles
                     .iter()
@@ -4357,6 +4903,7 @@ impl SplatGame {
                     material: material_name(a.get_material()),
                     layer: a.get_layer().0.choice_index() as u32,
                     shadow_catcher: a.is_shadow_catcher(),
+                    documentation: a.get_documentation().to_string(),
                 })
                 .collect(),
             lights: self
@@ -4414,6 +4961,7 @@ impl SplatGame {
                     speed: m.speed,
                     looping: m.looping,
                     wireframe: m.wireframe,
+                    documentation: m.documentation.clone(),
                     policy_instruction: m.policy_instruction.clone(),
                     policy_interval_secs: m.policy_interval_secs,
                     policy_camera_pos: vec3_arr(m.policy_camera_pos),
@@ -4439,6 +4987,7 @@ impl SplatGame {
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let saved_scene_name = self.saved_scene_name.clone();
             let task = async move {
                 let dialog = rfd::AsyncFileDialog::new()
                     .set_file_name("scene.json")
@@ -4451,7 +5000,15 @@ impl SplatGame {
                     if let Some(parent) = file.path().parent() {
                         editor_config::save_last_dir("scenes", parent);
                     }
-                    let _ = std::fs::write(file.path(), json.as_bytes());
+                    if std::fs::write(file.path(), json.as_bytes()).is_ok() {
+                        let name = file
+                            .path()
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("scene")
+                            .to_string();
+                        *saved_scene_name.lock().unwrap() = Some(name);
+                    }
                 }
             };
             std::thread::spawn(move || pollster::block_on(task));
@@ -4474,10 +5031,12 @@ impl SplatGame {
         });
     }
 
-    /// Opens the async file dialog to pick a scene .json; its bytes land in
-    /// `destination` for a later tick to handle.  Used by both File > Load
-    /// Scene (`picked_scene`) and the startup-scene setting (`picked_startup`).
-    fn open_scene_picker_into(destination: Arc<Mutex<Option<Vec<u8>>>>) {
+    /// Opens the async file dialog to pick a scene .json; its (file stem,
+    /// bytes) land in `destination` for a later tick to handle.  Used by
+    /// both File > Load Scene (`picked_scene`) and the startup-scene setting
+    /// (`picked_startup`) -- the latter ignores the name (see
+    /// `current_scene_name`'s field doc).
+    fn open_scene_picker_into(destination: Arc<Mutex<Option<(String, Vec<u8>)>>>) {
         let task = async move {
             let dialog = rfd::AsyncFileDialog::new();
             #[cfg(not(target_arch = "wasm32"))]
@@ -4491,8 +5050,13 @@ impl SplatGame {
                 if let Some(parent) = file.path().parent() {
                     editor_config::save_last_dir("scenes", parent);
                 }
+                let name = std::path::Path::new(&file.file_name())
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("scene")
+                    .to_string();
                 let bytes = file.read().await;
-                *destination.lock().unwrap() = Some(bytes);
+                *destination.lock().unwrap() = Some((name, bytes));
             }
         };
         #[cfg(target_arch = "wasm32")]
@@ -4505,6 +5069,12 @@ impl SplatGame {
     /// from the lists and the renderer (File > New Scene, and the first step of
     /// a scene load).
     fn clear_scene(&mut self, renderer: &mut Renderer) {
+        // Reset here rather than only on New Scene: a scene load also routes
+        // through this (see the doc above), and clearing first means a load
+        // that fails partway through won't leave a stale name pointing at
+        // whatever was cleared -- the `picked_scene` drain site re-sets this
+        // to the new name immediately after a load that actually succeeds.
+        self.current_scene_name = None;
         for actor in self.scene_actors.drain(..) {
             renderer.remove_actor(&actor);
         }
@@ -4571,6 +5141,7 @@ impl SplatGame {
             }
             actor.set_layer(&SceneLayer::from_choice_index(dto.layer as usize), &None);
             actor.set_shadow_catcher(dto.shadow_catcher);
+            actor.set_documentation(dto.documentation.clone());
             renderer.add_or_update_actor(&actor);
             self.scene_actors.push(actor);
         }
@@ -4627,6 +5198,8 @@ impl SplatGame {
                 playing: dto.playing,
                 speed: dto.speed,
                 wireframe: dto.wireframe,
+                documentation: dto.documentation.clone(),
+                show_documentation: false,
                 scene: None,
                 mesh_geom_actors: Vec::new(),
                 mesh_model_cache: std::collections::HashMap::new(),
@@ -4643,7 +5216,8 @@ impl SplatGame {
                 policy_server_url: "http://localhost:8000".to_string(),
                 policy_interval_secs: dto.policy_interval_secs,
                 policy_arm_actuators_csv:
-                    "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7".to_string(),
+                    "actuator1,actuator2,actuator3,actuator4,actuator5,actuator6,actuator7"
+                        .to_string(),
                 policy_gripper_actuator: "actuator8".to_string(),
                 policy_ee_body: "hand".to_string(),
                 policy_camera_pos: arr_vec3(dto.policy_camera_pos),
@@ -4671,6 +5245,12 @@ impl SplatGame {
                 export_manifest: None,
                 #[cfg(not(target_arch = "wasm32"))]
                 export_status: String::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                resume_adapter_dir: String::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                holdout_demos: String::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                eval_adapter_dir: String::new(),
                 #[cfg(not(target_arch = "wasm32"))]
                 export_queue: Vec::new(),
             });
@@ -4748,8 +5328,7 @@ impl SplatGame {
                         if self.scene_splats.len() == 1 {
                             self.activate_splat(0, renderer);
                         }
-                        if let Some((obj, snapshot)) =
-                            self.snapshot_object(Selection::Splat(index))
+                        if let Some((obj, snapshot)) = self.snapshot_object(Selection::Splat(index))
                         {
                             self.undo_stack.push(UndoAction::Create {
                                 obj,
@@ -4787,11 +5366,20 @@ impl SplatGame {
         // needed, so this isn't wasteful).  Native loads them synchronously so
         // handles resolve before apply; web fetches in the background and the
         // meshes pop in as they arrive (pending_model_uploads/actor_models).
-        for name in scene.actors.iter().filter_map(|a| a.model.clone()).collect::<Vec<_>>() {
+        for name in scene
+            .actors
+            .iter()
+            .filter_map(|a| a.model.clone())
+            .collect::<Vec<_>>()
+        {
             let Some(path) = self.catalog_path_for(&name) else {
                 continue;
             };
-            if renderer.get_model_resources().iter().any(|(p, _)| *p == path) {
+            if renderer
+                .get_model_resources()
+                .iter()
+                .any(|(p, _)| *p == path)
+            {
                 continue; // Already loaded.
             }
             #[cfg(not(target_arch = "wasm32"))]
@@ -4836,7 +5424,9 @@ impl SplatGame {
             scene.splats.len() - skipped_splats,
         );
         if skipped_splats > 0 {
-            summary.push_str(&format!(" ({skipped_splats} splats had no path; re-load their .ply manually)"));
+            summary.push_str(&format!(
+                " ({skipped_splats} splats had no path; re-load their .ply manually)"
+            ));
         }
         Ok(summary)
     }
@@ -4923,7 +5513,10 @@ async fn import_mujoco_model_folder() -> anyhow::Result<Option<String>> {
     }
     let root = black_splat::mujoco::find_root_mjcf(&mjcfs)
         .ok_or_else(|| anyhow::anyhow!("every .xml in the folder is <include>d by another"))?;
-    log!("imported MuJoCo model: {} file(s), root {root}", files.length());
+    log!(
+        "imported MuJoCo model: {} file(s), root {root}",
+        files.length()
+    );
     Ok(Some(root))
 }
 
@@ -4967,6 +5560,7 @@ impl GameEngine for SplatGame {
             confirm_delete: None,
             confirm_new_scene: false,
             has_custom_startup: editor_config::load_startup_scene().is_some(),
+            current_scene_name: None,
             selected_resource: None,
             // Seed the particle library with the built-in presets; if the user
             // has a saved library on disk, initialize_world replaces this.
@@ -5009,6 +5603,8 @@ impl GameEngine for SplatGame {
             picker_state: Arc::new(Mutex::new(PickerState::Idle)),
             picked_scene: Arc::new(Mutex::new(None)),
             picked_startup: Arc::new(Mutex::new(None)),
+            #[cfg(not(target_arch = "wasm32"))]
+            saved_scene_name: Arc::new(Mutex::new(None)),
             pending_splats: Arc::new(Mutex::new(Vec::new())),
             status: None,
             touch_pads: {
@@ -5019,14 +5615,16 @@ impl GameEngine for SplatGame {
             },
             fly_camera: FlyCamera::default(),
             editor_mode: true,
+            // Starts primed rather than None: the startup scene hasn't loaded
+            // yet, so `still_loading` keeps resetting this anyway until it
+            // has, and priming it here means a from-cold launch settles into
+            // a bake the same way any later scene load does.
+            bake_settle_timer: Some(BAKE_SETTLE_DEBOUNCE_SECS),
+            last_scene_bake_fingerprint: 0,
         }
     }
 
-    async fn initialize_world(
-        &mut self,
-        renderer: &mut Renderer<'_>,
-        game_config: &mut Config,
-    ) {
+    async fn initialize_world(&mut self, renderer: &mut Renderer<'_>, game_config: &mut Config) {
         log!("SplatGame::initialize_world()");
         game_config.clear_color = CgVec4::new(0.02, 0.02, 0.03, 1.0);
         renderer.set_tonemap_enabled(true);
@@ -5150,7 +5748,14 @@ impl GameEngine for SplatGame {
         // directly instead of through the pending queue.
         let scene = editor_config::load_startup_scene()
             .and_then(|json| match serde_json::from_str::<SceneFile>(&json) {
-                Ok(scene) => Some(scene),
+                Ok(scene) => {
+                    // Restores the namespace a saved startup scene exports
+                    // under -- otherwise every relaunch forgot it until an
+                    // explicit Save Scene.../Load Scene... this session (see
+                    // `current_scene_name`'s field doc).
+                    self.current_scene_name = editor_config::load_startup_scene_name();
+                    Some(scene)
+                }
                 Err(e) => {
                     log!("Bad startup scene ({e}); using the default");
                     None
@@ -5218,10 +5823,10 @@ impl GameEngine for SplatGame {
         // In editor mode WASD only moves while the right mouse button is held
         // (Unreal-style flythrough): W/E/R are also the gizmo hotkeys, and the
         // held button is what disambiguates.  Game mode moves freely.
-        let flythrough =
-            !self.editor_mode || input_manager.get_key_state("mouse_right").is_down();
+        let flythrough = !self.editor_mode || input_manager.get_key_state("mouse_right").is_down();
         let mut move_vec = if flythrough {
-            self.fly_camera.wasd_direction(&self.game_camera, input_manager)
+            self.fly_camera
+                .wasd_direction(&self.game_camera, input_manager)
         } else {
             CG_VEC3_ZERO
         };
@@ -5302,7 +5907,13 @@ impl GameEngine for SplatGame {
         let model_catalog: Vec<(String, String, Option<ModelHandle>)> = self
             .model_resources
             .iter()
-            .map(|m| (m.name.clone(), m.path.clone(), loaded_models.get(&m.path).copied()))
+            .map(|m| {
+                (
+                    m.name.clone(),
+                    m.path.clone(),
+                    loaded_models.get(&m.path).copied(),
+                )
+            })
             .collect();
         // Loaded materials for the Details panel's Material dropdown, from the
         // owned library (the source of truth for names/handles) rather than the
@@ -5645,8 +6256,7 @@ impl GameEngine for SplatGame {
                             );
                             let strip = strip.on_hover_cursor(egui::CursorIcon::ResizeVertical);
                             if strip.dragged() {
-                                let new_height =
-                                    self.resources_height - strip.drag_delta().y;
+                                let new_height = self.resources_height - strip.drag_delta().y;
                                 // Dragging it down past the collapse threshold
                                 // closes the panel instead of clamping to the
                                 // minimum height, so dragging to the bottom of
@@ -5717,8 +6327,7 @@ impl GameEngine for SplatGame {
                                         .hint_text("Search")
                                         .desired_width(120.0),
                                 );
-                                if !self.browser_filter.is_empty()
-                                    && ui.small_button("×").clicked()
+                                if !self.browser_filter.is_empty() && ui.small_button("×").clicked()
                                 {
                                     self.browser_filter.clear();
                                 }
@@ -5729,8 +6338,7 @@ impl GameEngine for SplatGame {
                             let current = self.selected_resource;
                             // click = select/deselect; double-click also opens
                             // the item in the right-hand Resource inspector.
-                            let mut on_tile = |resp: &egui::Response,
-                                               sel: ResourceSelection| {
+                            let mut on_tile = |resp: &egui::Response, sel: ResourceSelection| {
                                 if resp.double_clicked() {
                                     pick = Some(Some(sel));
                                     open_inspector = true;
@@ -5797,8 +6405,7 @@ impl GameEngine for SplatGame {
                                                 if !folder_contains(&folder, &a.folder) {
                                                     continue;
                                                 }
-                                                if !filters.is_empty()
-                                                    && !filters.contains(&a.kind)
+                                                if !filters.is_empty() && !filters.contains(&a.kind)
                                                 {
                                                     continue;
                                                 }
@@ -5812,10 +6419,9 @@ impl GameEngine for SplatGame {
                                                             // Loaded: a normal,
                                                             // selectable tile.
                                                             Some(handle) => {
-                                                                let sel =
-                                                                    ResourceSelection::Model(
-                                                                        handle,
-                                                                    );
+                                                                let sel = ResourceSelection::Model(
+                                                                    handle,
+                                                                );
                                                                 let resp = browser_tile(
                                                                     ui,
                                                                     &a.name,
@@ -5860,11 +6466,9 @@ impl GameEngine for SplatGame {
                                                             *dirty,
                                                         );
                                                         if *dirty
-                                                            && tile_save_button(ui, &resp)
-                                                                .clicked()
+                                                            && tile_save_button(ui, &resp).clicked()
                                                         {
-                                                            save_material_handle =
-                                                                Some(*handle);
+                                                            save_material_handle = Some(*handle);
                                                         }
                                                         // Right-click to rename in
                                                         // place.
@@ -5875,39 +6479,28 @@ impl GameEngine for SplatGame {
                                                             );
                                                             if !active {
                                                                 self.material_rename =
-                                                                    Some((
-                                                                        *handle,
-                                                                        a.name.clone(),
-                                                                    ));
+                                                                    Some((*handle, a.name.clone()));
                                                             }
                                                             ui.label("Rename material");
                                                             if let Some((_, buf)) =
                                                                 &mut self.material_rename
                                                             {
                                                                 let edit =
-                                                                    ui.text_edit_singleline(
-                                                                        buf,
-                                                                    );
+                                                                    ui.text_edit_singleline(buf);
                                                                 if !active {
                                                                     edit.request_focus();
                                                                 }
                                                                 if ui.input(|i| {
-                                                                    i.key_pressed(
-                                                                        egui::Key::Enter,
-                                                                    )
+                                                                    i.key_pressed(egui::Key::Enter)
                                                                 }) {
-                                                                    let new_name = buf
-                                                                        .trim()
-                                                                        .to_string();
+                                                                    let new_name =
+                                                                        buf.trim().to_string();
                                                                     if !new_name.is_empty() {
-                                                                        rename_material =
-                                                                            Some((
-                                                                                *handle,
-                                                                                new_name,
-                                                                            ));
+                                                                        rename_material = Some((
+                                                                            *handle, new_name,
+                                                                        ));
                                                                     }
-                                                                    self.material_rename =
-                                                                        None;
+                                                                    self.material_rename = None;
                                                                     ui.close();
                                                                 }
                                                             }
@@ -5926,10 +6519,7 @@ impl GameEngine for SplatGame {
                                                         }
                                                         on_tile(&resp, sel);
                                                     }
-                                                    AssetPayload::Particle {
-                                                        index,
-                                                        dirty,
-                                                    } => {
+                                                    AssetPayload::Particle { index, dirty } => {
                                                         let sel =
                                                             ResourceSelection::Particle(*index);
                                                         let resp = browser_tile(
@@ -5940,8 +6530,7 @@ impl GameEngine for SplatGame {
                                                             *dirty,
                                                         );
                                                         if *dirty
-                                                            && tile_save_button(ui, &resp)
-                                                                .clicked()
+                                                            && tile_save_button(ui, &resp).clicked()
                                                         {
                                                             save_particle_index = Some(*index);
                                                         }
@@ -5969,9 +6558,7 @@ impl GameEngine for SplatGame {
                                             }
                                         });
                                         if shown == 0 {
-                                            ui.label(
-                                                egui::RichText::new("No assets here").weak(),
-                                            );
+                                            ui.label(egui::RichText::new("No assets here").weak());
                                         }
                                     });
                             });
@@ -6247,6 +6834,23 @@ impl GameEngine for SplatGame {
                                         match self.selected {
                                         Some(Selection::Actor(i)) => {
                                             if let Some(actor) = self.scene_actors.get_mut(i) {
+                                                let mut name = actor.get_name().to_string();
+                                                ui.label("Name");
+                                                if ui.text_edit_singleline(&mut name).changed() {
+                                                    actor.set_name(&name);
+                                                    selection_edited = true;
+                                                    details_edited = true;
+                                                }
+                                                let mut show_documentation =
+                                                    actor.get_show_documentation();
+                                                draw_type_and_documentation(
+                                                    ui,
+                                                    actor.get_name(),
+                                                    "Actor",
+                                                    actor.get_documentation(),
+                                                    &mut show_documentation,
+                                                );
+                                                actor.set_show_documentation(show_documentation);
                                                 let changed = editor::draw_properties(
                                                     ui,
                                                     actor,
@@ -6310,257 +6914,308 @@ impl GameEngine for SplatGame {
                                         }
                                         Some(Selection::MujocoActor(i)) => {
                                             if let Some(m) = self.scene_mujoco_actors.get_mut(i) {
-                                                let changed = editor::draw_properties(
+                                                ui.label("Name");
+                                                if ui.text_edit_singleline(&mut m.name).changed() {
+                                                    selection_edited = true;
+                                                    details_edited = true;
+                                                }
+                                                draw_type_and_documentation(
                                                     ui,
-                                                    m,
-                                                    &model_catalog,
-                                                    &material_resources,
-                                                    selected_model,
-                                                    &mut model_pick_request,
+                                                    &m.name,
+                                                    "Mujoco Actor",
+                                                    &m.documentation,
+                                                    &mut m.show_documentation,
                                                 );
-                                                selection_edited |= changed;
-                                                details_edited |= changed;
-                                                ui.label("XML Path");
-                                                ui.horizontal(|ui| {
-                                                    // Display-only: xml_path is set exclusively via
-                                                    // Browse…, never typed, since on web it's an
-                                                    // IndexedDB cache key rather than a real path.
-                                                    let mut display = m.xml_path.clone();
-                                                    ui.add_enabled(
-                                                        false,
-                                                        egui::TextEdit::singleline(&mut display),
-                                                    );
-                                                    if ui.button("Browse…").clicked() {
-                                                        mujoco_xml_browse_request = Some(m.name.clone());
-                                                    }
-                                                });
-                                                ui.label("Trajectory");
-                                                ui.horizontal(|ui| {
-                                                    // Display-only, same as XML Path above.
-                                                    let mut display = m.trajectory_path.clone();
-                                                    ui.add_enabled(
-                                                        false,
-                                                        egui::TextEdit::singleline(&mut display),
-                                                    );
-                                                    if ui.button("Browse…").clicked() {
-                                                        mujoco_traj_browse_request = Some(m.name.clone());
-                                                    }
-                                                    if ui
-                                                        .add_enabled(
-                                                            !m.trajectory_path.is_empty(),
-                                                            egui::Button::new("Clear"),
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        m.trajectory_path = String::new();
-                                                        selection_edited = true;
-                                                        details_edited = true;
-                                                    }
-                                                });
-                                                if let Some(clip) = &m.clip {
-                                                    let total =
-                                                        clip.frame_count() as f32 * clip.dt;
-                                                    ui.label(format!(
-                                                        "{} joints, {} frames ({:.1}s) — replaying \
-                                                         recorded qpos, physics off",
-                                                        clip.joints.len(),
-                                                        clip.frame_count(),
-                                                        total,
-                                                    ));
-                                                    let mut t = m.clip_time;
-                                                    if ui
-                                                        .add(
-                                                            egui::Slider::new(&mut t, 0.0..=total)
-                                                                .text("Time"),
-                                                        )
-                                                        .changed()
-                                                    {
-                                                        // Scrubbing is transient sim state, not a
-                                                        // property edit -- deliberately not
-                                                        // flagged for undo.
-                                                        m.clip_time = t;
-                                                    }
-                                                } else if !m.trajectory_path.is_empty() {
-                                                    ui.label("Loading trajectory…");
-                                                }
-                                                ui.separator();
-                                                ui.horizontal(|ui| {
-                                                    if ui.button("Step").clicked() {
-                                                        if let Some(scene) = &mut m.scene {
-                                                            scene.step_once();
+                                                section_card(
+                                                    ui,
+                                                    &format!("mujoco_transform_{i}"),
+                                                    "🧭",
+                                                    "Transform",
+                                                    true,
+                                                    |ui| {
+                                                        let changed = editor::draw_properties(
+                                                            ui,
+                                                            m,
+                                                            &model_catalog,
+                                                            &material_resources,
+                                                            selected_model,
+                                                            &mut model_pick_request,
+                                                        );
+                                                        selection_edited |= changed;
+                                                        details_edited |= changed;
+                                                    },
+                                                );
+                                                section_card(
+                                                    ui,
+                                                    &format!("mujoco_trajectory_{i}"),
+                                                    "▶",
+                                                    "Trajectory Playback",
+                                                    true,
+                                                    |ui| {
+                                                        ui.label("XML Path");
+                                                        ui.horizontal(|ui| {
+                                                            // Display-only: xml_path is set exclusively via
+                                                            // Browse…, never typed, since on web it's an
+                                                            // IndexedDB cache key rather than a real path.
+                                                            let mut display = m.xml_path.clone();
+                                                            ui.add_enabled(
+                                                                false,
+                                                                egui::TextEdit::singleline(&mut display),
+                                                            );
+                                                            if ui.button("Browse…").clicked() {
+                                                                mujoco_xml_browse_request = Some(m.name.clone());
+                                                            }
+                                                        });
+                                                        ui.label("Trajectory");
+                                                        ui.horizontal(|ui| {
+                                                            // Display-only, same as XML Path above.
+                                                            let mut display = m.trajectory_path.clone();
+                                                            ui.add_enabled(
+                                                                false,
+                                                                egui::TextEdit::singleline(&mut display),
+                                                            );
+                                                            if ui.button("Browse…").clicked() {
+                                                                mujoco_traj_browse_request = Some(m.name.clone());
+                                                            }
+                                                            if ui
+                                                                .add_enabled(
+                                                                    !m.trajectory_path.is_empty(),
+                                                                    egui::Button::new("Clear"),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                m.trajectory_path = String::new();
+                                                                selection_edited = true;
+                                                                details_edited = true;
+                                                            }
+                                                        });
+                                                        if let Some(clip) = &m.clip {
+                                                            let total =
+                                                                clip.frame_count() as f32 * clip.dt;
+                                                            ui.label(format!(
+                                                                "{} joints, {} frames ({:.1}s) — replaying \
+                                                                 recorded qpos, physics off",
+                                                                clip.joints.len(),
+                                                                clip.frame_count(),
+                                                                total,
+                                                            ));
+                                                            let mut t = m.clip_time;
+                                                            if ui
+                                                                .add(
+                                                                    egui::Slider::new(&mut t, 0.0..=total)
+                                                                        .text("Time"),
+                                                                )
+                                                                .changed()
+                                                            {
+                                                                // Scrubbing is transient sim state, not a
+                                                                // property edit -- deliberately not
+                                                                // flagged for undo.
+                                                                m.clip_time = t;
+                                                            }
+                                                        } else if !m.trajectory_path.is_empty() {
+                                                            ui.label("Loading trajectory…");
                                                         }
-                                                    }
-                                                    if ui.button("Reset").clicked() {
-                                                        m.clip_time = 0.0;
-                                                        if let Some(scene) = &mut m.scene {
-                                                            scene.reset();
+                                                        ui.separator();
+                                                        ui.horizontal(|ui| {
+                                                            if ui.button("Step").clicked() {
+                                                                if let Some(scene) = &mut m.scene {
+                                                                    scene.step_once();
+                                                                }
+                                                            }
+                                                            if ui.button("Reset").clicked() {
+                                                                m.clip_time = 0.0;
+                                                                if let Some(scene) = &mut m.scene {
+                                                                    scene.reset();
+                                                                }
+                                                            }
+                                                        });
+                                                        if m.scene.is_none() && !m.xml_path.is_empty() {
+                                                            ui.label("Loading…");
+                                                        } else if m.xml_path.is_empty() {
+                                                            ui.label("Set an XML Path to load a scene.");
                                                         }
-                                                    }
-                                                });
-                                                if m.scene.is_none() && !m.xml_path.is_empty() {
-                                                    ui.label("Loading…");
-                                                } else if m.xml_path.is_empty() {
-                                                    ui.label("Set an XML Path to load a scene.");
-                                                }
+                                                    },
+                                                );
 
                                                 // ---- Camera: fixed, non-interactive, decoupled
                                                 // from the fly cam -- shared by every capture path
                                                 // below (live eval, the manual Preview button,
                                                 // training-data export), so it's configured once
                                                 // up here rather than three times.
-                                                ui.separator();
-                                                ui.label(egui::RichText::new("Camera").strong());
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Position");
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.x).speed(0.02).prefix("x: "));
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.y).speed(0.02).prefix("y: "));
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_pos.z).speed(0.02).prefix("z: "));
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Look At");
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.x).speed(0.02).prefix("x: "));
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.y).speed(0.02).prefix("y: "));
-                                                    ui.add(egui::DragValue::new(&mut m.policy_camera_target.z).speed(0.02).prefix("z: "));
-                                                });
-                                                ui.add(
-                                                    egui::Slider::new(&mut m.policy_camera_fov, 30.0..=100.0)
-                                                        .text("Camera FOV"),
+                                                section_card(
+                                                    ui,
+                                                    &format!("mujoco_camera_{i}"),
+                                                    "📷",
+                                                    "Camera",
+                                                    false,
+                                                    |ui| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Position");
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_pos.x).speed(0.02).prefix("x: "));
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_pos.y).speed(0.02).prefix("y: "));
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_pos.z).speed(0.02).prefix("z: "));
+                                                        });
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Look At");
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_target.x).speed(0.02).prefix("x: "));
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_target.y).speed(0.02).prefix("y: "));
+                                                            ui.add(egui::DragValue::new(&mut m.policy_camera_target.z).speed(0.02).prefix("z: "));
+                                                        });
+                                                        ui.add(
+                                                            egui::Slider::new(&mut m.policy_camera_fov, 30.0..=100.0)
+                                                                .text("Camera FOV"),
+                                                        );
+                                                        if ui.button("Snap to Fly Cam").clicked() {
+                                                            let (_, view_dir, _) = self.game_camera.calculate_view_matrix();
+                                                            m.policy_camera_pos = self.game_camera.get_position();
+                                                            m.policy_camera_target =
+                                                                m.policy_camera_pos + view_dir * POLICY_CAMERA_SNAP_DISTANCE;
+                                                            // Refresh the preview so the new framing is
+                                                            // visible immediately, not just next time
+                                                            // something else happens to capture a frame.
+                                                            m.preview_requested = true;
+                                                        }
+                                                        // Checking this captures immediately (no need for
+                                                        // a separate button) and keeps updating from
+                                                        // whatever else lands a frame (eval, export) while
+                                                        // it stays checked; unchecking just hides the block
+                                                        // -- the last frame stays cached so re-checking
+                                                        // doesn't flash empty before the next capture lands.
+                                                        if ui
+                                                            .checkbox(&mut m.show_camera_preview, "Show Camera Preview")
+                                                            .on_hover_text(
+                                                                "Captures once immediately, then keeps showing \
+                                                                 whatever else lands a frame -- policy eval or \
+                                                                 training-data export. No server call by itself.",
+                                                            )
+                                                            .changed()
+                                                            && m.show_camera_preview
+                                                        {
+                                                            m.preview_requested = true;
+                                                        }
+                                                        if m.show_camera_preview {
+                                                            if let Some(texture) = &m.camera_preview_texture {
+                                                                let size = texture.size_vec2();
+                                                                // Fit the panel's own width rather than the
+                                                                // capture's native (now aspect-matched, so
+                                                                // possibly wide) resolution -- height follows
+                                                                // to keep the now-correct aspect ratio intact.
+                                                                let display = if size.x > 0.0 {
+                                                                    let w = size.x.min(260.0);
+                                                                    egui::Vec2::new(w, w * size.y / size.x)
+                                                                } else {
+                                                                    size
+                                                                };
+                                                                ui.image((texture.id(), display));
+                                                                ui.label(egui::RichText::new(&m.camera_preview_label).italics().weak());
+                                                            } else {
+                                                                ui.label("Capturing…");
+                                                            }
+                                                        }
+                                                    },
                                                 );
-                                                if ui.button("Snap to Fly Cam").clicked() {
-                                                    let (_, view_dir, _) = self.game_camera.calculate_view_matrix();
-                                                    m.policy_camera_pos = self.game_camera.get_position();
-                                                    m.policy_camera_target =
-                                                        m.policy_camera_pos + view_dir * POLICY_CAMERA_SNAP_DISTANCE;
-                                                    // Refresh the preview so the new framing is
-                                                    // visible immediately, not just next time
-                                                    // something else happens to capture a frame.
-                                                    m.preview_requested = true;
-                                                }
-                                                // Checking this captures immediately (no need for
-                                                // a separate button) and keeps updating from
-                                                // whatever else lands a frame (eval, export) while
-                                                // it stays checked; unchecking just hides the block
-                                                // -- the last frame stays cached so re-checking
-                                                // doesn't flash empty before the next capture lands.
-                                                if ui
-                                                    .checkbox(&mut m.show_camera_preview, "Show Camera Preview")
-                                                    .on_hover_text(
-                                                        "Captures once immediately, then keeps showing \
-                                                         whatever else lands a frame -- policy eval or \
-                                                         training-data export. No server call by itself.",
-                                                    )
-                                                    .changed()
-                                                    && m.show_camera_preview
-                                                {
-                                                    m.preview_requested = true;
-                                                }
-                                                if m.show_camera_preview {
-                                                    if let Some(texture) = &m.camera_preview_texture {
-                                                        let size = texture.size_vec2();
-                                                        // Fit the panel's own width rather than the
-                                                        // capture's native (now aspect-matched, so
-                                                        // possibly wide) resolution -- height follows
-                                                        // to keep the now-correct aspect ratio intact.
-                                                        let display = if size.x > 0.0 {
-                                                            let w = size.x.min(260.0);
-                                                            egui::Vec2::new(w, w * size.y / size.x)
-                                                        } else {
-                                                            size
-                                                        };
-                                                        ui.image((texture.id(), display));
-                                                        ui.label(egui::RichText::new(&m.camera_preview_label).italics().weak());
-                                                    } else {
-                                                        ui.label("Capturing…");
-                                                    }
-                                                }
 
                                                 // ---- Task: also shared -- the instruction rides
                                                 // along with both a live policy query and every
                                                 // exported tuple; EE Body names the body both
                                                 // apply_policy_action's Jacobian and export's FK
                                                 // read pose from.
-                                                ui.separator();
-                                                ui.label(egui::RichText::new("Task").strong());
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Instruction");
-                                                    ui.text_edit_singleline(&mut m.policy_instruction);
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.label("EE Body");
-                                                    ui.text_edit_singleline(&mut m.policy_ee_body);
-                                                });
-
-                                                ui.separator();
-                                                ui.label(egui::RichText::new("Live Policy Evaluation").strong());
-                                                // Live control state, same as clip_time's scrub
-                                                // slider above -- deliberately not flagged for undo.
-                                                ui.checkbox(&mut m.policy_enabled, "Enabled");
-                                                // Seeds the sim with a demonstration's own opening pose.
-                                                // The MJCF's default state leaves the ToolHang objects
-                                                // parked mid-air (they only settle once physics runs),
-                                                // which is nothing like the on-table arrangement every
-                                                // training frame was captured from -- so a policy
-                                                // started from it is out of distribution before it
-                                                // moves. Enabled only with a clip bound, since the
-                                                // clip is where that pose comes from.
-                                                ui.add_enabled_ui(m.clip.is_some(), |ui| {
-                                                    if ui
-                                                        .button("Reset to Trajectory Start")
-                                                        .on_hover_text(
-                                                            "Puts the arm and objects in the bound \
-                                                             trajectory's frame 0, then hands control \
-                                                             back to physics/the policy.",
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        if let (Some(scene), Some(clip)) = (&mut m.scene, &m.clip) {
-                                                            // reset() first: apply_trajectory_frame only writes
-                                                            // qpos, so without it the previous run's velocities
-                                                            // survive and the scene starts already in motion.
-                                                            scene.reset();
-                                                            scene.apply_trajectory_frame(clip, 0);
-                                                            m.clip_time = 0.0;
-                                                            m.playing = false;
-                                                        }
-                                                    }
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Server URL");
-                                                    ui.text_edit_singleline(&mut m.policy_server_url);
-                                                });
-                                                // Launches policy_server/run_server.bat in its own
-                                                // console window -- native-only, since wasm can't
-                                                // spawn a process (or run Docker) at all.
-                                                #[cfg(not(target_arch = "wasm32"))]
-                                                ui.horizontal(|ui| {
-                                                    if ui.button("Start Stub Server").clicked() {
-                                                        launch_policy_server("stub");
-                                                    }
-                                                    if ui.button("Start OpenVLA Server (Docker)").clicked() {
-                                                        launch_policy_server("openvla");
-                                                    }
-                                                });
-                                                ui.add(
-                                                    egui::Slider::new(&mut m.policy_interval_secs, 0.1..=5.0)
-                                                        .text("Interval (s)"),
-                                                );
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Arm Actuators");
-                                                    ui.text_edit_singleline(&mut m.policy_arm_actuators_csv);
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Gripper Actuator");
-                                                    ui.text_edit_singleline(&mut m.policy_gripper_actuator);
-                                                });
-                                                if m.policy_pending {
-                                                    ui.label("Waiting on policy server…");
-                                                }
-                                                ui.label("Policy Log");
-                                                draw_console_text(
+                                                section_card(
                                                     ui,
-                                                    &format!("policy_log_{}", m.name),
-                                                    &m.policy_log.iter().cloned().collect::<Vec<_>>().join("\n"),
-                                                    120.0,
+                                                    &format!("mujoco_task_{i}"),
+                                                    "🎯",
+                                                    "Task",
+                                                    false,
+                                                    |ui| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Instruction");
+                                                            ui.text_edit_singleline(&mut m.policy_instruction);
+                                                        });
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("EE Body");
+                                                            ui.text_edit_singleline(&mut m.policy_ee_body);
+                                                        });
+                                                    },
+                                                );
+
+                                                section_card(
+                                                    ui,
+                                                    &format!("mujoco_policy_eval_{i}"),
+                                                    "🤖",
+                                                    "Live Policy Evaluation",
+                                                    false,
+                                                    |ui| {
+                                                        // Live control state, same as clip_time's scrub
+                                                        // slider above -- deliberately not flagged for undo.
+                                                        ui.checkbox(&mut m.policy_enabled, "Enabled");
+                                                        // Seeds the sim with a demonstration's own opening pose.
+                                                        // The MJCF's default state leaves the ToolHang objects
+                                                        // parked mid-air (they only settle once physics runs),
+                                                        // which is nothing like the on-table arrangement every
+                                                        // training frame was captured from -- so a policy
+                                                        // started from it is out of distribution before it
+                                                        // moves. Enabled only with a clip bound, since the
+                                                        // clip is where that pose comes from.
+                                                        ui.add_enabled_ui(m.clip.is_some(), |ui| {
+                                                            if ui
+                                                                .button("Reset to Trajectory Start")
+                                                                .on_hover_text(
+                                                                    "Puts the arm and objects in the bound \
+                                                                     trajectory's frame 0, then hands control \
+                                                                     back to physics/the policy.",
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                if let (Some(scene), Some(clip)) = (&mut m.scene, &m.clip) {
+                                                                    // reset() first: apply_trajectory_frame only writes
+                                                                    // qpos, so without it the previous run's velocities
+                                                                    // survive and the scene starts already in motion.
+                                                                    scene.reset();
+                                                                    scene.apply_trajectory_frame(clip, 0);
+                                                                    m.clip_time = 0.0;
+                                                                    m.playing = false;
+                                                                }
+                                                            }
+                                                        });
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Server URL");
+                                                            ui.text_edit_singleline(&mut m.policy_server_url);
+                                                        });
+                                                        // Launches policy_server/run_server.bat in its own
+                                                        // console window -- native-only, since wasm can't
+                                                        // spawn a process (or run Docker) at all.
+                                                        #[cfg(not(target_arch = "wasm32"))]
+                                                        ui.horizontal(|ui| {
+                                                            if ui.button("Start Stub Server").clicked() {
+                                                                launch_policy_server("stub");
+                                                            }
+                                                            if ui.button("Start OpenVLA Server (Docker)").clicked() {
+                                                                launch_policy_server("openvla");
+                                                            }
+                                                        });
+                                                        ui.add(
+                                                            egui::Slider::new(&mut m.policy_interval_secs, 0.1..=5.0)
+                                                                .text("Interval (s)"),
+                                                        );
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Arm Actuators");
+                                                            ui.text_edit_singleline(&mut m.policy_arm_actuators_csv);
+                                                        });
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Gripper Actuator");
+                                                            ui.text_edit_singleline(&mut m.policy_gripper_actuator);
+                                                        });
+                                                        if m.policy_pending {
+                                                            ui.label("Waiting on policy server…");
+                                                        }
+                                                        ui.label("Policy Log");
+                                                        draw_console_text(
+                                                            ui,
+                                                            &format!("policy_log_{}", m.name),
+                                                            &m.policy_log.iter().cloned().collect::<Vec<_>>().join("\n"),
+                                                            120.0,
+                                                        );
+                                                    },
                                                 );
 
                                                 // One-shot batch conversion of the bound
@@ -6570,58 +7225,254 @@ impl GameEngine for SplatGame {
                                                 // Native-only (needs a real filesystem and
                                                 // the synchronous capture_frame_png).
                                                 #[cfg(not(target_arch = "wasm32"))]
-                                                {
-                                                    ui.separator();
-                                                    ui.label(egui::RichText::new("Training Data Export").strong());
-                                                    ui.label(
-                                                        "Replays the bound trajectory through the camera \
-                                                         above and derives action labels from \
-                                                         consecutive-frame hand-body deltas -- writes \
-                                                         (frame, instruction, action) tuples.",
-                                                    );
-                                                    if m.clip.is_none() {
-                                                        ui.label("Bind a Trajectory above to enable export.");
-                                                    } else if m.export_pending {
-                                                        ui.add_enabled(false, egui::Button::new("Exporting…"));
-                                                    } else if ui.button("Export Training Data").clicked() {
-                                                        start_export(m);
-                                                    }
-                                                    if !m.export_status.is_empty() {
-                                                        draw_console_text(
-                                                            ui,
-                                                            &format!("export_status_{}", m.name),
-                                                            &m.export_status,
-                                                            60.0,
-                                                        );
-                                                    }
-                                                    ui.horizontal(|ui| {
-                                                        let batch_running = !m.export_queue.is_empty();
-                                                        if ui
-                                                            .add_enabled(
-                                                                !batch_running,
-                                                                egui::Button::new("Batch Export…"),
-                                                            )
-                                                            .on_hover_text(
-                                                                "Pick multiple trajectory clips -- each \
-                                                                 gets exported in turn, same as clicking \
-                                                                 Export Training Data once per clip.",
-                                                            )
-                                                            .clicked()
-                                                        {
-                                                            mujoco_traj_batch_browse_request =
-                                                                Some(m.name.clone());
+                                                section_card(
+                                                    ui,
+                                                    &format!("mujoco_export_{i}"),
+                                                    "📦",
+                                                    "Training Data Export",
+                                                    true,
+                                                    |ui| {
+                                                        // See `current_scene_name`'s field doc: exports are
+                                                        // namespaced per scene so switching scenes can't
+                                                        // silently mix a differently-calibrated camera's
+                                                        // frames into this one's folder. No fallback name
+                                                        // here on purpose -- a silent "unsaved" bucket is
+                                                        // exactly what caused a real accidental export mixup,
+                                                        // so an unnamed scene blocks export entirely instead.
+                                                        if self.current_scene_name.is_none() {
+                                                            ui.colored_label(
+                                                                egui::Color32::from_rgb(235, 80, 80),
+                                                                "Save Scene… or Load Scene… first -- exports \
+                                                                 need a real scene name so they can't land in \
+                                                                 the wrong (or an unnamed, throwaway) folder.",
+                                                            );
                                                         }
-                                                        if batch_running {
-                                                            ui.label(format!(
-                                                                "{} clip(s) queued",
-                                                                m.export_queue.len()
-                                                            ));
-                                                            if ui.button("Cancel").clicked() {
-                                                                m.export_queue.clear();
+                                                        if let Some(scene_namespace) = self.current_scene_name.clone() {
+                                                            ui.label(format!("Exports land under resources/openvla_datasets/{scene_namespace}/"));
+                                                            ui.label(
+                                                                "Replays the bound trajectory through the camera \
+                                                                 above and derives action labels from \
+                                                                 consecutive-frame hand-body deltas -- writes \
+                                                                 (frame, instruction, action) tuples.",
+                                                            );
+                                                            if m.clip.is_none() {
+                                                                ui.label("Bind a Trajectory above to enable export.");
+                                                            } else if m.export_pending {
+                                                                ui.add_enabled(false, egui::Button::new("Exporting…"));
+                                                            } else if ui.button("Export Training Data").clicked() {
+                                                                start_export(m, &scene_namespace);
+                                                            }
+                                                            if !m.export_status.is_empty() {
+                                                                draw_console_text(
+                                                                    ui,
+                                                                    &format!("export_status_{}", m.name),
+                                                                    &m.export_status,
+                                                                    60.0,
+                                                                );
+                                                            }
+                                                            let batch_running = !m.export_queue.is_empty();
+                                                            ui.horizontal(|ui| {
+                                                                if ui
+                                                                    .add_enabled(
+                                                                        !batch_running,
+                                                                        egui::Button::new("Batch Export…"),
+                                                                    )
+                                                                    .on_hover_text(
+                                                                        "Pick multiple trajectory clips -- each \
+                                                                         gets exported in turn, same as clicking \
+                                                                         Export Training Data once per clip.",
+                                                                    )
+                                                                    .clicked()
+                                                                {
+                                                                    mujoco_traj_batch_browse_request =
+                                                                        Some(m.name.clone());
+                                                                }
+                                                                if batch_running {
+                                                                    ui.label(format!(
+                                                                        "{} clip(s) queued",
+                                                                        m.export_queue.len()
+                                                                    ));
+                                                                    if ui.button("Cancel").clicked() {
+                                                                        m.export_queue.clear();
+                                                                    }
+                                                                }
+                                                            });
+                                                            if !batch_running
+                                                                && ui
+                                                                    .button("Re-export Existing…")
+                                                                    .on_hover_text(format!(
+                                                                        "Re-runs the export for every clip that \
+                                                                         already has a completed export under \
+                                                                         resources/openvla_datasets/{scene_namespace}/, \
+                                                                         resolving each one's source .json from this \
+                                                                         actor's current Trajectory folder. Use this \
+                                                                         after changing anything that invalidates \
+                                                                         previously captured frames -- the policy \
+                                                                         camera, the floor height, etc. -- instead \
+                                                                         of re-picking the same files by hand.",
+                                                                    ))
+                                                                    .clicked()
+                                                            {
+                                                                match std::path::Path::new(&m.trajectory_path)
+                                                                    .parent()
+                                                                    .map(|p| p.to_path_buf())
+                                                                {
+                                                                    None => {
+                                                                        m.export_status = "Re-export: set a \
+                                                                            Trajectory above first so its folder \
+                                                                            can be searched for source clips."
+                                                                            .to_string();
+                                                                    }
+                                                                    Some(dir) => {
+                                                                        let stems = black_splat::policy_dataset::exported_clip_stems(&scene_namespace);
+                                                                        let mut found = Vec::new();
+                                                                        let mut missing = 0usize;
+                                                                        for stem in &stems {
+                                                                            let candidate =
+                                                                                dir.join(format!("{stem}.json"));
+                                                                            if candidate.is_file() {
+                                                                                found.push(
+                                                                                    candidate
+                                                                                        .to_string_lossy()
+                                                                                        .into_owned(),
+                                                                                );
+                                                                            } else {
+                                                                                missing += 1;
+                                                                            }
+                                                                        }
+                                                                        m.export_status = if found.is_empty() {
+                                                                            "Re-export: no previously exported \
+                                                                                clips found under \
+                                                                                resources/openvla_datasets/."
+                                                                                .to_string()
+                                                                        } else if missing > 0 {
+                                                                            format!(
+                                                                                "Re-export: queued {} clip(s), {} \
+                                                                                 not found alongside the current \
+                                                                                 Trajectory",
+                                                                                found.len(),
+                                                                                missing
+                                                                            )
+                                                                        } else {
+                                                                            format!(
+                                                                                "Re-export: queued {} clip(s)",
+                                                                                found.len()
+                                                                            )
+                                                                        };
+                                                                        m.export_queue = found;
+                                                                    }
+                                                                }
+                                                            }
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Holdout demos (blank = none):");
+                                                                ui.text_edit_singleline(&mut m.holdout_demos);
+                                                            })
+                                                            .response
+                                                            .on_hover_text(
+                                                                "Comma-separated, e.g. demo_3,demo_17 -- excluded from \
+                                                                 the rebuild below and reserved for Run Eval, so it \
+                                                                 measures generalization instead of memorization. \
+                                                                 Blank trains on everything, same as before this existed.",
+                                                            );
+                                                            if ui
+                                                                .button(format!("Rebuild TFDS Dataset ({scene_namespace})…"))
+                                                                .on_hover_text(format!(
+                                                                    "Runs tools/rebuild_rlds_dataset.bat {scene_namespace} \
+                                                                     in a new console window -- repackages \
+                                                                     resources/openvla_datasets/{scene_namespace}/ into \
+                                                                     the TFDS format finetune.py actually trains on. \
+                                                                     Needed after any export or re-export; the engine \
+                                                                     never touches TFDS itself.",
+                                                                ))
+                                                                .clicked()
+                                                            {
+                                                                launch_rlds_rebuild(&scene_namespace, m.holdout_demos.trim());
+                                                            }
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Resume adapter (blank = fresh run):");
+                                                                ui.text_edit_singleline(&mut m.resume_adapter_dir);
+                                                            })
+                                                            .response
+                                                            .on_hover_text(
+                                                                "e.g. D:\\openvla_runs\\lora_run2\\adapter-tmp\\openvla-7b+...+q-4bit \
+                                                                 -- continues LoRA weights from an existing adapter checkpoint \
+                                                                 instead of starting from scratch. Doesn't restore optimizer \
+                                                                 state or the step counter, just the learned weights.",
+                                                            );
+                                                            let resume_dir = m.resume_adapter_dir.trim();
+                                                            let resume_looks_valid = resume_dir.is_empty()
+                                                                || std::path::Path::new(resume_dir)
+                                                                    .join("adapter_config.json")
+                                                                    .is_file();
+                                                            if !resume_looks_valid {
+                                                                ui.colored_label(
+                                                                    egui::Color32::from_rgb(235, 80, 80),
+                                                                    "No adapter_config.json found there -- not a valid \
+                                                                     adapter checkpoint dir.",
+                                                                );
+                                                            }
+                                                            if ui
+                                                                .add_enabled(
+                                                                    resume_looks_valid,
+                                                                    egui::Button::new(format!(
+                                                                        "Fine-tune OpenVLA ({scene_namespace})…"
+                                                                    )),
+                                                                )
+                                                                .on_hover_text(format!(
+                                                                    "Runs tools/retrain_openvla.bat {scene_namespace} \
+                                                                     in a new console window -- LoRA fine-tunes OpenVLA-7b \
+                                                                     on whatever Rebuild TFDS Dataset most recently \
+                                                                     produced for {scene_namespace}. Takes hours; trains \
+                                                                     against a stale rebuild if you skipped that step. \
+                                                                     Checkpoints land under D:\\openvla_runs\\.",
+                                                                ))
+                                                                .clicked()
+                                                            {
+                                                                launch_finetune(&scene_namespace, resume_dir);
+                                                            }
+                                                            ui.separator();
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Eval adapter dir:");
+                                                                ui.text_edit_singleline(&mut m.eval_adapter_dir);
+                                                            })
+                                                            .response
+                                                            .on_hover_text(
+                                                                "Checkpoint to evaluate against the current holdout \
+                                                                 set, e.g. D:\\openvla_runs\\<run>\\adapter-tmp\\openvla-7b+...+q-4bit \
+                                                                 -- usually a different checkpoint than Resume adapter above.",
+                                                            );
+                                                            let eval_dir = m.eval_adapter_dir.trim();
+                                                            let eval_looks_valid = !eval_dir.is_empty()
+                                                                && std::path::Path::new(eval_dir)
+                                                                    .join("adapter_config.json")
+                                                                    .is_file();
+                                                            if !eval_dir.is_empty() && !eval_looks_valid {
+                                                                ui.colored_label(
+                                                                    egui::Color32::from_rgb(235, 80, 80),
+                                                                    "No adapter_config.json found there -- not a valid \
+                                                                     adapter checkpoint dir.",
+                                                                );
+                                                            }
+                                                            if ui
+                                                                .add_enabled(
+                                                                    eval_looks_valid,
+                                                                    egui::Button::new(format!("Run Eval ({scene_namespace})…")),
+                                                                )
+                                                                .on_hover_text(
+                                                                    "Runs tools/eval_openvla.py in a new console window \
+                                                                     against the demos listed in the current holdout.json \
+                                                                     (see the Holdout demos field above and Rebuild TFDS \
+                                                                     Dataset) -- aborts on its own if there's no holdout \
+                                                                     recorded, rather than silently evaluating on \
+                                                                     training data.",
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                launch_eval(&scene_namespace, eval_dir);
                                                             }
                                                         }
-                                                    });
-                                                }
+                                                    },
+                                                );
                                             }
                                         }
                                         Some(Selection::PostProcess) => {
@@ -7088,10 +7939,9 @@ impl GameEngine for SplatGame {
                         if ui.button("Reset to Defaults").clicked() {
                             self.confirm_reset = true;
                         }
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| ui.label(egui::RichText::new("saved automatically").weak()),
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new("saved automatically").weak())
+                        });
                     });
                 });
             self.show_settings = open;
@@ -7104,7 +7954,9 @@ impl GameEngine for SplatGame {
             if let Some(slot) = self.rebinding {
                 let key = ctx.input(|input| {
                     input.events.iter().find_map(|event| match event {
-                        egui::Event::Key { key, pressed: true, .. } => Some(*key),
+                        egui::Event::Key {
+                            key, pressed: true, ..
+                        } => Some(*key),
                         _ => None,
                     })
                 });
@@ -7175,8 +8027,7 @@ impl GameEngine for SplatGame {
         };
         if let Some(i) = clicked_light {
             // Ctrl+click joins the multi-selection, like the outliner rows.
-            let additive =
-                ctx.input(|input| input.modifiers.ctrl || input.modifiers.command);
+            let additive = ctx.input(|input| input.modifiers.ctrl || input.modifiers.command);
             select_object = Some((Selection::Light(i), additive));
         }
 
@@ -7205,9 +8056,7 @@ impl GameEngine for SplatGame {
                 .filter_map(|sel| self.selection_position(*sel).map(|p| (*sel, p)))
                 .collect();
             if !objects.is_empty() {
-                let centroid = objects
-                    .iter()
-                    .fold(CG_VEC3_ZERO, |acc, (_, p)| acc + *p)
+                let centroid = objects.iter().fold(CG_VEC3_ZERO, |acc, (_, p)| acc + *p)
                     / objects.len() as f32;
                 // Local space has no single frame for a group: each object's
                 // own local axis is averaged and renormalized (see
@@ -7229,7 +8078,8 @@ impl GameEngine for SplatGame {
                         .multi_selected
                         .iter()
                         .filter_map(|sel| {
-                            self.snapshot_object(*sel).map(|(obj, snap)| (*sel, obj, snap))
+                            self.snapshot_object(*sel)
+                                .map(|(obj, snap)| (*sel, obj, snap))
                         })
                         .collect();
                     if !snaps.is_empty() {
@@ -7281,7 +8131,11 @@ impl GameEngine for SplatGame {
                     // only approximate), so feed a uniform scale to the gizmo.
                     Selection::Splat(i) => self.scene_splats.get(i).map(|s| {
                         let u = s.transform.scale.x;
-                        (s.transform.position, s.transform.rotation, CgVec3::new(u, u, u))
+                        (
+                            s.transform.position,
+                            s.transform.rotation,
+                            CgVec3::new(u, u, u),
+                        )
                     }),
                     // No scale of its own -- feed the gizmo a fixed 1.0 so a
                     // scale drag is a no-op rather than corrupting the sim.
@@ -7433,8 +8287,7 @@ impl GameEngine for SplatGame {
                 self.rmb_drag_accum += dx.abs() as f32 + dy.abs() as f32;
                 self.rmb_look_engaged |= self.fly_camera.is_looking();
             }
-            let released = ctx
-                .input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
+            let released = ctx.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
             if editor && released && self.multi_selected.len() >= 2 {
                 let pointer = ctx.input(|i| i.pointer.interact_pos().or(i.pointer.latest_pos()));
                 // "Over UI" = an egui Area above the Background painter layer
@@ -7499,8 +8352,7 @@ impl GameEngine for SplatGame {
                             )
                         });
                         let outside = clicked
-                            && pointer
-                                .is_none_or(|p| !menu.response.rect.expand(4.0).contains(p));
+                            && pointer.is_none_or(|p| !menu.response.rect.expand(4.0).contains(p));
                         if outside || escape {
                             self.context_menu = None;
                         }
@@ -7608,8 +8460,9 @@ impl GameEngine for SplatGame {
                 dirty: true,
                 saved_name: None,
             });
-            self.selected_resource =
-                Some(ResourceSelection::Particle(self.particle_resources.len() - 1));
+            self.selected_resource = Some(ResourceSelection::Particle(
+                self.particle_resources.len() - 1,
+            ));
             self.active_tab = Some(EditorTab::Resource);
         }
         if import_texture {
@@ -7706,8 +8559,10 @@ impl GameEngine for SplatGame {
         {
             let picked_batch = self.picked_mujoco_trajectory_batch.lock().unwrap().take();
             if let Some((actor_name, paths)) = picked_batch {
-                if let Some(actor) =
-                    self.scene_mujoco_actors.iter_mut().find(|a| a.name == actor_name)
+                if let Some(actor) = self
+                    .scene_mujoco_actors
+                    .iter_mut()
+                    .find(|a| a.name == actor_name)
                 {
                     actor.export_status = format!("Batch: queued {} clip(s)", paths.len());
                     actor.export_queue = paths;
@@ -7717,7 +8572,11 @@ impl GameEngine for SplatGame {
         // Save requests from the browser tiles' disk buttons: write the file
         // and clear the dirty flag.
         if let Some(handle) = save_material_handle {
-            if let Some(mat) = self.material_library.iter_mut().find(|m| m.handle == handle) {
+            if let Some(mat) = self
+                .material_library
+                .iter_mut()
+                .find(|m| m.handle == handle)
+            {
                 match save_material_file(mat) {
                     Ok(()) => mat.dirty = false,
                     Err(e) => log!("Save failed: {e}"),
@@ -7735,7 +8594,11 @@ impl GameEngine for SplatGame {
         // Rename requested from a material tile's right-click menu.  Materials
         // are referenced by handle, so only the display name / save file change.
         if let Some((handle, new_name)) = rename_material {
-            if let Some(mat) = self.material_library.iter_mut().find(|m| m.handle == handle) {
+            if let Some(mat) = self
+                .material_library
+                .iter_mut()
+                .find(|m| m.handle == handle)
+            {
                 mat.name = new_name;
                 mat.dirty = true;
             }
@@ -7808,6 +8671,7 @@ impl GameEngine for SplatGame {
             if let Ok(json) = serde_json::to_string_pretty(&self.build_scene_file(&model_resources))
             {
                 editor_config::save_startup_scene(&json);
+                editor_config::save_startup_scene_name(self.current_scene_name.as_deref());
                 self.has_custom_startup = editor_config::load_startup_scene().is_some();
                 self.status = Some(if self.has_custom_startup {
                     ("Start-up scene saved".to_string(), STATUS_WHITE, 4.0)
@@ -7845,7 +8709,11 @@ impl GameEngine for SplatGame {
             self.status = Some(match resource_library::import_texture(&file_name, &bytes) {
                 Ok(path) => {
                     if self.texture_resources.iter().any(|t| t.path == path) {
-                        (format!("Texture already imported: {file_name}"), STATUS_WHITE, 4.0)
+                        (
+                            format!("Texture already imported: {file_name}"),
+                            STATUS_WHITE,
+                            4.0,
+                        )
                     } else {
                         // Native-only import path, so a blocking load here is
                         // fine (rfd already ran the pick off-thread).
@@ -7858,7 +8726,11 @@ impl GameEngine for SplatGame {
                         (format!("Imported texture: {file_name}"), STATUS_WHITE, 4.0)
                     }
                 }
-                Err(reason) => (format!("Couldn't import texture: {reason}"), STATUS_RED, 8.0),
+                Err(reason) => (
+                    format!("Couldn't import texture: {reason}"),
+                    STATUS_RED,
+                    8.0,
+                ),
             });
         }
         // Apply an imported model once its file has been read: persist it and
@@ -7912,7 +8784,8 @@ impl GameEngine for SplatGame {
                     }
                     None => {
                         #[cfg(target_arch = "wasm32")]
-                        let msg = format!("Couldn't import {file_name}: web import needs a binary .glb");
+                        let msg =
+                            format!("Couldn't import {file_name}: web import needs a binary .glb");
                         #[cfg(not(target_arch = "wasm32"))]
                         let msg = format!("Couldn't import {file_name} (see log)");
                         (msg, STATUS_RED, 8.0)
@@ -7920,19 +8793,30 @@ impl GameEngine for SplatGame {
                 });
             }
         }
+        // Pick up the file stem from a completed native Save Scene… (async,
+        // see `saved_scene_name`'s field doc).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(name) = self.saved_scene_name.lock().unwrap().take() {
+            self.current_scene_name = Some(name);
+        }
         // Apply a loaded scene once its file has been read (async, like the .ply).
-        let scene_bytes = self.picked_scene.lock().unwrap().take();
-        if let Some(bytes) = scene_bytes {
-            self.status = Some(match self.load_scene_from_bytes(&bytes, &model_resources, renderer)
-            {
-                Ok(summary) => (format!("Loaded scene: {summary}"), STATUS_WHITE, 5.0),
-                Err(reason) => (format!("Couldn't load scene: {reason}"), STATUS_RED, 10.0),
-            });
+        let scene_picked = self.picked_scene.lock().unwrap().take();
+        if let Some((name, bytes)) = scene_picked {
+            self.status = Some(
+                match self.load_scene_from_bytes(&bytes, &model_resources, renderer) {
+                    Ok(summary) => {
+                        self.current_scene_name = Some(name);
+                        (format!("Loaded scene: {summary}"), STATUS_WHITE, 5.0)
+                    }
+                    Err(reason) => (format!("Couldn't load scene: {reason}"), STATUS_RED, 10.0),
+                },
+            );
         }
         // Persist a picked startup scene once its file has been read.  Validated
-        // first so a bad pick can't brick the next launch.
-        let startup_bytes = self.picked_startup.lock().unwrap().take();
-        if let Some(bytes) = startup_bytes {
+        // first so a bad pick can't brick the next launch. Name unused -- see
+        // `current_scene_name`'s field doc.
+        let startup_picked = self.picked_startup.lock().unwrap().take();
+        if let Some((name, bytes)) = startup_picked {
             let valid = std::str::from_utf8(&bytes)
                 .ok()
                 .filter(|text| serde_json::from_str::<SceneFile>(text).is_ok())
@@ -7940,6 +8824,7 @@ impl GameEngine for SplatGame {
             self.status = Some(match valid {
                 Some(json) => {
                     editor_config::save_startup_scene(&json);
+                    editor_config::save_startup_scene_name(Some(&name));
                     self.has_custom_startup = editor_config::load_startup_scene().is_some();
                     (
                         "Start-up scene set (loads on next launch)".to_string(),
@@ -7969,10 +8854,70 @@ impl GameEngine for SplatGame {
                 renderer.add_or_update_light(light);
             }
             // Same one-shot pattern for "Clear Environment Cubemap": drop the
-            // baked GPU texture and fall back to the analytic gradient.
+            // baked GPU texture and fall back to the analytic gradient. Also
+            // unchecks "Use Environment Cubemap" -- otherwise the auto-rebake
+            // below would see use_env_cubemap still on and no cubemap loaded,
+            // and immediately bake right back over the gradient this was
+            // meant to preview.
             if light.take_cubemap_clear_request() {
                 renderer.clear_skylight_cubemap(light.id);
+                light.set_use_env_cubemap(false);
                 renderer.add_or_update_light(light);
+            }
+        }
+
+        // Auto-rebake: whenever the scene content a skylight bake actually
+        // captures has changed (or an asset it might depend on is still
+        // loading), wait for BAKE_SETTLE_DEBOUNCE_SECS of quiet and then
+        // rebake every skylight with "Use Environment Cubemap" checked. This
+        // is what keeps lighting from silently going stale -- screenshots,
+        // training-data exports, and anything else rendered all read
+        // whatever's currently baked, and that used to require remembering
+        // to click "Bake Environment Cubemap" by hand first.
+        let still_loading = !self.pending_splats.lock().unwrap().is_empty()
+            || !self.pending_model_uploads.lock().unwrap().is_empty()
+            || !self.pending_mujoco_loads.lock().unwrap().is_empty()
+            || !self.pending_mujoco_trajectories.lock().unwrap().is_empty();
+        // wasm only: mesh bytes fetched via an async browser request, applied
+        // by a later tick (see the field's own doc).
+        #[cfg(target_arch = "wasm32")]
+        let still_loading = still_loading || !self.pending_mujoco_meshes.lock().unwrap().is_empty();
+        let fingerprint = scene_bake_fingerprint(&self.scene_actors, &self.scene_lights);
+        let fingerprint_changed = fingerprint != self.last_scene_bake_fingerprint;
+        if fingerprint_changed {
+            self.last_scene_bake_fingerprint = fingerprint;
+        }
+        if fingerprint_changed || still_loading {
+            if self.bake_settle_timer.is_none() {
+                self.status = Some((
+                    "Lighting changed -- environment cubemap will refresh shortly...".to_string(),
+                    STATUS_WHITE,
+                    BAKE_SETTLE_DEBOUNCE_SECS + 1.0,
+                ));
+            }
+            self.bake_settle_timer = Some(BAKE_SETTLE_DEBOUNCE_SECS);
+        } else if let Some(remaining) = self.bake_settle_timer.as_mut() {
+            *remaining -= delta_time;
+            if *remaining <= 0.0 {
+                self.bake_settle_timer = None;
+                let mut baked = 0u32;
+                for light in &mut self.scene_lights {
+                    if light.get_light_type() == LightType::Skylight && light.use_env_cubemap() {
+                        renderer.bake_skylight_cubemap(light.id, game_config);
+                        renderer.add_or_update_light(light);
+                        baked += 1;
+                    }
+                }
+                if baked > 0 {
+                    self.status = Some((
+                        format!(
+                            "Environment cubemap refreshed ({baked} skylight{})",
+                            if baked == 1 { "" } else { "s" }
+                        ),
+                        STATUS_WHITE,
+                        3.0,
+                    ));
+                }
             }
         }
 
@@ -8045,9 +8990,8 @@ impl GameEngine for SplatGame {
         // as the other raw hotkeys so typing "z"/"y" into a rename box or a
         // Details text field doesn't trigger it.
         if raw_hotkeys_ok {
-            let (ctrl, shift) = ctx.input(|i| {
-                (i.modifiers.ctrl || i.modifiers.command, i.modifiers.shift)
-            });
+            let (ctrl, shift) =
+                ctx.input(|i| (i.modifiers.ctrl || i.modifiers.command, i.modifiers.shift));
             if ctrl && input_manager.get_key_state("z").just_pressed() {
                 if shift {
                     self.redo(renderer);

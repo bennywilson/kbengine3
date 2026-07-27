@@ -361,6 +361,19 @@
 			ctrl[gripperId] = gripperLo + t * (gripperHi - gripperLo);
 		};
 
+		// JS twin of MujocoScene::hold_current_pose's native math -- see that
+		// method's doc for why this needs to run the instant physics starts
+		// driving the arm. No Jacobian/forward-kinematics needed here, just
+		// direct qpos -> ctrl copies.
+		window.__bsMujocoHoldCurrentPose = (qposAdrs, actuatorIds) => {
+			if (!model || !data) return;
+			const qpos = data.qpos;
+			const ctrl = data.ctrl;
+			for (let i = 0; i < qposAdrs.length; i++) {
+				ctrl[actuatorIds[i]] = qpos[qposAdrs[i]];
+			}
+		};
+
 		function frame(now) {
 			const generation = bsApp.mj_bridge_model_generation();
 			if (generation !== lastGeneration) {

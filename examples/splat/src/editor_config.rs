@@ -179,7 +179,40 @@ pub fn save_startup_scene(json: &str) {
 pub fn clear_startup_scene() {
     if let Some(path) = config_file_path() {
         let _ = std::fs::remove_file(path.with_file_name("startup_scene.json"));
+        let _ = std::fs::remove_file(path.with_file_name("startup_scene_name.txt"));
     }
+}
+
+/// The startup scene's own file stem (e.g. "panda_scene"), saved alongside it
+/// so a fresh launch that silently auto-loads the startup scene can restore
+/// `current_scene_name` immediately -- without this, every relaunch forgot
+/// the name until the user did an explicit Save Scene.../Load Scene... this
+/// session, and training-data exports/rebuilds done before that silently
+/// landed in the "unsaved" fallback bucket instead of the real scene's
+/// folder (see `current_scene_name`'s field doc in example_game.rs).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_startup_scene_name(name: Option<&str>) {
+    let Some(path) = config_file_path() else {
+        return;
+    };
+    let path = path.with_file_name("startup_scene_name.txt");
+    match name {
+        Some(name) => {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, name);
+        }
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_startup_scene_name() -> Option<String> {
+    let path = config_file_path()?.with_file_name("startup_scene_name.txt");
+    std::fs::read_to_string(path).ok().filter(|s| !s.is_empty())
 }
 
 // On the web the scene JSON persists in localStorage: the browser's small
@@ -210,7 +243,34 @@ pub fn save_startup_scene(json: &str) {
 pub fn clear_startup_scene() {
     if let Some(storage) = local_storage() {
         let _ = storage.remove_item(STARTUP_SCENE_KEY);
+        let _ = storage.remove_item(STARTUP_SCENE_NAME_KEY);
     }
+}
+
+// See the native `save_startup_scene_name`'s doc for why this exists --
+// paired with `STARTUP_SCENE_KEY` the same way the native sibling file is
+// paired with `startup_scene.json`.
+#[cfg(target_arch = "wasm32")]
+const STARTUP_SCENE_NAME_KEY: &str = "black_splat_startup_scene_name";
+
+#[cfg(target_arch = "wasm32")]
+pub fn save_startup_scene_name(name: Option<&str>) {
+    let Some(storage) = local_storage() else {
+        return;
+    };
+    match name {
+        Some(name) => {
+            let _ = storage.set_item(STARTUP_SCENE_NAME_KEY, name);
+        }
+        None => {
+            let _ = storage.remove_item(STARTUP_SCENE_NAME_KEY);
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_startup_scene_name() -> Option<String> {
+    local_storage()?.get_item(STARTUP_SCENE_NAME_KEY).ok().flatten()
 }
 
 // --- Last-used picker folders ------------------------------------------------

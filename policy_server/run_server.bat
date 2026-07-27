@@ -19,7 +19,11 @@ REM deliberately does NOT kill a Docker-held port -- Docker manages that itself
 REM (the openvla path recreates its container), and force-killing Docker's port
 REM proxy is a good way to wedge Docker Desktop.
 
-setlocal
+REM enabledelayedexpansion: the Docker-wait retry loop below sets and rereads
+REM WAITED/DOCKER_DESKTOP_EXE inside the same ( ) block. Plain %VAR% inside a
+REM block substitutes once, using the value from before the block started --
+REM !VAR! (delayed expansion) re-reads the live value on each line instead.
+setlocal enabledelayedexpansion
 set MODE=%1
 if "%MODE%"=="" set MODE=stub
 
@@ -32,6 +36,52 @@ if /I "%MODE%"=="stub" (
     echo Starting stub policy server on http://localhost:8000 ...
     python stub_server.py
 ) else if /I "%MODE%"=="openvla" (
+    where /q docker
+    if errorlevel 1 (
+        echo Docker isn't on PATH -- install Docker Desktop:
+        echo   https://www.docker.com/products/docker-desktop/
+        echo.
+        pause
+        exit /b 1
+    )
+
+    docker info >nul 2>&1
+    if errorlevel 1 (
+        echo Docker daemon isn't responding -- starting Docker Desktop...
+        if not defined DOCKER_DESKTOP_EXE set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+        if not exist "!DOCKER_DESKTOP_EXE!" (
+            echo Couldn't find Docker Desktop at "!DOCKER_DESKTOP_EXE!".
+            echo Set DOCKER_DESKTOP_EXE if it's installed somewhere else, or install it:
+            echo   https://www.docker.com/products/docker-desktop/
+            echo.
+            pause
+            exit /b 1
+        )
+        start "" "!DOCKER_DESKTOP_EXE!"
+
+        REM Cold start (WSL2 utility VM + engine) commonly takes 30s-2min, so
+        REM this polls docker info rather than a single blind retry -- a
+        REM retry right after `start` would just hit the same npipe error.
+        echo Waiting for the Docker daemon to come up ^(cold start can take a couple minutes^)...
+        set WAITED=0
+        :wait_for_docker
+        docker info >nul 2>&1
+        if not errorlevel 1 goto docker_ready
+        set /a WAITED+=5
+        if !WAITED! GEQ 180 (
+            echo Docker still isn't responding after 180s. Open Docker Desktop directly
+            echo and check its status ^(Settings / whale icon in the system tray^), then
+            echo re-run this.
+            echo.
+            pause
+            exit /b 1
+        )
+        ping -n 6 127.0.0.1 >nul
+        goto wait_for_docker
+        :docker_ready
+        echo Docker daemon is up.
+    )
+
     echo Starting OpenVLA policy server in Docker on http://localhost:8000 ...
     echo First run downloads the model weights -- wait for "Uvicorn running" before enabling Policy Control.
     docker compose --profile openvla up --build

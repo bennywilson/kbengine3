@@ -353,12 +353,22 @@ pub struct Actor {
     // set this automatically (see tick_mujoco_actors) since a robot shouldn't
     // appear baked into its own scene lighting.
     exclude_from_env_capture: bool,
+
+    // Optional free-form operator notes -- not part of editor_properties!
+    // since it needs a checkbox+multiline widget the property visitor has no
+    // kind for (see example_game.rs's manual "Documentation" UI). Persisted
+    // via this crate's own scene-file DTOs (see example_game.rs's ActorDto).
+    documentation: String,
+    // UI-only: whether the documentation editor is currently expanded. Not
+    // serialized -- every loaded scene starts with it collapsed.
+    show_documentation: bool,
 }
 
 // Editor markup: the fields the editor's Details panel shows and how each is
 // edited (see crate::editor).  Lives here because the fields are private.
+// Name is drawn manually by the Details panel instead (above the Type +
+// Documentation row, itself above these) -- see example_game.rs.
 crate::editor_properties!(Actor {
-    name: text("Name"),
     position: vec3("Position"),
     rotation: rotation("Rotation"),
     scale: vec3("Scale"),
@@ -395,6 +405,8 @@ impl Actor {
             material_handle: MaterialHandle::make_invalid(),
             shadow_catcher: false,
             exclude_from_env_capture: false,
+            documentation: String::new(),
+            show_documentation: false,
         }
     }
 
@@ -490,6 +502,22 @@ impl Actor {
 
     pub fn is_excluded_from_env_capture(&self) -> bool {
         self.exclude_from_env_capture
+    }
+
+    pub fn set_documentation(&mut self, documentation: String) {
+        self.documentation = documentation;
+    }
+
+    pub fn get_documentation(&self) -> &str {
+        &self.documentation
+    }
+
+    pub fn set_show_documentation(&mut self, show: bool) {
+        self.show_documentation = show;
+    }
+
+    pub fn get_show_documentation(&self) -> bool {
+        self.show_documentation
     }
 }
 
@@ -766,6 +794,10 @@ impl Light {
     /// in place of the analytic gradient.
     pub fn use_env_cubemap(&self) -> bool {
         self.use_env_cubemap
+    }
+
+    pub fn set_use_env_cubemap(&mut self, use_env_cubemap: bool) {
+        self.use_env_cubemap = use_env_cubemap;
     }
 
     /// Whether a skylight's baked cubemap should also be drawn as the

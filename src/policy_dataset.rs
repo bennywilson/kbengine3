@@ -114,15 +114,49 @@ mod disk {
     use std::io::Write;
 
     /// Where a clip's exported frames + manifest land:
-    /// `resources/openvla_datasets/<clip-file-stem>/`. Mirrors the
-    /// `resources/trajectory_cache` convention `trajectory::cache` already
-    /// uses for native-only derived output.
-    pub fn export_dir_for(clip_path: &str) -> std::path::PathBuf {
+    /// `resources/openvla_datasets/<namespace>/<clip-file-stem>/`. `namespace`
+    /// is normally the current scene's file stem (see example_game.rs's
+    /// `current_scene_name`) -- keeping exports scoped per scene means
+    /// switching to a differently-calibrated scene (a new policy camera, a
+    /// different MJCF) can't silently mix its exports into an older scene's
+    /// folder just because two clips happen to share a filename (e.g. both
+    /// scenes replaying `demo_0.json`). Falls back to a fixed namespace
+    /// (example_game.rs passes "unsaved") before the scene has ever been
+    /// saved or loaded this session. Mirrors the `resources/trajectory_cache`
+    /// convention `trajectory::cache` already uses for native-only derived
+    /// output.
+    pub fn export_dir_for(namespace: &str, clip_path: &str) -> std::path::PathBuf {
         let stem = std::path::Path::new(clip_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("clip");
-        std::path::Path::new("resources/openvla_datasets").join(stem)
+        std::path::Path::new("resources/openvla_datasets").join(namespace).join(stem)
+    }
+
+    /// File-stems (matching a source clip's own file stem, see
+    /// `export_dir_for`) of every clip with a *completed* export under
+    /// `namespace` -- a `manifest.jsonl` present under its output folder.
+    /// Used by "Re-export Existing…" (see example_game.rs) to rebuild the
+    /// same set of clips after something that invalidates previously
+    /// captured frames (a new policy camera, a fixed floor height, etc.),
+    /// without the user having to remember or re-pick the same file list by
+    /// hand a second time.
+    pub fn exported_clip_stems(namespace: &str) -> Vec<String> {
+        let mut stems = Vec::new();
+        let Ok(entries) = std::fs::read_dir(std::path::Path::new("resources/openvla_datasets").join(namespace))
+        else {
+            return stems;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.join("manifest.jsonl").is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    stems.push(name.to_string());
+                }
+            }
+        }
+        stems.sort();
+        stems
     }
 
     /// Appends one JSONL line per [`ActionRecord`] to `<dir>/manifest.jsonl`.
@@ -152,7 +186,7 @@ mod disk {
     }
 }
 #[cfg(not(target_arch = "wasm32"))]
-pub use disk::{export_dir_for, ManifestWriter};
+pub use disk::{export_dir_for, exported_clip_stems, ManifestWriter};
 
 #[cfg(test)]
 mod tests {
