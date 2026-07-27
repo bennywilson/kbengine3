@@ -45,6 +45,19 @@ const MJ_GEOM_CYLINDER: u32 = 5;
 const MJ_GEOM_BOX: u32 = 6;
 const MJ_GEOM_MESH: u32 = 7;
 
+// MuJoCo's `group` is just an integer with no engine meaning of its own --
+// this project's own `<default class="collision">` in panda.xml is what
+// assigns 3 to it (`<default class="visual">` assigns 2). Native's
+// `mesh_geoms` skips it so the collision-only geoms added there (reusing
+// the same mesh names as their `class="visual"` counterparts, since no
+// separate low-poly collision meshes exist -- see that default block's own
+// comment) don't also render as untextured duplicates layered on top of the
+// real ones. Wasm's equivalent of this same filter lives in index.html's
+// reportMeshGeoms (COLLISION_ONLY_GEOM_GROUP there too), since that's where
+// wasm decides what to report as a mesh geom at all.
+#[cfg(not(target_arch = "wasm32"))]
+const COLLISION_ONLY_GEOM_GROUP: i32 = 3;
+
 /// Synthetic path a [`MujocoScene::from_xml_str`] model is staged under on
 /// wasm -- it has no real one, and MuJoCo is only ever asked to load by path.
 #[cfg(target_arch = "wasm32")]
@@ -290,6 +303,10 @@ pub struct MujocoScene {
     /// Whether `tick_and_draw` wireframes primitive geoms. Mesh geoms are
     /// unaffected -- the caller draws those itself from [`mesh_geoms`](Self::mesh_geoms).
     wireframe: bool,
+    /// Exponentially-smoothed gripper target, in `apply_policy_action`'s `[0,
+    /// 1]` open/closed units -- see [`smooth_gripper_t`](Self::smooth_gripper_t).
+    /// `None` until the first policy action arrives.
+    gripper_smoothed_t: Option<f64>,
 }
 
 /// Solves the 6x6 linear system `a * y = b` via Gauss-Jordan elimination
@@ -396,7 +413,14 @@ impl MujocoScene {
             // clip the *previous* scene had bound would freeze this one.
             wasm_bridge::set_playback(true, 1.0);
             wasm_bridge::set_kinematic(false);
-            Ok(Self { playing: true, speed: 1.0, kinematic: false, wireframe: true, mesh_paths })
+            Ok(Self {
+                playing: true,
+                speed: 1.0,
+                kinematic: false,
+                wireframe: true,
+                mesh_paths,
+                gripper_smoothed_t: None,
+            })
         }
     }
 
@@ -416,6 +440,7 @@ impl MujocoScene {
             speed: 1.0,
             kinematic: false,
             wireframe: true,
+            gripper_smoothed_t: None,
         })
     }
 
@@ -438,6 +463,7 @@ impl MujocoScene {
                 speed: 1.0,
                 kinematic: false,
                 wireframe: true,
+                gripper_smoothed_t: None,
             })
         }
         #[cfg(target_arch = "wasm32")]
@@ -457,6 +483,7 @@ impl MujocoScene {
                 kinematic: false,
                 wireframe: true,
                 mesh_paths: std::collections::HashMap::new(),
+                gripper_smoothed_t: None,
             })
         }
     }
@@ -687,6 +714,9 @@ impl MujocoScene {
             if model.geom_type()[i] as u32 != MJ_GEOM_MESH {
                 continue;
             }
+            if model.geom_group()[i] == COLLISION_ONLY_GEOM_GROUP {
+                continue;
+            }
             let mesh_id = model.geom_dataid()[i];
             if mesh_id < 0 {
                 continue;
@@ -795,6 +825,34 @@ impl MujocoScene {
                 wasm_bridge::apply_qvel(dof, delta);
             }
         }
+    }
+
+    /// Exponentially smooths the gripper channel of a policy action:
+    /// `smoothed = ALPHA * raw + (1 - ALPHA) * previous`, `None` (no prior
+    /// sample) just passes `raw` through unchanged.
+    ///
+    /// Unlike the arm (which reads real `qpos` and applies a *relative*
+    /// delta each call, so it's naturally self-correcting -- see
+    /// `apply_policy_action`'s arm loop), the gripper is driven open-loop:
+    /// each query's `action[6]` overwrites `ctrl` directly, with nothing
+    /// carried over between calls. If that channel is noisy near a decision
+    /// boundary -- plausible for a checkpoint this early, with no held-out
+    /// eval yet -- every ~`policy_interval_secs` query can snap it to a
+    /// fresh, possibly flip-flopped target with nothing damping it, which
+    /// physically looks like the gripper opening and closing repeatedly
+    /// before it's anywhere near what it's reaching for. This doesn't fix
+    /// noisy predictions, just keeps a noisy-but-centered signal from
+    /// producing full-amplitude physical flapping; a genuinely sustained
+    /// "close now" still gets through, just smoothed over consecutive
+    /// queries rather than applied instantly.
+    fn smooth_gripper_t(&mut self, raw_t: f64) -> f64 {
+        const ALPHA: f64 = 0.35;
+        let smoothed = match self.gripper_smoothed_t {
+            Some(prev) => ALPHA * raw_t + (1.0 - ALPHA) * prev,
+            None => raw_t,
+        };
+        self.gripper_smoothed_t = Some(smoothed);
+        smoothed
     }
 
     /// Converts one policy action -- `[dx, dy, dz, drx, dry, drz, gripper]`,
@@ -949,7 +1007,8 @@ impl MujocoScene {
             self.mj_data.ctrl_mut()[act_id] = current + dq[i];
         }
 
-        let t = (action[6] as f64).clamp(0.0, 1.0);
+        let raw_t = (action[6] as f64).clamp(0.0, 1.0);
+        let t = self.smooth_gripper_t(raw_t);
         self.mj_data.ctrl_mut()[gripper_id] = gripper_lo + t * (gripper_hi - gripper_lo);
 
         Ok(())
@@ -1008,15 +1067,22 @@ impl MujocoScene {
         let gripper = wasm_bridge::named_actuator_info(gripper_actuator)
             .ok_or_else(|| anyhow::anyhow!("actuator '{gripper_actuator}' not resolved by JS yet"))?;
 
-        let action64: Vec<f64> = action.iter().map(|&v| v as f64).collect();
+        // Smoothed and resolved to a final ctrl value here rather than
+        // shipping raw action[6] + lo/hi to JS to lerp itself -- keeps the
+        // smoothing state (and the one place that reads/writes it) entirely
+        // on the Rust side, with JS just told exactly where to put ctrl.
+        let raw_t = (action[6] as f64).clamp(0.0, 1.0);
+        let t = self.smooth_gripper_t(raw_t);
+        let gripper_ctrl_target = gripper.ctrl_lo + t * (gripper.ctrl_hi - gripper.ctrl_lo);
+
+        let action64: Vec<f64> = action[..6].iter().map(|&v| v as f64).collect();
         wasm_bridge::apply_policy_action(
             body_id as u32,
             &dof_adrs,
             &qpos_adrs,
             &actuator_ids,
             gripper.id,
-            gripper.ctrl_lo,
-            gripper.ctrl_hi,
+            gripper_ctrl_target,
             &action64,
         );
         Ok(())
@@ -1753,8 +1819,7 @@ mod wasm_bridge {
         qpos_adrs: &[u32],
         actuator_ids: &[u32],
         gripper_id: u32,
-        gripper_lo: f64,
-        gripper_hi: f64,
+        gripper_ctrl_target: f64,
         action: &[f64],
     ) {
         js_apply_policy_action(
@@ -1763,8 +1828,7 @@ mod wasm_bridge {
             qpos_adrs,
             actuator_ids,
             gripper_id,
-            gripper_lo,
-            gripper_hi,
+            gripper_ctrl_target,
             action,
         );
     }
@@ -2000,10 +2064,14 @@ mod wasm_bridge {
         fn js_set_qpos(adrs: &[u32], values: &[f64]);
 
         /// Computes `ee_body`'s Jacobian (`mj_jacBody`), solves the damped
-        /// least squares delta, and writes `ctrl` directly -- the JS-side
-        /// twin of `MujocoScene::apply_policy_action`'s native math. `action`
-        /// is the 7-element `[dx,dy,dz,drx,dry,drz,gripper]` vector; the rest
-        /// are already-resolved ids/addresses from `ActuatorInfo`.
+        /// least squares delta, and writes the arm's `ctrl` directly -- the
+        /// JS-side twin of `MujocoScene::apply_policy_action`'s native math.
+        /// `action` is the 6-element `[dx,dy,dz,drx,dry,drz]` vector (the
+        /// gripper element is resolved and smoothed on the Rust side --
+        /// see `smooth_gripper_t` -- so `gripper_ctrl_target` here is
+        /// already the final value to write, not something JS still needs
+        /// to compute); the rest are already-resolved ids/addresses from
+        /// `ActuatorInfo`.
         #[wasm_bindgen(js_namespace = window, js_name = "__bsMujocoApplyPolicyAction")]
         fn js_apply_policy_action(
             body_id: u32,
@@ -2011,8 +2079,7 @@ mod wasm_bridge {
             qpos_adrs: &[u32],
             actuator_ids: &[u32],
             gripper_id: u32,
-            gripper_lo: f64,
-            gripper_hi: f64,
+            gripper_ctrl_target: f64,
             action: &[f64],
         );
 
@@ -2162,6 +2229,53 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
+    fn gripper_target_smooths_across_repeated_policy_actions() {
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+        let model = scene.mj_data.model();
+        let gripper_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, "actuator8").unwrap();
+        let [lo, hi] = model.actuator_ctrlrange()[gripper_id];
+
+        // First call ever: no prior sample to smooth against, so it should
+        // pass the raw (fully open) target straight through.
+        let open = [0.0_f32; 7];
+        scene.apply_policy_action(&open, "hand", &arm_actuators, "actuator8").unwrap();
+        assert_eq!(
+            scene.mj_data.ctrl()[gripper_id], lo,
+            "the first-ever call should pass its raw target through unsmoothed"
+        );
+
+        // A single query flipping hard to fully closed -- exactly what a
+        // noisy/oscillating gripper prediction looks like one step at a
+        // time -- shouldn't snap all the way there.
+        let mut closed = [0.0_f32; 7];
+        closed[6] = 1.0;
+        scene.apply_policy_action(&closed, "hand", &arm_actuators, "actuator8").unwrap();
+        let after_one_flip = scene.mj_data.ctrl()[gripper_id];
+        assert!(
+            after_one_flip > lo && after_one_flip < hi,
+            "one flipped query shouldn't snap straight to the new target: got {after_one_flip}, range [{lo}, {hi}]"
+        );
+
+        // But a *sustained* closed command -- a real, consistent signal
+        // rather than one noisy blip -- should still fully get there.
+        // Smoothing damps noise, it doesn't cap the final result.
+        for _ in 0..20 {
+            scene.apply_policy_action(&closed, "hand", &arm_actuators, "actuator8").unwrap();
+        }
+        let settled = scene.mj_data.ctrl()[gripper_id];
+        // Exponential smoothing only asymptotically reaches its target, so
+        // "closed" here means comfortably converged (well under 1% of the
+        // full ctrlrange away), not bit-for-bit equal to `hi`.
+        assert!(
+            (settled - hi).abs() < (hi - lo) * 0.01,
+            "a sustained closed command should still fully close eventually, got {settled} (target {hi})"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn hold_current_pose_freezes_ctrl_at_qpos_and_stops_the_servo_yank() {
         let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
         let arm_actuators =
@@ -2207,6 +2321,76 @@ mod tests {
         for (&adr, &before) in qpos_adrs.iter().zip(&target_qpos) {
             let moved = (scene.mj_data.qpos()[adr] - before).abs();
             assert!(moved < 0.01, "actuator moved {moved} rad in one step despite ctrl holding its pose");
+        }
+    }
+
+    // Every link just gained real mesh collision geometry (see panda.xml's
+    // own comment on why), reusing meshes that are deliberately drawn to
+    // overlap slightly at each joint -- exactly the shape that, without the
+    // matching <contact> excludes, would show up as self-collision noise
+    // every single step. This is the regression check for that: home
+    // keyframe, ctrl held right where the keyframe already puts it (so nothing
+    // is fighting the position servos, isolating self-collision as the only
+    // thing that could still blow this up), stepped for a full second.
+    //
+    // Only the robot's own 9 dofs (7 arm + 2 finger, qvel indices 0..9) are
+    // checked, not the ToolHang objects' free joints after them. Those
+    // objects have no `pos` of their own and the "home" keyframe's qpos is
+    // 9 long, so it doesn't cover them either -- a bare reset leaves all
+    // three exactly co-located at the origin, which interpenetrates and
+    // explodes on step 1 regardless of anything this test is actually about
+    // (confirmed by reproducing the identical explosion against this file's
+    // pre-collision-geometry version too, and it was even violent enough to
+    // kick the robot's own joints via contact once the robot became
+    // collidable). Real usage never hits the co-located case itself -- a
+    // trajectory clip always positions those objects via
+    // apply_trajectory_frame before physics ever steps freely (see
+    // set_kinematic's doc) -- so this spreads them apart into a plausible,
+    // non-overlapping starting layout instead, which isolates what this
+    // test actually checks (the robot's own new self-collision geometry)
+    // while still exercising real robot/object contact.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn home_pose_is_stable_under_its_own_collision_geometry() {
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        scene.reset();
+
+        // stand_root/frame_root/tool_root, in that order -- each a 7-wide
+        // free-joint qpos (x, y, z, qw, qx, qy, qz) starting right after the
+        // robot's own 9. Only x is varied (spread along a line, 0.3m apart,
+        // well above the floor at z=-0.125 -- see scene.xml); the identity
+        // orientation `reset` already leaves in y/z/quat is left alone.
+        for (i, &adr) in [9usize, 16, 23].iter().enumerate() {
+            // 1.0m clear of the robot's own base footprint at the origin,
+            // then spread 0.3m apart from each other.
+            scene.mj_data.qpos_mut()[adr] = 1.0 + 0.3 * i as f64;
+            scene.mj_data.qpos_mut()[adr + 2] = 0.15;
+        }
+        scene.mj_data.forward();
+
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+        scene.hold_current_pose(&arm_actuators).unwrap();
+        // The gripper actuator has no equivalent "hold" helper (it's driven
+        // directly from an absolute target, not a qpos-relative delta -- see
+        // apply_policy_action's gripper line), so it's set here from the
+        // keyframe's own recorded ctrl instead of left at 0.
+        let model = scene.mj_data.model();
+        let gripper_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, "actuator8").unwrap();
+        scene.mj_data.ctrl_mut()[gripper_id] = 255.0;
+
+        const ROBOT_DOFS: usize = 9;
+        for _ in 0..500 {
+            scene.step_once();
+            assert!(
+                scene.mj_data.qpos()[..ROBOT_DOFS].iter().all(|v| v.is_finite()),
+                "robot qpos went non-finite"
+            );
+            assert!(
+                scene.mj_data.qvel()[..ROBOT_DOFS].iter().all(|v| v.abs() < 5.0),
+                "a robot joint velocity exceeded 5 rad/s at rest -- looks like self-collision blew up: {:?}",
+                &scene.mj_data.qvel()[..ROBOT_DOFS]
+            );
         }
     }
 }

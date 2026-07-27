@@ -83,9 +83,19 @@
 		// baked into the mesh at compile time. Reported once per load; none of
 		// it changes as the sim runs. See MujocoScene::mesh_geoms.
 		const MJ_GEOM_MESH = 7;
+		// MuJoCo's `group` has no engine meaning of its own -- this project's
+		// own <default class="collision"> in panda.xml is what assigns 3 to
+		// it (class="visual" assigns 2). Skipped here so the collision-only
+		// geoms added there (reusing the same mesh names as their
+		// class="visual" counterparts, since no separate low-poly collision
+		// meshes exist) don't also get reported and drawn as untextured
+		// duplicates layered on top of the real ones -- matches native's
+		// COLLISION_ONLY_GEOM_GROUP filter in MujocoScene::mesh_geoms.
+		const COLLISION_ONLY_GEOM_GROUP = 3;
 
 		function reportMeshGeoms() {
 			const geomType = new Uint32Array(model.geom_type);
+			const geomGroup = new Int32Array(model.geom_group);
 			const geomDataId = new Int32Array(model.geom_dataid);
 			const geomMatId = new Int32Array(model.geom_matid);
 			const geomRgba = new Float32Array(model.geom_rgba);
@@ -97,6 +107,7 @@
 
 			for (let i = 0; i < geomType.length; i++) {
 				if (geomType[i] !== MJ_GEOM_MESH) continue;
+				if (geomGroup[i] === COLLISION_ONLY_GEOM_GROUP) continue;
 				const meshId = geomDataId[i];
 				if (meshId < 0) continue;
 
@@ -294,15 +305,17 @@
 		// that method's wasm branch for why the whole algorithm lives here
 		// rather than just data. `dofAdrs`/`qposAdrs`/`actuatorIds` are
 		// already resolved (one entry per arm actuator, same order);
-		// `action` is the 7-element [dx,dy,dz,drx,dry,drz,gripper] vector.
+		// `action` is the 6-element [dx,dy,dz,drx,dry,drz] vector (arm only
+		// -- the gripper channel is resolved and smoothed on the Rust side,
+		// see MujocoScene::smooth_gripper_t, so `gripperCtrlTarget` here is
+		// already the final ctrl value, not something to lerp ourselves).
 		window.__bsMujocoApplyPolicyAction = (
 			bodyId,
 			dofAdrs,
 			qposAdrs,
 			actuatorIds,
 			gripperId,
-			gripperLo,
-			gripperHi,
+			gripperCtrlTarget,
 			action,
 		) => {
 			if (!model || !data) return;
@@ -357,8 +370,7 @@
 				ctrl[actuatorIds[i]] = qpos[qposAdrs[i]] + dq[i];
 			}
 
-			const t = Math.min(Math.max(action[6], 0), 1);
-			ctrl[gripperId] = gripperLo + t * (gripperHi - gripperLo);
+			ctrl[gripperId] = gripperCtrlTarget;
 		};
 
 		// JS twin of MujocoScene::hold_current_pose's native math -- see that
