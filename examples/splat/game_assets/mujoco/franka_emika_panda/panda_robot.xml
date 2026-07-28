@@ -1,4 +1,12 @@
-<mujoco model="panda">
+<mujoco model="panda_robot">
+  <!-- The Franka Panda robot definition shared by every task scene in this
+  directory (panda.xml/ToolHang, panda_lift.xml/Lift, ...): body tree,
+  collision geometry, actuators, and the "home" keyframe. Split out of what
+  used to be panda.xml's own monolithic file so a new task doesn't have to
+  duplicate ~250 lines of robot definition (and re-tune its own collision
+  self-exclusion list from scratch) just to add a different manipulated
+  object: see panda.xml/panda_lift.xml, which each just <include> this and
+  add their own task-specific <asset>/<worldbody> content. -->
   <compiler angle="radian" autolimits="true"/>
 
   <option integrator="implicitfast"/>
@@ -42,9 +50,6 @@
     <material class="panda" name="black" rgba="0.25 0.25 0.25 1" reflectance="0.02" shininess="0.05"/>
     <material class="panda" name="green" rgba="0 1 0 1" reflectance="0.02" shininess="0.1"/>
     <material class="panda" name="light_blue" rgba="0.039216 0.541176 0.780392 1" reflectance="0.02" shininess="0.1"/>
-    <material class="panda" name="tool_hang_stand" rgba="0.6 0.3 0.1 1" specular="0.3" reflectance="0.02" shininess="0.15"/>
-    <material class="panda" name="tool_hang_frame" rgba="0.55 0.1 0.08 1" specular="0.3" reflectance="0.02" shininess="0.15"/>
-    <material class="panda" name="tool_hang_tool" rgba="0.1 0.15 0.55 1" specular="0.6" reflectance="0.05" shininess="0.3"/>
 
     <!-- Visual meshes -->
     <mesh file="assets/link0_0.obj"/>
@@ -103,14 +108,6 @@
     <mesh file="assets/hand_4.obj"/>
     <mesh file="assets/finger_0.obj"/>
     <mesh file="assets/finger_1.obj"/>
-
-    <!-- ToolHang manipulated objects, extracted verbatim (exact geometry,
-    not an approximation) from the robosuite demo's embedded MJCF: see
-    tools/robomimic_to_trajectory.py's module docs for where these tracks
-    come from. -->
-    <mesh file="assets/tool_hang_stand.obj"/>
-    <mesh file="assets/tool_hang_frame.obj"/>
-    <mesh file="assets/tool_hang_tool.obj"/>
   </asset>
 
   <worldbody>
@@ -310,21 +307,6 @@
         </body>
       </body>
     </body>
-
-    <!-- ToolHang manipulated objects: see the <asset> block above for
-    where these meshes come from. -->
-    <body name="stand_root">
-      <freejoint name="stand_joint0"/>
-      <geom type="mesh" mesh="tool_hang_stand" material="tool_hang_stand"/>
-    </body>
-    <body name="frame_root">
-      <freejoint name="frame_joint0"/>
-      <geom type="mesh" mesh="tool_hang_frame" material="tool_hang_frame"/>
-    </body>
-    <body name="tool_root">
-      <freejoint name="tool_joint0"/>
-      <geom type="mesh" mesh="tool_hang_tool" material="tool_hang_tool"/>
-    </body>
   </worldbody>
 
   <tendon>
@@ -362,10 +344,7 @@
     <!-- Adjacent links' meshes are drawn to overlap slightly right at their
     shared joint (normal for a visual model), so colliding them would just
     be solver noise, or worse, jitter, at every joint on every step, not
-    real self-collision. Only link0/link1 was excluded before, since nothing
-    had collision geometry to exclude from anything; now that every link
-    does, every adjacent pair (plus the two fingers, which press together at
-    a fully-closed grip) needs the same treatment. -->
+    real self-collision. -->
     <exclude body1="link0" body2="link1"/>
     <exclude body1="link1" body2="link2"/>
     <exclude body1="link2" body2="link3"/>
@@ -383,9 +362,10 @@
     "home" keyframe's wrist bend (joint6 near 90 degrees) is enough to bring
     them into contact at that looser envelope even though the real link
     surfaces wouldn't touch there. Confirmed via a direct contact-pair dump
-    while chasing a qvel spike in the home_pose_is_stable_under_its_own_
-    collision_geometry test; excluded on the same "not real self-collision"
-    grounds as the adjacent pairs above, not guessed at. -->
+    while chasing a qvel spike in mujoco.rs's
+    home_pose_is_stable_under_its_own_collision_geometry test; excluded on
+    the same "not real self-collision" grounds as the adjacent pairs above,
+    not guessed at. -->
     <exclude body1="link5" body2="link7"/>
     <exclude body1="link5" body2="hand"/>
   </contact>

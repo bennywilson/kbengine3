@@ -5,8 +5,10 @@ training loss went down.
 
 Reads exactly the demos listed in <data-dir>/holdout.json (written by
 build_rlds_dataset.py's --holdout flag) -- these were excluded from that
-TFDS build, so the checkpoint being evaluated has never seen them. Runs each
-held-out step through the model and the same accumulated-action math
+TFDS build, so the checkpoint being evaluated has never seen them. (--demos
+overrides that list with trained-on demos for a fit check instead; the
+result is labelled accordingly, see that flag's help.) Runs each
+evaluated step through the model and the same accumulated-action math
 build_rlds_dataset.py trains on (imported from there directly, so the two
 can't drift apart), then reports:
 
@@ -51,17 +53,27 @@ except ImportError:
 ACTION_DIMS = ["dx", "dy", "dz", "drx", "dry", "drz", "gripper"]
 
 
-def load_holdout_steps(data_dir: Path, stride: int):
-    holdout_path = data_dir / "holdout.json"
-    if not holdout_path.is_file():
-        sys.exit(
-            f"No {holdout_path} -- rebuild the TFDS dataset with "
-            f"--holdout demo_X,demo_Y first (see build_rlds_dataset.py). Without a "
-            f"recorded holdout set there's no unseen data to evaluate against."
-        )
-    names = json.loads(holdout_path.read_text())
-    if not names:
-        sys.exit(f"{holdout_path} lists zero held-out demos -- nothing to evaluate.")
+def load_holdout_steps(data_dir: Path, stride: int, demos: list[str] | None = None):
+    """Loads the demos to evaluate: the recorded holdout set by default, or an
+    explicit `demos` list (see --demos, which is NOT a generalization test).
+    """
+    if demos:
+        names = demos
+    else:
+        holdout_path = data_dir / "holdout.json"
+        if not holdout_path.is_file():
+            sys.exit(
+                f"No {holdout_path} -- rebuild the TFDS dataset with "
+                f"--holdout demo_X,demo_Y first (see build_rlds_dataset.py). Without a "
+                f"recorded holdout set there's no unseen data to evaluate against."
+            )
+        names = json.loads(holdout_path.read_text())
+        if not names:
+            sys.exit(
+                f"{holdout_path} lists zero held-out demos -- nothing to evaluate. Rebuild "
+                f"with --holdout to reserve some, or pass --demos to force a fit check "
+                f"against demos the checkpoint was trained on (see --demos' own help)."
+            )
     steps = []
     for name in names:
         manifest = data_dir / name / "manifest.jsonl"
@@ -135,6 +147,16 @@ def main():
         help="Must match the stride the checkpoint was actually trained with "
         "(default: %(default)s) -- a mismatch compares apples to oranges.",
     )
+    parser.add_argument(
+        "--demos",
+        default="",
+        help="Comma-separated demo names to evaluate instead of holdout.json's. These "
+        "are NOT assumed unseen, so the result is a fit check (can the model reproduce "
+        "data it trained on?), not a generalization measure -- a bad score is conclusive, "
+        "a good one is not, since it can't distinguish learning from memorization. Use it "
+        "to sanity-check a run early (e.g. to catch mode collapse) when no holdout was "
+        "reserved; use --holdout at build time for a number you can actually trust.",
+    )
     args = parser.parse_args()
 
     adapter_dir = Path(args.adapter_dir).resolve()
@@ -147,8 +169,10 @@ def main():
         else adapter_dir.parent.parent / adapter_dir.name / "dataset_statistics.json"
     )
 
-    names, steps = load_holdout_steps(data_dir, args.stride)
-    print(f"==> Evaluating on {len(steps)} step(s) from {len(names)} held-out demo(s): {', '.join(names)}")
+    demos = [name.strip() for name in args.demos.split(",") if name.strip()]
+    names, steps = load_holdout_steps(data_dir, args.stride, demos)
+    kind = "FIT CHECK (trained-on, not held-out)" if demos else "held-out"
+    print(f"==> Evaluating on {len(steps)} step(s) from {len(names)} {kind} demo(s): {', '.join(names)}")
 
     model, processor, device = load_model(adapter_dir, args.vla_path, dataset_stats)
 
@@ -185,10 +209,17 @@ def main():
         print(f"{name:<8}{r:>8.2f}{model_mae:>12.4f}{baseline_mae:>14.4f}{ratio:>9.2f}x")
 
     overall_ratio = float(np.mean(baseline_mae_all) / np.mean(model_mae_all))
-    print(
-        f"\n==> Overall: {overall_ratio:.2f}x better than constant-baseline MAE, "
-        f"on {len(steps)} never-trained-on step(s) from {len(names)} held-out demo(s)."
-    )
+    if demos:
+        print(
+            f"\n==> Overall: {overall_ratio:.2f}x better than constant-baseline MAE, on "
+            f"{len(steps)} step(s) from {len(names)} demo(s) the checkpoint TRAINED ON. "
+            f"This measures fit, not generalization -- see --demos' help."
+        )
+    else:
+        print(
+            f"\n==> Overall: {overall_ratio:.2f}x better than constant-baseline MAE, "
+            f"on {len(steps)} never-trained-on step(s) from {len(names)} held-out demo(s)."
+        )
 
 
 if __name__ == "__main__":

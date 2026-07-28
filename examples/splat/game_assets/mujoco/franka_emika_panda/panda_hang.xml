@@ -1,5 +1,5 @@
-<mujoco model="panda scene">
-  <include file="panda.xml"/>
+<mujoco model="panda_hang">
+  <include file="panda_robot.xml"/>
 
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
@@ -12,12 +12,24 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+
+    <material class="panda" name="tool_hang_stand" rgba="0.6 0.3 0.1 1" specular="0.3" reflectance="0.02" shininess="0.15"/>
+    <material class="panda" name="tool_hang_frame" rgba="0.55 0.1 0.08 1" specular="0.3" reflectance="0.02" shininess="0.15"/>
+    <material class="panda" name="tool_hang_tool" rgba="0.1 0.15 0.55 1" specular="0.6" reflectance="0.05" shininess="0.3"/>
+
+    <!-- ToolHang manipulated objects, extracted verbatim (exact geometry,
+    not an approximation) from the robosuite demo's embedded MJCF: see
+    tools/robomimic_to_trajectory.py's module docs for where these tracks
+    come from. -->
+    <mesh file="assets/tool_hang_stand.obj"/>
+    <mesh file="assets/tool_hang_frame.obj"/>
+    <mesh file="assets/tool_hang_tool.obj"/>
   </asset>
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <!-- The ToolHang demos' free-jointed objects (stand/frame/tool_root in
-    panda.xml) carry their raw world-frame positions straight from robomimic's
+    <!-- The ToolHang demos' free-jointed objects (stand/frame/tool_root
+    below) carry their raw world-frame positions straight from robomimic's
     capture (see tools/robomimic_to_trajectory.py's module doc for why it
     doesn't remap them), and that source frame's Z=0 isn't this scene's floor
     height. Measured across all 200 converted demos, the lowest any object
@@ -47,14 +59,30 @@
     demo whose objects dip lower than -0.106 (or tumble further sideways
     than an unrotated pose implies), the actual mesh AABBs would need
     checking rather than pushing this number lower again. NOTE: this
-    deliberately does not touch panda.xml's robot base (fixed at pos="0 0 0")
-    or the trajectory data itself, since the recorded arm-to-object kinematic
-    correspondence already lines up correctly using those raw coordinates;
-    shifting either one to "fix" the floor height would misalign the hand's
-    reach from the objects it's grasping instead. The tradeoff is a visible
-    gap under the robot's base now that the floor sits below it; a pedestal
-    geom filling that gap would be a reasonable follow-up if the gap looks
-    wrong, but isn't needed to stop the explosion. -->
+    deliberately does not touch the robot's own base (still fixed at
+    pos="0 0 0" in panda_robot.xml) or the trajectory data itself, since the
+    recorded arm-to-object kinematic correspondence already lines up
+    correctly using those raw coordinates; shifting either one to "fix" the
+    floor height would misalign the hand's reach from the objects it's
+    grasping instead. The tradeoff is a visible gap under the robot's base
+    now that the floor sits below it; a pedestal geom filling that gap would
+    be a reasonable follow-up if the gap looks wrong, but isn't needed to
+    stop the explosion. -->
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.125"/>
+
+    <!-- ToolHang manipulated objects: see the <asset> block above for
+    where these meshes come from. -->
+    <body name="stand_root">
+      <freejoint name="stand_joint0"/>
+      <geom type="mesh" mesh="tool_hang_stand" material="tool_hang_stand"/>
+    </body>
+    <body name="frame_root">
+      <freejoint name="frame_joint0"/>
+      <geom type="mesh" mesh="tool_hang_frame" material="tool_hang_frame"/>
+    </body>
+    <body name="tool_root">
+      <freejoint name="tool_joint0"/>
+      <geom type="mesh" mesh="tool_hang_tool" material="tool_hang_tool"/>
+    </body>
   </worldbody>
 </mujoco>

@@ -92,6 +92,21 @@ if %errorlevel% GEQ 8 (
     exit /b 1
 )
 
+REM Read back the exact TFDS dataset name build_rlds_dataset.py registered
+REM for this scene (see that script's _builder_class_for_scene) rather than
+REM guessing it here -- a name computed independently in batch script could
+REM drift from whatever TFDS's class-name-to-dataset-name rule actually
+REM produced, and a mismatch means finetune.py can't find the data at all.
+set DATASET_NAME_FILE=%~dp0..\examples\splat\resources\openvla_datasets\%SCENE_NAME%\dataset_name.txt
+if not exist "%DATASET_NAME_FILE%" (
+    echo Couldn't find %DATASET_NAME_FILE%.
+    echo Run "Rebuild TFDS Dataset" first ^(or rebuild_rlds_dataset.bat %SCENE_NAME%^).
+    echo.
+    pause
+    exit /b 1
+)
+set /p DATASET_NAME=<"%DATASET_NAME_FILE%"
+
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%i
 set RUN_NAME=retrain_%SCENE_NAME%_%TS%
 set RUN_DIR=D:\openvla_runs\%RUN_NAME%
@@ -108,7 +123,7 @@ cd /d "%OPENVLA_REPO%"
 "%OPENVLA_VENV%\Scripts\python.exe" vla-scripts\finetune.py ^
     --vla_path "openvla/openvla-7b" ^
     --data_root_dir "%NATIVE_TFDS_DIR%" ^
-    --dataset_name black_splat_tool_hang ^
+    --dataset_name %DATASET_NAME% ^
     --run_root_dir "%RUN_DIR%" ^
     --adapter_tmp_dir "%RUN_DIR%\adapter-tmp" ^
     --lora_rank 32 ^

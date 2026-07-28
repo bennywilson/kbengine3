@@ -1,5 +1,5 @@
 //! Persisted, user-editable editor preferences for the splat demo: viewport
-//! gizmo hotkeys, shadow settings, and the startup scene JSON.
+//! gizmo hotkeys, shadow settings, and the startup scene.
 //!
 //! On native it's saved to a per-user config file (see [`config_file_path`]);
 //! on web there's no filesystem, so [`EditorConfig::load`]/[`save`](EditorConfig::save)
@@ -148,71 +148,48 @@ impl EditorConfig {
 }
 
 // --- Startup scene -----------------------------------------------------------
-// The scene JSON loaded when the editor starts, stored as a sibling file of the
-// keybindings (`startup_scene.json`).  Same persistence rules as the rest of
-// the config: native reads/writes the per-user file, web keeps the built-in
-// default (no filesystem).
+// The scene opened when the editor starts. Native remembers a *path* to a
+// real scene .json on disk (a sibling file of the keybindings,
+// `startup_scene_path.txt`) rather than a copy of its content -- the file
+// already exists from an explicit Save Scene.../Load Scene..., so there's
+// nothing to duplicate, and the path's own file stem doubles as
+// `current_scene_name` (see that field's doc in example_game.rs) with no
+// separate name cache needed. Web has no real filesystem paths, so it keeps
+// the scene JSON itself in localStorage (see the wasm section below).
 
-/// The user's saved startup scene JSON, if any.  `None` means "use the built-in
-/// default scene".
+/// The path to the user's chosen startup scene, if any.  `None` means "use
+/// the built-in default scene".
 #[cfg(not(target_arch = "wasm32"))]
-pub fn load_startup_scene() -> Option<String> {
-    let path = config_file_path()?.with_file_name("startup_scene.json");
-    std::fs::read_to_string(path).ok()
+pub fn load_startup_scene_path() -> Option<std::path::PathBuf> {
+    let path = config_file_path()?.with_file_name("startup_scene_path.txt");
+    let text = std::fs::read_to_string(path).ok()?;
+    let text = text.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(text))
+    }
 }
 
-/// Saves `json` as the startup scene.  Best-effort, like [`EditorConfig::save`].
+/// Remembers `path` as the startup scene.  Best-effort, like [`EditorConfig::save`].
 #[cfg(not(target_arch = "wasm32"))]
-pub fn save_startup_scene(json: &str) {
+pub fn save_startup_scene_path(scene_path: &std::path::Path) {
     let Some(path) = config_file_path() else {
         return;
     };
-    let path = path.with_file_name("startup_scene.json");
+    let path = path.with_file_name("startup_scene_path.txt");
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(path, json);
+    let _ = std::fs::write(path, scene_path.to_string_lossy().as_bytes());
 }
 
-/// Removes the saved startup scene, reverting to the built-in default.
+/// Forgets the saved startup scene path, reverting to the built-in default.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn clear_startup_scene() {
     if let Some(path) = config_file_path() {
-        let _ = std::fs::remove_file(path.with_file_name("startup_scene.json"));
-        let _ = std::fs::remove_file(path.with_file_name("startup_scene_name.txt"));
+        let _ = std::fs::remove_file(path.with_file_name("startup_scene_path.txt"));
     }
-}
-
-/// The startup scene's own file stem (e.g. "panda_scene"), saved alongside it
-/// so a fresh launch that silently auto-loads the startup scene can restore
-/// `current_scene_name` immediately -- without this, every relaunch forgot
-/// the name until the user did an explicit Save Scene.../Load Scene... this
-/// session, and training-data exports/rebuilds done before that silently
-/// landed in the "unsaved" fallback bucket instead of the real scene's
-/// folder (see `current_scene_name`'s field doc in example_game.rs).
-#[cfg(not(target_arch = "wasm32"))]
-pub fn save_startup_scene_name(name: Option<&str>) {
-    let Some(path) = config_file_path() else {
-        return;
-    };
-    let path = path.with_file_name("startup_scene_name.txt");
-    match name {
-        Some(name) => {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::write(path, name);
-        }
-        None => {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn load_startup_scene_name() -> Option<String> {
-    let path = config_file_path()?.with_file_name("startup_scene_name.txt");
-    std::fs::read_to_string(path).ok().filter(|s| !s.is_empty())
 }
 
 // On the web the scene JSON persists in localStorage: the browser's small
@@ -247,9 +224,9 @@ pub fn clear_startup_scene() {
     }
 }
 
-// See the native `save_startup_scene_name`'s doc for why this exists --
-// paired with `STARTUP_SCENE_KEY` the same way the native sibling file is
-// paired with `startup_scene.json`.
+// Native derives `current_scene_name` from the startup path's own file stem
+// (no separate cache needed); web has no path to derive it from, so it
+// caches the name here instead, paired with `STARTUP_SCENE_KEY`.
 #[cfg(target_arch = "wasm32")]
 const STARTUP_SCENE_NAME_KEY: &str = "black_splat_startup_scene_name";
 

@@ -2,13 +2,13 @@
   "version": 1,
   "camera": {
     "position": [
-      0.8699739,
-      1.3372626,
-      -0.17063016
+      0.51289403,
+      1.0763862,
+      0.10081692
     ],
     "rotation": [
-      -453.81943,
-      26.319801,
+      -506.73926,
+      12.999778,
       0.0
     ]
   },
@@ -166,8 +166,8 @@
   "mujoco_actors": [
     {
       "name": "Mujoco Actor 2",
-      "xml_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\franka_emika_panda\\scene.xml",
-      "trajectory_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\trajectories\\tool_hang\\demo_40.json",
+      "xml_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\franka_emika_panda\\panda_lift.xml",
+      "trajectory_path": "D:\\black_splat\\examples\\splat\\game_assets\\mujoco\\trajectories\\lift\\demo_0.json",
       "position": [
         -0.23630975,
         0.88861984,
@@ -181,20 +181,20 @@
       ],
       "playing": false,
       "speed": 1.0,
-      "looping": true,
+      "looping": false,
       "wireframe": false,
       "documentation": "Running a trajectory (kinematic playback, no phaysics):\n1. Set Trajectory (Browse…) to a clip .json.\n2. Make sure Enabled (under Policy Control) is off.\n3. Check Playing. The clip drives qpos directly each frame; physics is off while a clip is bound and Policy is disabled.\n\nRunning a policy (live inference against a policy server):\n1. Start a server (Start Stub Server, or Start OpenVLA Server (Docker)) and wait for \"Uvicorn running\" in its window.\n2. Set Server URL, Instruction, and the policy camera (policy_camera_pos/target/fov) -- the camera MUST match whatever viewpoint the serving checkpoint was actually trained on, or the model is seeing out-of-distribution input.\n3. Optional: set Trajectory to a clip and click \"Reset to Trajectory Start\" so the sim begins from a real recorded pose instead of the MJCF's own (often ungrounded) defaults.\n4. Check Enabled. This alone drives physics -- Playing only still matters for kinematic clip scrubbing while Policy is off, it isn't needed alongside Enabled.",
       "policy_instruction": "Pick up red hook and insert into tan holder then pick up blue tool and hang it on the red hook.",
       "policy_interval_secs": 0.2,
       "policy_camera_pos": [
-        0.6940493,
-        1.2159497,
-        -0.2606508
+        0.51289403,
+        1.0763862,
+        0.10081692
       ],
       "policy_camera_target": [
-        -0.6495426,
-        0.55510545,
-        -0.3503492
+        -0.28869617,
+        0.7389653,
+        -1.1213124
       ],
       "policy_camera_fov": 60.0
     }

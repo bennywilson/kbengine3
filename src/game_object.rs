@@ -359,9 +359,6 @@ pub struct Actor {
     // kind for (see example_game.rs's manual "Documentation" UI). Persisted
     // via this crate's own scene-file DTOs (see example_game.rs's ActorDto).
     documentation: String,
-    // UI-only: whether the documentation editor is currently expanded. Not
-    // serialized -- every loaded scene starts with it collapsed.
-    show_documentation: bool,
 }
 
 // Editor markup: the fields the editor's Details panel shows and how each is
@@ -406,7 +403,6 @@ impl Actor {
             shadow_catcher: false,
             exclude_from_env_capture: false,
             documentation: String::new(),
-            show_documentation: false,
         }
     }
 
@@ -510,14 +506,6 @@ impl Actor {
 
     pub fn get_documentation(&self) -> &str {
         &self.documentation
-    }
-
-    pub fn set_show_documentation(&mut self, show: bool) {
-        self.show_documentation = show;
-    }
-
-    pub fn get_show_documentation(&self) -> bool {
-        self.show_documentation
     }
 }
 

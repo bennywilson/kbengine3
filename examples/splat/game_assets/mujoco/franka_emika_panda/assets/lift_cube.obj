@@ -1,0 +1,34 @@
+# Lift task cube, generated from robomimic's measured cube_g0 half-extents.
+# Explicit per-face vn (not smooth-averaged): the engine's obj loader only
+# computes its own smooth normals when a mesh carries none at all (see
+# src/passes/model.rs's from_obj_bytes) -- with tobj's single_index load
+# option, giving each face its own vn (even though positions are shared
+# across faces) makes it emit a separate vertex per face-corner, which is
+# what produces flat, hard-edged shading instead of the rounded look a
+# shared/averaged vertex normal gives a small cube like this.
+v -0.021243 -0.020076 -0.021424
+v 0.021243 -0.020076 -0.021424
+v 0.021243 0.020076 -0.021424
+v -0.021243 0.020076 -0.021424
+v -0.021243 -0.020076 0.021424
+v 0.021243 -0.020076 0.021424
+v 0.021243 0.020076 0.021424
+v -0.021243 0.020076 0.021424
+vn -0.000000 -0.000000 -1.000000
+vn -0.000000 -0.000000 1.000000
+vn -1.000000 -0.000000 -0.000000
+vn 1.000000 -0.000000 -0.000000
+vn -0.000000 -1.000000 -0.000000
+vn -0.000000 1.000000 -0.000000
+f 1//1 4//1 3//1
+f 1//1 3//1 2//1
+f 5//2 6//2 7//2
+f 5//2 7//2 8//2
+f 1//3 5//3 8//3
+f 1//3 8//3 4//3
+f 2//4 3//4 7//4
+f 2//4 7//4 6//4
+f 1//5 2//5 6//5
+f 1//5 6//5 5//5
+f 4//6 8//6 7//6
+f 4//6 7//6 3//6

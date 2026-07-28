@@ -46,7 +46,7 @@ const MJ_GEOM_BOX: u32 = 6;
 const MJ_GEOM_MESH: u32 = 7;
 
 // MuJoCo's `group` is just an integer with no engine meaning of its own --
-// this project's own `<default class="collision">` in panda.xml is what
+// this project's own `<default class="collision">` in panda_robot.xml is what
 // assigns 3 to it (`<default class="visual">` assigns 2). Native's
 // `mesh_geoms` skips it so the collision-only geoms added there (reusing
 // the same mesh names as their `class="visual"` counterparts, since no
@@ -860,7 +860,7 @@ impl MujocoScene {
     /// small-angle rotation in radians) plus a gripper scalar, in
     /// OpenVLA/Bridge's own convention (see [`crate::policy_client`]) --
     /// into joint targets, and writes them into `ctrl` so this model's own
-    /// PD position actuators (e.g. panda.xml's `actuator1..7` plus its
+    /// PD position actuators (e.g. panda_robot.xml's `actuator1..7` plus its
     /// tendon-coupled gripper actuator) drive the arm there over subsequent
     /// physics steps. Doesn't step the sim itself -- call
     /// [`step_once`](Self::step_once) (or let `tick_and_draw` run) after.
@@ -888,7 +888,7 @@ impl MujocoScene {
     /// out-of-range actuator target.
     ///
     /// `ee_body`/`arm_actuators`/`gripper_actuator` name this model's own
-    /// setup (panda.xml: `"hand"`, `["actuator1", .., "actuator7"]`,
+    /// setup (panda_robot.xml: `"hand"`, `["actuator1", .., "actuator7"]`,
     /// `"actuator8"`) since none of it is discoverable from the action
     /// vector's length alone -- a different MJCF needs different names.
     /// `gripper_actuator`'s target is linearly interpolated from `action[6]`
@@ -1093,7 +1093,7 @@ impl MujocoScene {
     /// the instant physics starts driving the arm (kinematic just went
     /// false, e.g. Policy Control was just enabled): this model's actuators
     /// are position servos (`biastype="affine"`, gains up to 4500 -- see
-    /// panda.xml), chasing `ctrl - qpos` every step. An untouched `ctrl` --
+    /// panda_robot.xml), chasing `ctrl - qpos` every step. An untouched `ctrl` --
     /// 0 on a fresh session, since MuJoCo never initializes it otherwise --
     /// read against `qpos` sitting anywhere but zero (the "standing" home
     /// pose, or wherever "Reset to Trajectory Start" left it) is a huge
@@ -2112,13 +2112,19 @@ mod tests {
 
     #[test]
     fn include_resolves_against_the_declaring_files_directory() {
-        let refs = scan_mjcf(panda_dir(), &read("scene.xml"));
-        assert_eq!(refs.includes, vec![panda_dir().join("panda.xml")]);
+        let refs = scan_mjcf(panda_dir(), &read("panda_hang.xml"));
+        assert_eq!(refs.includes, vec![panda_dir().join("panda_robot.xml")]);
     }
 
     #[test]
     fn every_panda_mesh_resolves_to_a_file_that_exists() {
-        let refs = scan_mjcf(panda_dir(), &read("panda.xml"));
+        // Robot meshes live in panda_robot.xml (shared across every task
+        // scene -- see that file's own doc); panda_hang.xml itself only
+        // <include>s it and adds ToolHang's own 3 manipulated-object meshes
+        // on top.
+        let mut refs = scan_mjcf(panda_dir(), &read("panda_robot.xml"));
+        let toolhang_refs = scan_mjcf(panda_dir(), &read("panda_hang.xml"));
+        refs.meshes.extend(toolhang_refs.meshes);
         assert_eq!(refs.meshes.len(), 59);
         for (name, path) in &refs.meshes {
             assert!(path.exists(), "mesh {name} -> {} does not exist", path.display());
@@ -2127,7 +2133,7 @@ mod tests {
 
     #[test]
     fn mesh_name_defaults_to_the_file_stem() {
-        let refs = scan_mjcf(panda_dir(), &read("panda.xml"));
+        let refs = scan_mjcf(panda_dir(), &read("panda_robot.xml"));
         let (_, path) = refs
             .meshes
             .iter()
@@ -2169,10 +2175,10 @@ mod tests {
         // Deliberately listed with the fragment first: the answer has to come
         // from the include graph, not from ordering or naming.
         let files = vec![
-            (format!("{PANDA_DIR}/panda.xml"), read("panda.xml")),
-            (format!("{PANDA_DIR}/scene.xml"), read("scene.xml")),
+            (format!("{PANDA_DIR}/panda_robot.xml"), read("panda_robot.xml")),
+            (format!("{PANDA_DIR}/panda_hang.xml"), read("panda_hang.xml")),
         ];
-        assert_eq!(find_root_mjcf(&files).unwrap(), format!("{PANDA_DIR}/scene.xml"));
+        assert_eq!(find_root_mjcf(&files).unwrap(), format!("{PANDA_DIR}/panda_hang.xml"));
     }
 
     #[test]
@@ -2200,7 +2206,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn policy_action_drives_arm_and_gripper_ctrl() {
-        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_hang.xml")).unwrap();
         let arm_actuators =
             ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
         // +5cm x, -3cm z, no rotation, gripper fully closed.
@@ -2230,7 +2236,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn gripper_target_smooths_across_repeated_policy_actions() {
-        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_hang.xml")).unwrap();
         let arm_actuators =
             ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
         let model = scene.mj_data.model();
@@ -2277,7 +2283,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn hold_current_pose_freezes_ctrl_at_qpos_and_stops_the_servo_yank() {
-        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_hang.xml")).unwrap();
         let arm_actuators =
             ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
 
@@ -2316,7 +2322,7 @@ mod tests {
         // With ctrl held at qpos, a step should barely move the arm --
         // nothing like the large single-step excursion this same qpos with
         // an unheld (zero) ctrl would cause under a kp=2000-4500 position
-        // servo (see panda.xml's <actuator> gains).
+        // servo (see panda_robot.xml's <actuator> gains).
         scene.step_once();
         for (&adr, &before) in qpos_adrs.iter().zip(&target_qpos) {
             let moved = (scene.mj_data.qpos()[adr] - before).abs();
@@ -2324,7 +2330,7 @@ mod tests {
         }
     }
 
-    // Every link just gained real mesh collision geometry (see panda.xml's
+    // Every link just gained real mesh collision geometry (see panda_robot.xml's
     // own comment on why), reusing meshes that are deliberately drawn to
     // overlap slightly at each joint -- exactly the shape that, without the
     // matching <contact> excludes, would show up as self-collision noise
@@ -2352,13 +2358,13 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn home_pose_is_stable_under_its_own_collision_geometry() {
-        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/scene.xml")).unwrap();
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_hang.xml")).unwrap();
         scene.reset();
 
         // stand_root/frame_root/tool_root, in that order -- each a 7-wide
         // free-joint qpos (x, y, z, qw, qx, qy, qz) starting right after the
         // robot's own 9. Only x is varied (spread along a line, 0.3m apart,
-        // well above the floor at z=-0.125 -- see scene.xml); the identity
+        // well above the floor at z=-0.125 -- see panda_hang.xml); the identity
         // orientation `reset` already leaves in y/z/quat is left alone.
         for (i, &adr) in [9usize, 16, 23].iter().enumerate() {
             // 1.0m clear of the robot's own base footprint at the origin,
@@ -2390,6 +2396,50 @@ mod tests {
                 scene.mj_data.qvel()[..ROBOT_DOFS].iter().all(|v| v.abs() < 5.0),
                 "a robot joint velocity exceeded 5 rad/s at rest -- looks like self-collision blew up: {:?}",
                 &scene.mj_data.qvel()[..ROBOT_DOFS]
+            );
+        }
+    }
+
+    // Unlike the ToolHang scene, panda_lift.xml's one manipulated object
+    // (cube_main) has a real default `pos` rather than defaulting to the
+    // origin (see that body's own comment), so -- unlike
+    // home_pose_is_stable_under_its_own_collision_geometry above -- there's
+    // no known-unrelated co-located-objects explosion to work around here.
+    // This checks the cube's own stability too, which is the actual
+    // regression check for panda_lift.xml's floor height: get that number
+    // wrong (the cube starts inside the floor) and this is exactly what
+    // would catch it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn lift_scene_loads_and_is_stable() {
+        let mut scene = MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_lift.xml")).unwrap();
+        scene.reset();
+
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+        scene.hold_current_pose(&arm_actuators).unwrap();
+        let model = scene.mj_data.model();
+        let gripper_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, "actuator8").unwrap();
+        scene.mj_data.ctrl_mut()[gripper_id] = 0.0; // open, same as the "home" keyframe's own 0.04/0.04
+
+        const ROBOT_DOFS: usize = 9; // 7 arm + 2 fingers
+        const ALL_DOFS: usize = 15; // + cube_main's 6-wide free joint
+        for _ in 0..500 {
+            scene.step_once();
+            assert!(
+                scene.mj_data.qpos().iter().all(|v| v.is_finite()),
+                "qpos went non-finite"
+            );
+            assert!(
+                scene.mj_data.qvel()[..ROBOT_DOFS].iter().all(|v| v.abs() < 5.0),
+                "a robot joint velocity exceeded 5 rad/s at rest -- looks like self-collision blew up: {:?}",
+                &scene.mj_data.qvel()[..ROBOT_DOFS]
+            );
+            assert!(
+                scene.mj_data.qvel()[ROBOT_DOFS..ALL_DOFS].iter().all(|v| v.abs() < 5.0),
+                "the cube's velocity exceeded 5 (rad/s or m/s) at rest -- looks like the floor height is \
+                 wrong (cube starting inside it) or it's colliding with the robot at the home pose: {:?}",
+                &scene.mj_data.qvel()[ROBOT_DOFS..ALL_DOFS]
             );
         }
     }

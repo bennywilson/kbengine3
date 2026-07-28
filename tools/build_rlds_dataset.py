@@ -50,12 +50,18 @@ except ImportError:
         "pip install -r tools/requirements-rlds.txt"
     )
 
-# All exports so far come from the same fixed policy camera + capture-width
-# calc (example_game.rs's `policy_capture_dims`), so every frame is this
-# exact size. If a future export uses a different camera/aspect, bump this
-# (and the dataset VERSION below) rather than trying to support mixed sizes
-# in one dataset.
-IMAGE_SHAPE = (224, 366, 3)
+# Every frame in an export is this exact size. If a future export uses a
+# different camera/aspect, bump this (and the dataset VERSION below) rather
+# than trying to support mixed sizes in one dataset.
+#
+# The width is not a free choice: `policy_capture_dims` (example_game.rs)
+# fixes capture height at 224 and derives width from the *editor window's*
+# aspect ratio, so resizing the window changes it (366 = a 1.63 window, 398
+# = 16:9). That also means a checkpoint is only in-distribution at the
+# window aspect it was exported under -- serving it while the window is a
+# different shape feeds the model shifted pixel coordinates and shows up as
+# a consistent spatial offset in the arm's motion, not as obvious garbage.
+IMAGE_SHAPE = (224, 398, 3)
 
 # Temporal subsampling factor. The engine exports one tuple per simulation
 # frame at the source demos' native 20Hz (dt=0.05), which makes each action a
@@ -161,21 +167,31 @@ def _load_episode(manifest_path: pathlib.Path, stride: int = 1):
     return steps
 
 
-class BlackSplatToolHang(tfds.core.GeneratorBasedBuilder):
-    """RLDS export of this project's MuJoCo/wgpu-rendered ToolHang demos."""
+class _BlackSplatDatasetBuilder(tfds.core.GeneratorBasedBuilder):
+    """RLDS export of this project's MuJoCo/wgpu-rendered demos for one scene.
+
+    Not instantiated directly -- see `_builder_class_for_scene`. TFDS derives
+    the registered dataset name (the `<name>` in `<output-dir>/<name>/<version>/`,
+    and what `finetune.py --dataset_name` must match) from the class's own
+    `__name__`, so a single fixed class here would register every scene's
+    build under the same name regardless of which scene it actually came
+    from -- `_builder_class_for_scene` gives each scene its own dynamically
+    named subclass instead.
+    """
 
     # The stride is baked into the version rather than exposed as a TFDS
     # BuilderConfig: a config would change the dataset's name to
-    # "black_splat_tool_hang/<config>", which no longer matches the plain key
-    # registered in OpenVLA's `OXE_DATASET_CONFIGS`/`OXE_STANDARDIZATION_TRANSFORMS`.
+    # "<name>/<config>", which no longer matches the plain key registered in
+    # OpenVLA's `OXE_DATASET_CONFIGS`/`OXE_STANDARDIZATION_TRANSFORMS`.
     # `tfds.builder(name, data_dir=...)` resolves to the highest version present,
     # so a new build supersedes the old one while leaving it on disk. Bump this
     # when changing `--stride` (or anything else about the action encoding), or
     # the two builds collide in the same directory.
-    VERSION = tfds.core.Version("2.0.0")
+    VERSION = tfds.core.Version("3.0.0")
     RELEASE_NOTES = {
         "1.0.0": "Initial release. One tuple per 20Hz simulation frame (stride 1).",
         "2.0.0": "Stride 4 (~5Hz): actions accumulated over 4 frames, see DEFAULT_STRIDE.",
+        "3.0.0": "Frames 398x224 (16:9 window) rather than 366x224, see IMAGE_SHAPE.",
     }
 
     def __init__(self, *, source_dir, stride=DEFAULT_STRIDE, holdout=frozenset(), **kwargs):
@@ -267,6 +283,16 @@ class BlackSplatToolHang(tfds.core.GeneratorBasedBuilder):
             }
 
 
+def _builder_class_for_scene(scene_name: str) -> type:
+    """Dynamically names a builder subclass after the scene, e.g. "panda_lift"
+    -> class "BlackSplatPandaLift" -> TFDS-registered name "black_splat_panda_lift".
+    An empty subclass is enough: everything else (VERSION, _info, generators)
+    is inherited unchanged from `_BlackSplatDatasetBuilder`.
+    """
+    class_name = "BlackSplat" + "".join(part.capitalize() for part in scene_name.split("_"))
+    return type(class_name, (_BlackSplatDatasetBuilder,), {})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -320,18 +346,29 @@ def main():
         + (f", holding out {len(holdout)}: {', '.join(sorted(holdout))}" if holdout else "")
     )
 
+    # Scene-named subclass (see _builder_class_for_scene) so this scene's
+    # dataset registers under its own name instead of one name shared by
+    # every scene ever built. `builder_cls.name` -- not a string recomputed
+    # here -- is the single source of truth for what that name actually is;
+    # written to dataset_name.txt so retrain_openvla.bat can pass the exact
+    # same value as --dataset_name without re-deriving TFDS's naming rules
+    # itself in batch script.
+    builder_cls = _builder_class_for_scene(source_dir.name)
+    dataset_name = builder_cls.name
+
     # TFDS keys its cache by (name, version, data_dir) and silently reuses
     # whatever's already there -- rerunning after re-exporting demos, or
     # changing --holdout, would otherwise train on stale data with no
     # warning. Force a real rebuild every time instead.
     output_root = pathlib.Path(args.output_dir).expanduser() if args.output_dir else pathlib.Path.home() / "tensorflow_datasets"
-    stale = output_root / "black_splat_tool_hang" / str(BlackSplatToolHang.VERSION)
+    stale = output_root / dataset_name / str(builder_cls.VERSION)
     if stale.exists():
         shutil.rmtree(stale)
 
-    builder = BlackSplatToolHang(source_dir=source_dir, stride=args.stride, holdout=holdout, data_dir=args.output_dir)
+    builder = builder_cls(source_dir=source_dir, stride=args.stride, holdout=holdout, data_dir=args.output_dir)
     builder.download_and_prepare()
-    print(f"==> Done. Dataset written to {builder.data_path}")
+    (source_dir / "dataset_name.txt").write_text(dataset_name)
+    print(f"==> Done. Dataset '{dataset_name}' written to {builder.data_path}")
 
 
 if __name__ == "__main__":

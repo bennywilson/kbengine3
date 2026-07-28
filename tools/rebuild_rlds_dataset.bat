@@ -41,7 +41,21 @@ cd /d "%~dp0.."
 
 set SCENE_NAME=%1
 if "%SCENE_NAME%"=="" set SCENE_NAME=unsaved
+
+REM cmd.exe treats commas as argument separators, so an unquoted holdout list
+REM (demo_1,demo_2,demo_3 -- exactly what the editor's Holdout demos field
+REM passes, see example_game.rs's launch_rlds_rebuild) arrives split across
+REM %2 %3 %4 rather than whole in %2, and taking %2 alone silently holds out
+REM only the first demo while reporting success. Rejoin every remaining
+REM argument with commas, which also leaves a properly quoted
+REM "demo_1,demo_2" single argument untouched.
 set HOLDOUT=%~2
+:collect_holdout
+if "%~3"=="" goto holdout_done
+set HOLDOUT=%HOLDOUT%,%~3
+shift /3
+goto collect_holdout
+:holdout_done
 
 if not defined WSL_DISTRO set WSL_DISTRO=Ubuntu
 if not defined RLDS_VENV set RLDS_VENV=~/.venvs/rlds

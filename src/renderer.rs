@@ -885,12 +885,11 @@ impl<'a> Renderer<'a> {
     /// interactive viewport's own FOV is restored along with everything else
     /// once this returns, since `game_config` itself is never mutated.
     ///
-    /// `width`/`height` need not match the window: `PostprocessPass` samples
-    /// its input by normalized UV, so this just resizes to fit -- if the
-    /// aspect ratio differs from the window's, the image stretches rather
-    /// than letterboxes. Fine for feeding a model that resizes its input
-    /// anyway (e.g. OpenVLA's own preprocessing); revisit if exact framing
-    /// ever matters.
+    /// `width`/`height` need not match the window, and the framing they
+    /// produce does not depend on the window's own size: the projection's
+    /// aspect ratio is overridden to `width`/`height` for this render (see
+    /// `begin_capture_frame_readback`), so the same camera yields the same
+    /// image no matter how the viewport is currently shaped.
     ///
     /// Native only -- see [`begin_capture_frame_png`](Self::begin_capture_frame_png)
     /// for wasm's split-phase equivalent, needed because a GPU buffer only
@@ -928,14 +927,14 @@ impl<'a> Renderer<'a> {
     /// Split out so wasm's [`begin_capture_frame_png`](Self::begin_capture_frame_png)
     /// can reuse it without duplicating the render/copy setup.
     ///
-    /// Swaps in `camera` (and `fov_deg`), re-renders the world at the
-    /// viewport's *current* resolution -- same pass sequence
-    /// `bake_skylight_cubemap` uses per cube face: deferred gbuffer+lighting
-    /// or forward, then splats -- into the shared render textures, then
-    /// tonemaps that through `PostprocessPass` into a `width`x`height`
-    /// capture texture (postprocess samples by normalized UV, so the square
-    /// output just scales the wider viewport render to fit). Only the camera
-    /// is restored afterward; nothing here resizes the renderer.
+    /// Swaps in `camera` (and `fov_deg`, and the projection aspect -- see
+    /// below), re-renders the world at the viewport's *current* resolution --
+    /// same pass sequence `bake_skylight_cubemap` uses per cube face:
+    /// deferred gbuffer+lighting or forward, then splats -- into the shared
+    /// render textures, then tonemaps that through `PostprocessPass` into a
+    /// `width`x`height` capture texture (postprocess samples by normalized
+    /// UV, so it just scales the viewport-shaped render to fit). Only the
+    /// camera is restored afterward; nothing here resizes the renderer.
     ///
     /// Deliberately does *not* resize the surface/render targets to
     /// `width`x`height`: doing that mid-tick reconfigures the swapchain and
@@ -970,10 +969,36 @@ impl<'a> Renderer<'a> {
         )?;
 
         let saved_camera = self.game_camera.clone();
-        // Only `fov` is overridden; width/height/render_scale stay at the live
-        // viewport's values so no resize is needed (see this fn's doc comment).
+        // `fov` and the projection's aspect ratio are overridden; render_scale
+        // and the render targets themselves stay at the live viewport's values
+        // so no resize is needed (see this fn's doc comment).
+        //
+        // The aspect override is what makes a capture's framing depend only on
+        // `width`/`height` instead of on however large the user happens to have
+        // dragged the window. Every pass derives its projection from
+        // `config.window_width / config.window_height` (model.rs, deferred.rs,
+        // gaussian_splat.rs, ambient.rs), and the two aspect mismatches cancel
+        // exactly: the projection renders squashed into the viewport-shaped
+        // target, then PostprocessPass's normalized-UV sample into the
+        // `width` x `height` capture stretches it back out. This matters
+        // because these captures train and then serve a VLA policy, which is
+        // only in-distribution at the exact framing it was trained on -- a
+        // window resize between exporting a dataset and serving against it
+        // silently shifts every object's pixel coordinates.
+        //
+        // Height is kept at the viewport's own so the derived width stays the
+        // same order of magnitude as the real render target: `window_width`/
+        // `window_height` also reach shaders verbatim as `screen_dimensions`
+        // (deferred.rs), where screen-space effects use them as true pixel
+        // counts rather than as a ratio. Substituting the capture's own small
+        // dimensions there would misscale those effects.
         let mut capture_config = game_config.clone();
         capture_config.fov = fov_deg;
+        capture_config.window_width = ((game_config.window_height as f32)
+            * (width as f32 / height as f32))
+            .round()
+            .max(1.0) as u32;
+        capture_config.window_height = game_config.window_height;
         self.game_camera = camera.clone();
 
         {

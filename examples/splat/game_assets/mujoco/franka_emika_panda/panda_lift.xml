@@ -1,0 +1,59 @@
+<mujoco model="panda_lift">
+  <include file="panda_robot.xml"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+
+    <material class="panda" name="lift_cube" rgba="0.5 0 0 1" specular="0.4" shininess="0.1"/>
+
+    <!-- Lift task's one manipulated object: a small red cube. Sized from
+    robomimic's lift_ph_low_dim.hdf5 embedded model_file (cube_main body,
+    cube_g0 geom, box half-extents 0.0212431 0.020076 0.0214241); see
+    tools/robomimic_to_trajectory.py's module docs for the conversion this
+    feeds. No separate low-poly collision mesh (unlike the robot's own
+    link geoms): a single small convex box needs no decomposition, its own
+    convex hull already *is* the real shape. -->
+    <mesh file="assets/lift_cube.obj"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <!-- Floor height, same reasoning as panda_hang.xml's own (see that
+    file's comment for the full derivation): a robosuite demo's raw
+    world-frame object coordinates don't line up with this standalone
+    file's floor at an arbitrary pos="0 0 0" default, and kinematic
+    trajectory playback never notices (it only overwrites qpos, never
+    resolves contacts), but the instant real physics steps, a penetrating
+    floor throws the cube out with a violent corrective impulse.
+
+    Measured directly across all 200 converted Lift demos (relative to the
+    robot's own base; see tools/robomimic_to_trajectory.py's
+    robot_base_pose/quat_rotate_inv, which already re-expresses every
+    manipulated object's pose that way): the cube's resting height only
+    ever gets as low as z=-0.099 (center), and its geom is 0.0214241 tall
+    at the half-extent, so its lowest resting bottom face is z=-0.1204.
+    -0.14 clears that by ~2cm, matching panda_hang.xml's own margin rather
+    than sitting flush against the worst case. -->
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.14"/>
+
+    <!-- Default pose only shown before a trajectory clip is bound:
+    apply_trajectory_frame overwrites this every frame once one is (see
+    MujocoScene::apply_trajectory_frame). Placed near the middle of the
+    cube's measured position range across all 200 demos (x 0.51..0.60,
+    y -0.04..0.05, z -0.10..-0.03, relative to the robot's own base) so it
+    at least starts somewhere plausible rather than at the origin. -->
+    <body name="cube_main" pos="0.55 0 -0.06">
+      <freejoint name="cube_joint0"/>
+      <geom type="mesh" mesh="lift_cube" material="lift_cube"/>
+    </body>
+  </worldbody>
+</mujoco>

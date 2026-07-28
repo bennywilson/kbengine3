@@ -763,19 +763,25 @@ const DEFAULT_POLICY_INTERVAL_SECS: f32 = 0.5;
 #[cfg(not(target_arch = "wasm32"))]
 const PANDA_FINGER_OPEN_QPOS: f64 = 0.04;
 
-/// The `(width, height)` a policy-camera capture renders at: fixed 224px
-/// height, width following `game_config`'s own aspect ratio rather than
-/// forcing a square -- see the call sites (`tick_mujoco_actors`'s live policy
-/// dispatch and training-data export) for why a forced-square capture would
-/// distort what OpenVLA sees. Shared so both call sites can't drift apart.
-fn policy_capture_dims(game_config: &Config) -> (u32, u32) {
-    let height: u32 = 224;
-    let width: u32 = (height as f32
-        * (game_config.window_width as f32 / game_config.window_height as f32))
-        .round()
-        .max(1.0) as u32;
-    (width, height)
-}
+/// The `(width, height)` a policy-camera capture renders at. Shared by the
+/// three call sites (`tick_mujoco_actors`'s live policy dispatch, the Details
+/// panel's camera preview, and training-data export) so they can't drift
+/// apart -- a checkpoint is only in-distribution at the framing it trained
+/// on, so the export and the live query it later serves must agree exactly.
+///
+/// A constant, deliberately not derived from the window: this used to follow
+/// `game_config`'s own aspect ratio, which meant resizing the editor window
+/// silently changed what every subsequent capture framed, and a dataset
+/// exported before the resize no longer matched the images the served policy
+/// was being handed. `Renderer::capture_frame_png` overrides the projection's
+/// aspect to match these dimensions, so a fixed size here reframes rather
+/// than distorts.
+///
+/// Not square, though: 16:9 keeps the whole workspace in view, and OpenVLA's
+/// own AutoProcessor does a proportion-preserving resize+center-crop to
+/// whatever square input it wants (see policy_server/openvla/server.py's
+/// `_processor` call), so pre-squaring here would only throw away framing.
+const POLICY_CAPTURE_DIMS: (u32, u32) = (398, 224);
 
 /// Launches `policy_server/run_server.bat <mode>` in its own visible console
 /// window (mirrors double-clicking it) rather than running it as a hidden
@@ -801,6 +807,32 @@ fn launch_policy_server(mode: &str) {
     match result {
         Ok(_) => log!("Launched policy server ({mode}) -- watch the new console window for \"Uvicorn running\"."),
         Err(e) => log!("Failed to launch policy server ({mode}): {e}"),
+    }
+}
+
+/// Launches `tools/convert_robomimic_demos.bat <input.hdf5> <output_dir>` in
+/// its own visible console window, same rationale as the other launch_*
+/// helpers: the conversion runs over every demo in the file and streams its
+/// own progress. Native Windows Python (just needs h5py), unlike
+/// `launch_rlds_rebuild`'s WSL+tensorflow path. `output_dir` is typically
+/// somewhere under `game_assets/mujoco/trajectories/` so the resulting
+/// clips are where a Trajectory field's Browse… picker looks.
+#[cfg(not(target_arch = "wasm32"))]
+fn launch_robomimic_convert(input_hdf5: &str, output_dir: &str) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = repo_root.join("tools").join("convert_robomimic_demos.bat");
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "Convert Robomimic Demos"])
+        .arg("cmd")
+        .arg("/K")
+        .arg(&script)
+        .arg(input_hdf5)
+        .arg(output_dir)
+        .current_dir(&repo_root)
+        .spawn();
+    match result {
+        Ok(_) => log!("Launched robomimic conversion of '{input_hdf5}' -> '{output_dir}' -- watch the new console window for progress/errors."),
+        Err(e) => log!("Failed to launch robomimic conversion: {e}"),
     }
 }
 
@@ -1009,43 +1041,22 @@ fn documentation_layout_job(ui: &egui::Ui, text: &str) -> egui::text::LayoutJob 
 /// needed) is via the scene JSON or a type's default text, not this viewer.
 /// `id` scopes the scroll position (e.g. the object's name) so switching
 /// selection doesn't inherit another object's scroll offset.
-fn draw_type_and_documentation(
-    ui: &mut egui::Ui,
-    id: &str,
-    type_name: &str,
-    documentation: &str,
-    show_documentation: &mut bool,
-) {
+fn draw_type_and_documentation(ui: &mut egui::Ui, type_name: &str, documentation: &str) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(type_name).weak());
         ui.separator();
-        let label = if documentation.is_empty() {
-            egui::RichText::new("📖 Documentation").weak()
-        } else {
-            egui::RichText::new("📖 Documentation")
-        };
-        if ui
-            .add(egui::Button::new(label).selected(*show_documentation))
-            .clicked()
-        {
-            *show_documentation = !*show_documentation;
-        }
-    });
-    if *show_documentation {
-        egui::ScrollArea::vertical()
-            .id_salt(format!("doc_scroll_{id}"))
-            .max_height(ui.available_height())
-            .show(ui, |ui| {
+        ui.label(egui::RichText::new("📖 ❓").weak())
+            .on_hover_ui(|ui| {
+                ui.set_max_width(400.0);
                 if documentation.is_empty() {
                     ui.label(egui::RichText::new("No documentation for this object.").weak());
                 } else {
                     let mut job = documentation_layout_job(ui, documentation);
-                    job.wrap.max_width = ui.available_width();
+                    job.wrap.max_width = 400.0;
                     ui.label(job);
                 }
             });
-        ui.separator();
-    }
+    });
 }
 
 /// Accent color for every collapsible section header drawn via
@@ -1069,20 +1080,59 @@ fn section_card_fill(ui: &egui::Ui) -> egui::Color32 {
 /// Wraps `add_contents` in a foldable, subtly-elevated card -- the shared
 /// look for every top-level group in the Mujoco Actor Details panel (see
 /// `SECTION_ACCENT`/`section_card_fill`). Fold state persists per `id` via
-/// egui's own memory, so folding sections you've already configured (Camera,
-/// Task, Live Policy Evaluation) once is what brings Trajectory Playback and
-/// Training Data Export next to each other on screen, without physically
-/// reordering fields that Task/Camera still feed into. `id` must be unique
-/// per actor *and* section (e.g. include the actor's index) -- the panel Ui
-/// itself is reused across whichever actor is selected, so an id scoped only
-/// by section title would share one fold state across every actor. Use the
+/// egui's own memory, so folding sections you've already configured (Policy
+/// Camera, Task, Live Policy Evaluation) once is what brings Trajectory
+/// Playback and Training Data Export next to each other on screen, without
+/// physically reordering fields that Task/Policy Camera still feed into.
+/// `id` must be unique per actor *and* section (e.g. include the actor's
+/// index) -- the panel Ui itself is reused across whichever actor is
+/// selected, so an id scoped only by section title would share one fold
+/// state across every actor. Use the
 /// actor's index, not its name: name is a live-edited text field, so keying
 /// off it would reset every card's fold state on each keystroke.
+///
+/// `width` is an explicit, caller-measured value rather than this card
+/// reading `ui.available_width()` itself: every card in a panel needs to
+/// agree on exactly the same number, measured once before any of them draw,
+/// or the panel visibly resizes as different cards open/close -- each
+/// card's own `available_width()` used to reflect whatever the *previous*
+/// frame's tallest/widest open card happened to leave behind, so opening a
+/// wide card and then a narrow one shrank the whole panel to fit the narrow
+/// one, and vice versa. A single shared measurement removes that feedback
+/// loop; every card, wide content or not, commits to the same width.
+///
+/// `set_width` alone only sets the *layout* width (where children wrap/
+/// align) -- it doesn't force the card to actually be that wide. A
+/// `Frame`'s drawn rect (and the width it reports up to whatever's
+/// measuring the whole panel) shrinks to whatever its content actually
+/// used, so a card with no full-width widget of its own (Transform: a
+/// handful of DragValues, none of which stretch) visibly comes out
+/// narrower than one that happens to contain something that does (Trajectory
+/// Playback's Slider). The explicit `allocate_space` below closes that gap:
+/// it claims the full width up front, before `add_contents` runs, so every
+/// card's frame is exactly `width` regardless of what it actually draws.
+///
+/// `description`, if non-empty, adds a small "❓" after the title with its
+/// own hover tooltip -- this is where a card's "what is this section for"
+/// prose belongs instead of a permanently-visible `ui.label` inside
+/// `add_contents`: seven cards' worth of always-on explanatory paragraphs is
+/// most of why this panel got hard to scan in the first place.
+///
+/// Built from `CollapsingState`'s custom-header API rather than the
+/// simpler `CollapsingHeader::new(text).show(...)` specifically so the
+/// tooltip has its own hover target: a plain `CollapsingHeader` only takes
+/// one `WidgetText`, so attaching `.on_hover_text` to its header response
+/// makes the *entire* title row -- icon, title, all of it -- show the
+/// tooltip on hover, not just the "❓". The title label and the "❓" are
+/// drawn as two separate widgets in the same header row here so only the
+/// latter actually triggers it.
 fn section_card(
     ui: &mut egui::Ui,
+    width: f32,
     id: &str,
     icon: &str,
     title: &str,
+    description: &str,
     default_open: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
@@ -1090,15 +1140,47 @@ fn section_card(
         .fill(section_card_fill(ui))
         .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            egui::CollapsingHeader::new(
-                egui::RichText::new(format!("{icon} {title}"))
-                    .color(SECTION_ACCENT)
-                    .strong(),
+            let content_width = width - 16.0; // 16 = the inner_margin above, both sides
+            ui.set_width(content_width);
+            ui.allocate_space(egui::vec2(content_width, 0.0));
+
+            // Set from inside show_header's closure below, read after it
+            // returns -- HeaderResponse doesn't expose its inner header
+            // Response publicly, so this is simpler than threading the
+            // click through the closure's own return value.
+            let mut title_clicked = false;
+            let mut header = egui::collapsing_header::CollapsingState::load_with_default_open(
+                ui.ctx(),
+                ui.make_persistent_id(id),
+                default_open,
             )
-            .id_salt(id)
-            .default_open(default_open)
-            .show(ui, add_contents);
+            .show_header(ui, |ui| {
+                // Sense::click(), unlike a plain ui.label(...): a bare label
+                // never reports clicks at all.
+                let title_response = ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{icon} {title}"))
+                            .color(SECTION_ACCENT)
+                            .strong(),
+                    )
+                    .sense(egui::Sense::click()),
+                );
+                title_clicked = title_response.clicked();
+                if !description.is_empty() {
+                    ui.label(egui::RichText::new("❓").color(SECTION_ACCENT))
+                        .on_hover_text(description);
+                }
+            });
+            // CollapsingHeader::new(...).show(...) toggles on a click
+            // anywhere in the header row for free; the custom-header API
+            // above only wires that up for its own default arrow button, so
+            // clicking the title is replicated here to match -- only
+            // hovering the "❓" specifically is scoped differently from
+            // that simpler version.
+            if title_clicked {
+                header.toggle();
+            }
+            header.body_unindented(add_contents);
         });
     ui.add_space(6.0);
 }
@@ -1113,6 +1195,29 @@ fn push_policy_log(actor: &mut MujocoSceneActor, line: String) {
     }
 }
 
+/// Namespace for a Mujoco Actor's training-data export/TFDS dataset --
+/// `xml_path`'s own file stem (e.g. `panda_hang`, `panda_lift`), `None` if
+/// it's empty or has no stem (nothing bound yet).
+///
+/// Deliberately *not* `current_scene_name` (the saved scene .json's own
+/// name): one scene file can hold several Mujoco Actors that all share the
+/// same splat/lighting/post-process/camera rig but represent different
+/// tasks (see panda_hang.xml vs panda_lift.xml -- built specifically so a
+/// shared world doesn't have to be duplicated per task), and those still
+/// need disjoint export folders. Keying off the MJCF each actor is actually
+/// bound to gets that for free with no extra field to keep in sync: a real
+/// setup already needs a different MJCF per task, so its filename is
+/// already a meaningful, always-present, per-task identifier. This is
+/// exactly what building panda_lift.xml against the same panda_scene.json
+/// ToolHang uses would otherwise silently collide on -- both used to
+/// resolve to the same `current_scene_name`, which is what clobbered an
+/// existing TFDS build the first time this came up.
+#[cfg(not(target_arch = "wasm32"))]
+fn dataset_namespace_for(xml_path: &str) -> Option<String> {
+    let stem = std::path::Path::new(xml_path).file_stem()?.to_str()?;
+    (!stem.is_empty()).then(|| stem.to_string())
+}
+
 /// Starts a training-data export of `actor`'s currently-bound clip (see the
 /// "Export Training Data" button in the Policy Control panel): pre-computes
 /// every frame's `policy_ee_body` world pose + gripper closedness in one
@@ -1123,8 +1228,8 @@ fn push_policy_log(actor: &mut MujocoSceneActor, line: String) {
 /// No-op beyond a status message if there's no bound scene/clip, the
 /// configured `policy_ee_body` doesn't exist on this model, or the output
 /// directory/manifest can't be created. `scene_namespace` scopes the output
-/// folder (see `policy_dataset::export_dir_for`) -- pass the caller's
-/// `current_scene_name` (or its "unsaved" fallback).
+/// folder (see `policy_dataset::export_dir_for`) -- pass
+/// `dataset_namespace_for(&actor.xml_path)`'s value, not something guessed.
 #[cfg(not(target_arch = "wasm32"))]
 fn start_export(actor: &mut MujocoSceneActor, scene_namespace: &str) {
     let Some((scene, clip)) = actor.scene.as_mut().zip(actor.clip.clone()) else {
@@ -1258,9 +1363,6 @@ struct MujocoSceneActor {
     /// via MujocoActorDto since it's genuinely scene data, not transient
     /// run state.
     documentation: String,
-    /// Whether the documentation editor below is currently expanded --
-    /// UI-only, not persisted/undo-snapshotted (same as `show_camera_preview`).
-    show_documentation: bool,
     scene: Option<MujocoScene>,
     // Real triangle-mesh actors for the scene's mesh-type geoms (registered
     // into the renderer's own actor map, see `tick_mujoco_actors`) -- index-
@@ -1406,6 +1508,18 @@ struct MujocoSceneActor {
     /// UI input, not persisted.
     #[cfg(not(target_arch = "wasm32"))]
     eval_adapter_dir: String,
+    /// Path to a robomimic `*_low_dim.hdf5` file to convert (see
+    /// `launch_robomimic_convert`'s `tools/convert_robomimic_demos.bat`,
+    /// which wraps `tools/robomimic_to_trajectory.py --all`). Transient UI
+    /// input, not persisted, same shape as `resume_adapter_dir`/
+    /// `eval_adapter_dir` above.
+    #[cfg(not(target_arch = "wasm32"))]
+    robomimic_hdf5_path: String,
+    /// Directory the conversion above writes `demo_N.json` clips to --
+    /// typically somewhere under `game_assets/mujoco/trajectories/` so a
+    /// Trajectory field's Browse… picker finds them afterward.
+    #[cfg(not(target_arch = "wasm32"))]
+    robomimic_output_dir: String,
     /// Remaining trajectory-clip paths for a "Batch Export…" run, front of
     /// the queue first -- drained one clip at a time by `tick_mujoco_actors`
     /// once the previous clip's export finishes (or is skipped, e.g. a clip
@@ -1434,7 +1548,6 @@ impl MujocoSceneActor {
             speed: 1.0,
             wireframe: true,
             documentation: default_mujoco_documentation(),
-            show_documentation: false,
             scene: None,
             mesh_geom_actors: Vec::new(),
             mesh_model_cache: std::collections::HashMap::new(),
@@ -1480,6 +1593,10 @@ impl MujocoSceneActor {
             #[cfg(not(target_arch = "wasm32"))]
             eval_adapter_dir: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
+            robomimic_hdf5_path: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            robomimic_output_dir: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             export_queue: Vec::new(),
         }
     }
@@ -1510,10 +1627,12 @@ impl editor::EditorInspect for MujocoSceneActor {
         // the custom UI in EditorTab::Details), not typed here.
         changed |= visitor.edit_vec3("Position", &mut self.position);
         changed |= visitor.edit_rotation("Rotation", &mut self.rotation);
-        changed |= visitor.edit_bool("Playing", &mut self.playing);
         changed |= visitor.edit_float("Speed", &mut self.speed);
-        changed |= visitor.edit_bool("Looping", &mut self.looping);
         changed |= visitor.edit_bool("Wireframe", &mut self.wireframe);
+        // Playing/Looping are drawn in the Trajectory Playback card instead
+        // (see the Details panel's custom UI) -- they're clip-playback
+        // controls, not object transform, and that's where Time/Step/Reset
+        // already live.
         if let Some(scene) = &mut self.scene {
             scene.set_playing(self.playing);
             scene.set_speed(self.speed);
@@ -2404,7 +2523,16 @@ fn draw_outliner_section(
         ui.horizontal(|ui| {
             if *name_edit == Some(this) {
                 // Inline rename: save on Enter/blur, cancel on Escape.
-                let edit_resp = ui.text_edit_singleline(name_edit_buffer);
+                // Width is capped to leave room for the delete button drawn
+                // after it below -- text_edit_singleline defaults to a fixed
+                // ~280pt desired width, wider than this row ever is, and a
+                // horizontal layout doesn't clip an overflowing sibling, so
+                // an unbounded edit box here silently widened the whole
+                // panel for as long as a rename was in progress.
+                let edit_resp = ui.add(
+                    egui::TextEdit::singleline(name_edit_buffer)
+                        .desired_width(ui.available_width() - 32.0),
+                );
                 if *name_edit_focus {
                     edit_resp.request_focus();
                     *name_edit_focus = false;
@@ -2524,13 +2652,24 @@ pub struct SplatGame {
     // cached so native doesn't stat the config file every frame).
     has_custom_startup: bool,
     // File stem of the last scene explicitly saved-as or loaded this session
-    // (e.g. "panda_scene"), restored from `editor_config::load_startup_scene_name`
-    // on a launch that auto-loads a saved startup scene, or None otherwise
-    // (a brand new, never-named scene). Namespaces training-data exports (see
-    // `policy_dataset::export_dir_for`) so switching to a differently-calibrated
-    // scene (a new policy camera, a different MJCF) can't silently mix its
-    // exports into an older scene's folder.
+    // (e.g. "panda_scene"), restored on a launch that auto-loads a startup
+    // scene (native: derived from `current_scene_path`'s own file stem; web:
+    // restored from `editor_config::load_startup_scene_name`, which has no
+    // path to derive it from), or None otherwise (a brand new, never-named
+    // scene). NOT what training-data exports are namespaced by -- see
+    // `dataset_namespace_for` for that (keyed off each Mujoco Actor's own
+    // XML Path instead, since one scene file can hold several actors/tasks
+    // sharing the same splat/lighting/camera rig, and they still need
+    // disjoint export folders despite sharing this name).
     current_scene_name: Option<String>,
+    // Real on-disk path backing `current_scene_name`, if the scene came from
+    // an actual file (Save Scene…, Load Scene…, or an auto-loaded startup
+    // scene) -- None for a fresh/never-saved scene. Lets "Use current scene
+    // as start-up" just remember this path instead of re-serializing a
+    // duplicate copy of the scene. Native-only: web scenes never have a real
+    // filesystem path to remember (see editor_config's startup-scene docs).
+    #[cfg(not(target_arch = "wasm32"))]
+    current_scene_path: Option<std::path::PathBuf>,
     // Resource highlighted in the bottom Resources panel: shown in the right
     // panel's Resource inspector tab, and (for models) offered to the Details
     // panel's Model row as a one-click assignment.
@@ -2570,6 +2709,16 @@ pub struct SplatGame {
     // export does.
     #[cfg(not(target_arch = "wasm32"))]
     picked_mujoco_trajectory_batch: Arc<Mutex<Option<(String, Vec<String>)>>>,
+    // "Browse…" plumbing for a MujocoSceneActor's Robomimic Import fields:
+    // (actor name, resolved path) lands here for a later tick to assign.
+    // Native-only, like the rest of the conversion feature (see
+    // `open_robomimic_hdf5_picker`) -- there's no wasm story for reading an
+    // arbitrary local .hdf5 or writing trajectory JSON out to a folder.
+    #[cfg(not(target_arch = "wasm32"))]
+    picked_robomimic_hdf5: Arc<Mutex<Option<(String, String)>>>,
+    // The same, for the Output Dir field (see `open_robomimic_output_dir_picker`).
+    #[cfg(not(target_arch = "wasm32"))]
+    picked_robomimic_output_dir: Arc<Mutex<Option<(String, String)>>>,
     // Object currently being renamed (double-click in the Scene tab).
     name_edit: Option<Selection>,
     // The rename field's working text.  Persists across frames -- re-deriving
@@ -2674,27 +2823,29 @@ pub struct SplatGame {
     // Reassigned when the matching model finishes uploading.
     pending_actor_models: Vec<(usize, String)>,
     picker_state: Arc<Mutex<PickerState>>,
-    // "Load Scene" plumbing: the picked file's (name, bytes) land here for a
-    // later tick to parse (the file dialog runs async, like the .ply picker).
-    // The name is the file stem (e.g. "panda_scene"), used to set
-    // `current_scene_name` once the load actually succeeds.
-    picked_scene: Arc<Mutex<Option<(String, Vec<u8>)>>>,
-    // Settings > "Choose start-up scene…" plumbing: the picked file's bytes are
-    // validated and persisted as the startup scene on a later tick. Shares
-    // `open_scene_picker_into`'s (name, bytes) shape with `picked_scene`
-    // above, but the name is unused here -- the startup scene never has a
-    // meaningful "current scene name" (see `current_scene_name`'s field doc).
-    picked_startup: Arc<Mutex<Option<(String, Vec<u8>)>>>,
-    // "Save Scene…" plumbing: the file stem the user actually saved to lands
-    // here once the (async, native-only) save dialog completes, for a later
-    // tick to copy into `current_scene_name`. Native-only because the wasm
-    // save path (the File System Access API, or its download fallback) has
-    // no reliable way to recover the chosen name -- and the only consumer of
-    // `current_scene_name`, training-data export, is native-only anyway (see
-    // `MujocoSceneActor::export_pending`'s docs), so there's nothing to wire
-    // up on wasm regardless.
+    // "Load Scene" plumbing: the picked file's (name, bytes, path) land here
+    // for a later tick to parse (the file dialog runs async, like the .ply
+    // picker). The name is the file stem (e.g. "panda_scene"), used to set
+    // `current_scene_name` once the load actually succeeds; the path is
+    // native-only (always None on web -- see `open_scene_picker_into`) and
+    // sets `current_scene_path` alongside it.
+    picked_scene: Arc<Mutex<Option<(String, Vec<u8>, Option<std::path::PathBuf>)>>>,
+    // Settings > "Choose start-up scene…" plumbing: shares
+    // `open_scene_picker_into`'s (name, bytes, path) shape with `picked_scene`
+    // above. Native persists just the path (see
+    // `editor_config::save_startup_scene_path`); web has no real path, so it
+    // persists the validated bytes as the startup scene content instead.
+    picked_startup: Arc<Mutex<Option<(String, Vec<u8>, Option<std::path::PathBuf>)>>>,
+    // "Save Scene…" plumbing: the (file stem, path) the user actually saved
+    // to lands here once the (async, native-only) save dialog completes, for
+    // a later tick to copy into `current_scene_name`/`current_scene_path`.
+    // Native-only because the wasm save path (the File System Access API, or
+    // its download fallback) has no reliable way to recover the chosen
+    // name/path -- and the only consumers, training-data export and the
+    // startup-scene path (see `MujocoSceneActor::export_pending`'s docs), are
+    // native-only anyway, so there's nothing to wire up on wasm regardless.
     #[cfg(not(target_arch = "wasm32"))]
-    saved_scene_name: Arc<Mutex<Option<String>>>,
+    saved_scene: Arc<Mutex<Option<(String, std::path::PathBuf)>>>,
     // Splat clouds a scene load requested: their .ply bytes are fetched on a
     // background task (native thread / wasm fetch) and applied here in a later
     // tick, since cloud creation must happen on the render thread.
@@ -2921,6 +3072,53 @@ impl SplatGame {
                     .map(|f| f.path().to_string_lossy().into_owned())
                     .collect();
                 *picked.lock().unwrap() = Some((actor_name, paths));
+            }
+        };
+        std::thread::spawn(move || pollster::block_on(pick));
+    }
+
+    /// Opens the file dialog to pick a robomimic `*_low_dim.hdf5` file for a
+    /// MujocoSceneActor's Robomimic Import "HDF5 Path" field, landing the
+    /// result in `picked_robomimic_hdf5`. Native-only, like the rest of the
+    /// conversion feature (see `launch_robomimic_convert`).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_robomimic_hdf5_picker(&self, actor_name: String) {
+        let picked = self.picked_robomimic_hdf5.clone();
+        let dialog = rfd::AsyncFileDialog::new().add_filter("Robomimic HDF5", &["hdf5"]);
+        let dialog = match editor_config::load_last_dir("robomimic_hdf5") {
+            Some(dir) => dialog.set_directory(dir),
+            None => dialog,
+        };
+        let pick = async move {
+            if let Some(file) = dialog.pick_file().await {
+                if let Some(parent) = file.path().parent() {
+                    editor_config::save_last_dir("robomimic_hdf5", parent);
+                }
+                let path = file.path().to_string_lossy().into_owned();
+                *picked.lock().unwrap() = Some((actor_name, path));
+            }
+        };
+        std::thread::spawn(move || pollster::block_on(pick));
+    }
+
+    /// Opens the folder dialog to pick where a robomimic conversion writes
+    /// its trajectory JSON clips (a MujocoSceneActor's Robomimic Import
+    /// "Output Dir" field), landing the result in
+    /// `picked_robomimic_output_dir`. Native-only, same as the HDF5 picker
+    /// above.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_robomimic_output_dir_picker(&self, actor_name: String) {
+        let picked = self.picked_robomimic_output_dir.clone();
+        let dialog = rfd::AsyncFileDialog::new();
+        let dialog = match editor_config::load_last_dir("robomimic_output_dir") {
+            Some(dir) => dialog.set_directory(dir),
+            None => dialog,
+        };
+        let pick = async move {
+            if let Some(folder) = dialog.pick_folder().await {
+                let path = folder.path().to_string_lossy().into_owned();
+                editor_config::save_last_dir("robomimic_output_dir", folder.path());
+                *picked.lock().unwrap() = Some((actor_name, path));
             }
         };
         std::thread::spawn(move || pollster::block_on(pick));
@@ -3693,7 +3891,6 @@ impl SplatGame {
                     speed: m.speed,
                     wireframe: m.wireframe,
                     documentation: m.documentation.clone(),
-                    show_documentation: false,
                     scene: None,
                     mesh_geom_actors: Vec::new(),
                     mesh_model_cache: std::collections::HashMap::new(),
@@ -3743,6 +3940,10 @@ impl SplatGame {
                     holdout_demos: String::new(),
                     #[cfg(not(target_arch = "wasm32"))]
                     eval_adapter_dir: String::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    robomimic_hdf5_path: String::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    robomimic_output_dir: String::new(),
                     #[cfg(not(target_arch = "wasm32"))]
                     export_queue: Vec::new(),
                 });
@@ -4434,7 +4635,7 @@ impl SplatGame {
                     // call) -- exactly like it would for any real, non-square
                     // camera photo -- so there's no need to pre-square this
                     // ourselves, only to avoid pre-distorting it.
-                    let (capture_width, capture_height) = policy_capture_dims(game_config);
+                    let (capture_width, capture_height) = POLICY_CAPTURE_DIMS;
                     #[cfg(not(target_arch = "wasm32"))]
                     match renderer.capture_frame_png(
                         game_config,
@@ -4514,7 +4715,7 @@ impl SplatGame {
             if actor.preview_requested && !actor.preview_pending {
                 actor.preview_requested = false;
                 let policy_camera = policy_camera_for(actor);
-                let (capture_width, capture_height) = policy_capture_dims(game_config);
+                let (capture_width, capture_height) = POLICY_CAPTURE_DIMS;
                 #[cfg(not(target_arch = "wasm32"))]
                 match renderer.capture_frame_png(
                     game_config,
@@ -4573,7 +4774,7 @@ impl SplatGame {
                     continue;
                 };
                 let policy_camera = policy_camera_for(actor);
-                let (capture_width, capture_height) = policy_capture_dims(game_config);
+                let (capture_width, capture_height) = POLICY_CAPTURE_DIMS;
                 match renderer.capture_frame_png(
                     game_config,
                     &policy_camera,
@@ -4662,16 +4863,16 @@ impl SplatGame {
                         // a bad clip can't wedge the whole batch.
                         actor.export_queue.remove(0);
                         if let (true, Some(scene_namespace)) =
-                            (actor.clip.is_some(), self.current_scene_name.as_deref())
+                            (actor.clip.is_some(), dataset_namespace_for(&actor.xml_path))
                         {
-                            start_export(actor, scene_namespace);
+                            start_export(actor, &scene_namespace);
                         } else if actor.clip.is_some() {
-                            // Scene name vanished mid-batch (e.g. a new/unnamed
-                            // scene got loaded while this was running) -- skip
-                            // rather than silently falling back to an "unsaved"
-                            // bucket, same reasoning as the Export panel's gate.
+                            // XML Path vanished mid-batch (e.g. cleared while
+                            // this was running) -- skip rather than silently
+                            // falling back to an "unsaved" bucket, same
+                            // reasoning as the Export panel's gate.
                             actor.export_status = format!(
-                                "Batch: skipped '{next_path}' -- scene name was lost mid-batch"
+                                "Batch: skipped '{next_path}' -- no XML Path to namespace the export by"
                             );
                         } else {
                             actor.export_status =
@@ -4987,7 +5188,7 @@ impl SplatGame {
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let saved_scene_name = self.saved_scene_name.clone();
+            let saved_scene = self.saved_scene.clone();
             let task = async move {
                 let dialog = rfd::AsyncFileDialog::new()
                     .set_file_name("scene.json")
@@ -5007,7 +5208,7 @@ impl SplatGame {
                             .and_then(|s| s.to_str())
                             .unwrap_or("scene")
                             .to_string();
-                        *saved_scene_name.lock().unwrap() = Some(name);
+                        *saved_scene.lock().unwrap() = Some((name, file.path().to_path_buf()));
                     }
                 }
             };
@@ -5032,11 +5233,13 @@ impl SplatGame {
     }
 
     /// Opens the async file dialog to pick a scene .json; its (file stem,
-    /// bytes) land in `destination` for a later tick to handle.  Used by
-    /// both File > Load Scene (`picked_scene`) and the startup-scene setting
-    /// (`picked_startup`) -- the latter ignores the name (see
-    /// `current_scene_name`'s field doc).
-    fn open_scene_picker_into(destination: Arc<Mutex<Option<(String, Vec<u8>)>>>) {
+    /// bytes, real path) land in `destination` for a later tick to handle.
+    /// The path is native-only (always `None` on web, which has no real
+    /// filesystem path to give). Used by both File > Load Scene
+    /// (`picked_scene`) and the startup-scene setting (`picked_startup`).
+    fn open_scene_picker_into(
+        destination: Arc<Mutex<Option<(String, Vec<u8>, Option<std::path::PathBuf>)>>>,
+    ) {
         let task = async move {
             let dialog = rfd::AsyncFileDialog::new();
             #[cfg(not(target_arch = "wasm32"))]
@@ -5047,16 +5250,21 @@ impl SplatGame {
             };
             if let Some(file) = dialog.pick_file().await {
                 #[cfg(not(target_arch = "wasm32"))]
-                if let Some(parent) = file.path().parent() {
-                    editor_config::save_last_dir("scenes", parent);
-                }
+                let path = {
+                    if let Some(parent) = file.path().parent() {
+                        editor_config::save_last_dir("scenes", parent);
+                    }
+                    Some(file.path().to_path_buf())
+                };
+                #[cfg(target_arch = "wasm32")]
+                let path: Option<std::path::PathBuf> = None;
                 let name = std::path::Path::new(&file.file_name())
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("scene")
                     .to_string();
                 let bytes = file.read().await;
-                *destination.lock().unwrap() = Some((name, bytes));
+                *destination.lock().unwrap() = Some((name, bytes, path));
             }
         };
         #[cfg(target_arch = "wasm32")]
@@ -5075,6 +5283,10 @@ impl SplatGame {
         // whatever was cleared -- the `picked_scene` drain site re-sets this
         // to the new name immediately after a load that actually succeeds.
         self.current_scene_name = None;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.current_scene_path = None;
+        }
         for actor in self.scene_actors.drain(..) {
             renderer.remove_actor(&actor);
         }
@@ -5199,7 +5411,6 @@ impl SplatGame {
                 speed: dto.speed,
                 wireframe: dto.wireframe,
                 documentation: dto.documentation.clone(),
-                show_documentation: false,
                 scene: None,
                 mesh_geom_actors: Vec::new(),
                 mesh_model_cache: std::collections::HashMap::new(),
@@ -5251,6 +5462,10 @@ impl SplatGame {
                 holdout_demos: String::new(),
                 #[cfg(not(target_arch = "wasm32"))]
                 eval_adapter_dir: String::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                robomimic_hdf5_path: String::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                robomimic_output_dir: String::new(),
                 #[cfg(not(target_arch = "wasm32"))]
                 export_queue: Vec::new(),
             });
@@ -5542,6 +5757,10 @@ impl GameEngine for SplatGame {
             picked_mujoco_trajectory: Arc::new(Mutex::new(None)),
             #[cfg(not(target_arch = "wasm32"))]
             picked_mujoco_trajectory_batch: Arc::new(Mutex::new(None)),
+            #[cfg(not(target_arch = "wasm32"))]
+            picked_robomimic_hdf5: Arc::new(Mutex::new(None)),
+            #[cfg(not(target_arch = "wasm32"))]
+            picked_robomimic_output_dir: Arc::new(Mutex::new(None)),
             scene_actors: Vec::new(),
             scene_lights: Vec::new(),
             scene_particles: Vec::new(),
@@ -5559,8 +5778,16 @@ impl GameEngine for SplatGame {
             rmb_look_engaged: false,
             confirm_delete: None,
             confirm_new_scene: false,
-            has_custom_startup: editor_config::load_startup_scene().is_some(),
+            has_custom_startup: {
+                #[cfg(not(target_arch = "wasm32"))]
+                let result = editor_config::load_startup_scene_path().is_some();
+                #[cfg(target_arch = "wasm32")]
+                let result = editor_config::load_startup_scene().is_some();
+                result
+            },
             current_scene_name: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            current_scene_path: None,
             selected_resource: None,
             // Seed the particle library with the built-in presets; if the user
             // has a saved library on disk, initialize_world replaces this.
@@ -5604,7 +5831,7 @@ impl GameEngine for SplatGame {
             picked_scene: Arc::new(Mutex::new(None)),
             picked_startup: Arc::new(Mutex::new(None)),
             #[cfg(not(target_arch = "wasm32"))]
-            saved_scene_name: Arc::new(Mutex::new(None)),
+            saved_scene: Arc::new(Mutex::new(None)),
             pending_splats: Arc::new(Mutex::new(Vec::new())),
             status: None,
             touch_pads: {
@@ -5746,6 +5973,34 @@ impl GameEngine for SplatGame {
         // Open the startup scene: the user's saved one, or the built-in default
         // (the church) otherwise.  Since we're async here, splat clouds load
         // directly instead of through the pending queue.
+        #[cfg(not(target_arch = "wasm32"))]
+        let scene = editor_config::load_startup_scene_path()
+            .and_then(|path| {
+                let json = std::fs::read_to_string(&path).ok()?;
+                match serde_json::from_str::<SceneFile>(&json) {
+                    Ok(scene) => {
+                        // Restores the namespace a saved startup scene exports
+                        // under -- otherwise every relaunch forgot it until an
+                        // explicit Save Scene.../Load Scene... this session (see
+                        // `current_scene_name`'s field doc). Derived straight
+                        // from the path's own file stem -- no separate name
+                        // cache needed now that the startup scene is a real
+                        // file rather than a duplicated snapshot.
+                        self.current_scene_name = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.to_string());
+                        self.current_scene_path = Some(path);
+                        Some(scene)
+                    }
+                    Err(e) => {
+                        log!("Bad startup scene ({}): {e}; using the default", path.display());
+                        None
+                    }
+                }
+            })
+            .unwrap_or_else(default_startup_scene);
+        #[cfg(target_arch = "wasm32")]
         let scene = editor_config::load_startup_scene()
             .and_then(|json| match serde_json::from_str::<SceneFile>(&json) {
                 Ok(scene) => {
@@ -6016,6 +6271,10 @@ impl GameEngine for SplatGame {
         let mut mujoco_traj_browse_request: Option<String> = None;
         #[cfg(not(target_arch = "wasm32"))]
         let mut mujoco_traj_batch_browse_request: Option<String> = None;
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut robomimic_hdf5_browse_request: Option<String> = None;
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut robomimic_output_dir_browse_request: Option<String> = None;
         // Set to a catalog path when the user clicks a not-yet-loaded model tile
         // in the browser; applied after the egui pass (loads it, then selects).
         let mut model_load_request: Option<String> = None;
@@ -6634,7 +6893,21 @@ impl GameEngine for SplatGame {
                         egui::ScrollArea::vertical()
                             .max_height(scroll_height)
                             .show(ui, |ui| {
-                                ui.set_width(PANEL_WIDTH);
+                                // Not ui.set_width(PANEL_WIDTH): the scroll
+                                // area already reserves room for its own
+                                // vertical scrollbar and hands this closure a
+                                // correspondingly narrower rect whenever the
+                                // bar is visible. Forcing the full panel width
+                                // back here fought that reservation, so the
+                                // content (and the whole fixed-width panel,
+                                // and Area::constrain_to along with it) grew
+                                // and shrank by the scrollbar's width as the
+                                // bar faded in/out -- the panel visibly
+                                // jittering against the right edge of the
+                                // screen. take_available_width() reserves the
+                                // same minimum without exceeding whatever
+                                // width the scroll area actually offered.
+                                ui.take_available_width();
                                 match active_tab {
                                     EditorTab::Scene => {
                                         // Always-present scene-wide post-process
@@ -6841,16 +7114,11 @@ impl GameEngine for SplatGame {
                                                     selection_edited = true;
                                                     details_edited = true;
                                                 }
-                                                let mut show_documentation =
-                                                    actor.get_show_documentation();
                                                 draw_type_and_documentation(
                                                     ui,
-                                                    actor.get_name(),
                                                     "Actor",
                                                     actor.get_documentation(),
-                                                    &mut show_documentation,
                                                 );
-                                                actor.set_show_documentation(show_documentation);
                                                 let changed = editor::draw_properties(
                                                     ui,
                                                     actor,
@@ -6914,6 +7182,11 @@ impl GameEngine for SplatGame {
                                         }
                                         Some(Selection::MujocoActor(i)) => {
                                             if let Some(m) = self.scene_mujoco_actors.get_mut(i) {
+                                                // Measured once, before any section_card below draws,
+                                                // so every card commits to the same width regardless
+                                                // of which cards are open -- see section_card's own
+                                                // doc for why per-card available_width() doesn't work.
+                                                let card_width = ui.available_width();
                                                 ui.label("Name");
                                                 if ui.text_edit_singleline(&mut m.name).changed() {
                                                     selection_edited = true;
@@ -6921,16 +7194,17 @@ impl GameEngine for SplatGame {
                                                 }
                                                 draw_type_and_documentation(
                                                     ui,
-                                                    &m.name,
                                                     "Mujoco Actor",
                                                     &m.documentation,
-                                                    &mut m.show_documentation,
                                                 );
                                                 section_card(
                                                     ui,
+                                                    card_width,
                                                     &format!("mujoco_transform_{i}"),
                                                     "🧭",
                                                     "Transform",
+                                                    "Where this actor sits in the scene, plus playback \
+                                                     speed and the debug wireframe toggle.",
                                                     true,
                                                     |ui| {
                                                         let changed = editor::draw_properties(
@@ -6945,11 +7219,100 @@ impl GameEngine for SplatGame {
                                                         details_edited |= changed;
                                                     },
                                                 );
+                                                #[cfg(not(target_arch = "wasm32"))]
                                                 section_card(
                                                     ui,
+                                                    card_width,
+                                                    &format!("mujoco_robomimic_{i}"),
+                                                    "📥",
+                                                    "Robomimic Import",
+                                                    "One-time conversion from a robomimic *_low_dim.hdf5 \
+                                                     demo file into trajectory clips this engine can play \
+                                                     back -- run this once per source file, then point \
+                                                     Trajectory below (Browse…) at one of the resulting \
+                                                     demo_N.json files.",
+                                                    false,
+                                                    |ui| {
+                                                        ui.label("HDF5 Path");
+                                                        ui.horizontal(|ui| {
+                                                            // Display-only, same as XML Path/Trajectory
+                                                            // above: typing a path by hand invites typos
+                                                            // a real file dialog can't produce.
+                                                            let mut display = m.robomimic_hdf5_path.clone();
+                                                            ui.add_enabled(
+                                                                false,
+                                                                egui::TextEdit::singleline(&mut display),
+                                                            );
+                                                            if ui.button("Browse…").clicked() {
+                                                                robomimic_hdf5_browse_request =
+                                                                    Some(m.name.clone());
+                                                            }
+                                                        });
+                                                        ui.label("Output Dir");
+                                                        ui.horizontal(|ui| {
+                                                            let mut display = m.robomimic_output_dir.clone();
+                                                            ui.add_enabled(
+                                                                false,
+                                                                egui::TextEdit::singleline(&mut display),
+                                                            );
+                                                            if ui.button("Browse…").clicked() {
+                                                                robomimic_output_dir_browse_request =
+                                                                    Some(m.name.clone());
+                                                            }
+                                                        })
+                                                        .response
+                                                        .on_hover_text(
+                                                            "One demo_N.json written here per demo in the \
+                                                             HDF5 file -- typically somewhere under \
+                                                             game_assets\\mujoco\\trajectories\\ so a \
+                                                             Trajectory field's own Browse… picker finds \
+                                                             them afterward.",
+                                                        );
+                                                        let hdf5_path = m.robomimic_hdf5_path.trim();
+                                                        let output_dir = m.robomimic_output_dir.trim();
+                                                        let inputs_look_valid = !hdf5_path.is_empty()
+                                                            && !output_dir.is_empty()
+                                                            && std::path::Path::new(hdf5_path).is_file();
+                                                        if !hdf5_path.is_empty()
+                                                            && !std::path::Path::new(hdf5_path).is_file()
+                                                        {
+                                                            ui.colored_label(
+                                                                egui::Color32::from_rgb(235, 80, 80),
+                                                                "No file found at that HDF5 Path.",
+                                                            );
+                                                        }
+                                                        if ui
+                                                            .add_enabled(
+                                                                inputs_look_valid,
+                                                                egui::Button::new("Convert Robomimic Demos…"),
+                                                            )
+                                                            .on_hover_text(
+                                                                "Runs tools/convert_robomimic_demos.bat in a new \
+                                                                 console window -- converts every demo in HDF5 Path \
+                                                                 into trajectory JSON under Output Dir via \
+                                                                 tools/robomimic_to_trajectory.py --all. Assumes the \
+                                                                 default joint names (panda.xml's joint1..joint7, \
+                                                                 finger_joint1/2) -- pass --joint-names by hand for a \
+                                                                 different target MJCF.",
+                                                            )
+                                                            .clicked()
+                                                        {
+                                                            launch_robomimic_convert(hdf5_path, output_dir);
+                                                        }
+                                                    },
+                                                );
+                                                section_card(
+                                                    ui,
+                                                    card_width,
                                                     &format!("mujoco_trajectory_{i}"),
                                                     "▶",
                                                     "Trajectory Playback",
+                                                    "Loads a MuJoCo scene XML, then (optionally) replays a \
+                                                     recorded trajectory clip against it: physics off, \
+                                                     scrub/step through the recorded qpos directly. This \
+                                                     is also where a clip's frame 0 seeds a real starting \
+                                                     pose for Live Policy Evaluation below (Reset to \
+                                                     Trajectory Start there).",
                                                     true,
                                                     |ui| {
                                                         ui.label("XML Path");
@@ -7015,6 +7378,16 @@ impl GameEngine for SplatGame {
                                                         } else if !m.trajectory_path.is_empty() {
                                                             ui.label("Loading trajectory…");
                                                         }
+                                                        ui.horizontal(|ui| {
+                                                            if ui.checkbox(&mut m.playing, "Playing").changed() {
+                                                                selection_edited = true;
+                                                                details_edited = true;
+                                                            }
+                                                            if ui.checkbox(&mut m.looping, "Looping").changed() {
+                                                                selection_edited = true;
+                                                                details_edited = true;
+                                                            }
+                                                        });
                                                         ui.separator();
                                                         ui.horizontal(|ui| {
                                                             if ui.button("Step").clicked() {
@@ -7044,9 +7417,17 @@ impl GameEngine for SplatGame {
                                                 // up here rather than three times.
                                                 section_card(
                                                     ui,
+                                                    card_width,
                                                     &format!("mujoco_camera_{i}"),
                                                     "📷",
-                                                    "Camera",
+                                                    "Policy Camera",
+                                                    "The fixed, non-interactive camera every capture path \
+                                                     reads from -- live policy inference, Training Data \
+                                                     Export, and the Show Camera Preview button -- \
+                                                     decoupled from the fly cam you navigate the viewport \
+                                                     with. This MUST match whatever viewpoint a serving \
+                                                     checkpoint was actually trained on, or the model sees \
+                                                     out-of-distribution input.",
                                                     false,
                                                     |ui| {
                                                         ui.horizontal(|ui| {
@@ -7122,9 +7503,15 @@ impl GameEngine for SplatGame {
                                                 // read pose from.
                                                 section_card(
                                                     ui,
+                                                    card_width,
                                                     &format!("mujoco_task_{i}"),
                                                     "🎯",
                                                     "Task",
+                                                    "What gets sent alongside every image: Instruction \
+                                                     rides along with both a live policy query and every \
+                                                     exported training tuple; EE Body names the body both \
+                                                     the policy's Jacobian solve and export's forward-\
+                                                     kinematics pose reads come from.",
                                                     false,
                                                     |ui| {
                                                         ui.horizontal(|ui| {
@@ -7140,9 +7527,17 @@ impl GameEngine for SplatGame {
 
                                                 section_card(
                                                     ui,
+                                                    card_width,
                                                     &format!("mujoco_policy_eval_{i}"),
                                                     "🤖",
                                                     "Live Policy Evaluation",
+                                                    "Runs real inference against a policy server and drives \
+                                                     physics from its predictions -- Enabled alone is \
+                                                     enough, physics goes live the instant it's checked. \
+                                                     Reset to Trajectory Start seeds a real recorded pose \
+                                                     first (from whatever's bound in Trajectory Playback \
+                                                     above) instead of starting from the MJCF's own, often \
+                                                     out-of-distribution, default.",
                                                     false,
                                                     |ui| {
                                                         // Live control state, same as clip_time's scrub
@@ -7172,6 +7567,21 @@ impl GameEngine for SplatGame {
                                                                     // survive and the scene starts already in motion.
                                                                     scene.reset();
                                                                     scene.apply_trajectory_frame(clip, 0);
+                                                                    // reset() also zeroed ctrl, and apply_trajectory_frame
+                                                                    // never touches it -- if physics is already live
+                                                                    // (policy control running), the position servos
+                                                                    // would otherwise immediately yank the arm from the
+                                                                    // pose just written back toward that stale zero
+                                                                    // target instead of holding it. Same fix as the
+                                                                    // kinematic -> physics transition below.
+                                                                    let arm_actuators: Vec<&str> = m
+                                                                        .policy_arm_actuators_csv
+                                                                        .split(',')
+                                                                        .map(str::trim)
+                                                                        .collect();
+                                                                    if let Err(e) = scene.hold_current_pose(&arm_actuators) {
+                                                                        log!("MuJoCo actor '{}': hold_current_pose failed: {e}", m.name);
+                                                                    }
                                                                     m.clip_time = 0.0;
                                                                     m.playing = false;
                                                                 }
@@ -7208,7 +7618,12 @@ impl GameEngine for SplatGame {
                                                         if m.policy_pending {
                                                             ui.label("Waiting on policy server…");
                                                         }
-                                                        ui.label("Policy Log");
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Policy Log");
+                                                            if ui.small_button("Clear").clicked() {
+                                                                m.policy_log.clear();
+                                                            }
+                                                        });
                                                         draw_console_text(
                                                             ui,
                                                             &format!("policy_log_{}", m.name),
@@ -7227,27 +7642,34 @@ impl GameEngine for SplatGame {
                                                 #[cfg(not(target_arch = "wasm32"))]
                                                 section_card(
                                                     ui,
+                                                    card_width,
                                                     &format!("mujoco_export_{i}"),
                                                     "📦",
                                                     "Training Data Export",
+                                                    "Captures the bound clip's frames + Policy Camera view \
+                                                     into OpenVLA's training format, then rebuilds the TFDS \
+                                                     dataset and kicks off fine-tuning -- the offline half \
+                                                     of the pipeline, downstream of everything above.",
                                                     true,
                                                     |ui| {
-                                                        // See `current_scene_name`'s field doc: exports are
-                                                        // namespaced per scene so switching scenes can't
-                                                        // silently mix a differently-calibrated camera's
-                                                        // frames into this one's folder. No fallback name
-                                                        // here on purpose -- a silent "unsaved" bucket is
+                                                        // See `dataset_namespace_for`'s own doc: exports are
+                                                        // namespaced per *MJCF*, not per scene file, so two
+                                                        // actors sharing one scene (same splat/lighting, two
+                                                        // tasks) still land in disjoint folders. No fallback
+                                                        // name here on purpose -- a silent "unsaved" bucket is
                                                         // exactly what caused a real accidental export mixup,
-                                                        // so an unnamed scene blocks export entirely instead.
-                                                        if self.current_scene_name.is_none() {
+                                                        // so no XML Path blocks export entirely instead.
+                                                        let scene_namespace = dataset_namespace_for(&m.xml_path);
+                                                        if scene_namespace.is_none() {
                                                             ui.colored_label(
                                                                 egui::Color32::from_rgb(235, 80, 80),
-                                                                "Save Scene… or Load Scene… first -- exports \
-                                                                 need a real scene name so they can't land in \
-                                                                 the wrong (or an unnamed, throwaway) folder.",
+                                                                "Set an XML Path above first -- exports are \
+                                                                 namespaced by the bound MJCF's own filename \
+                                                                 so they can't land in the wrong (or an \
+                                                                 unnamed, throwaway) folder.",
                                                             );
                                                         }
-                                                        if let Some(scene_namespace) = self.current_scene_name.clone() {
+                                                        if let Some(scene_namespace) = scene_namespace {
                                                             ui.label(format!("Exports land under resources/openvla_datasets/{scene_namespace}/"));
                                                             ui.label(
                                                                 "Replays the bound trajectory through the camera \
@@ -7263,6 +7685,12 @@ impl GameEngine for SplatGame {
                                                                 start_export(m, &scene_namespace);
                                                             }
                                                             if !m.export_status.is_empty() {
+                                                                ui.horizontal(|ui| {
+                                                                    ui.label("Export Status");
+                                                                    if ui.small_button("Clear").clicked() {
+                                                                        m.export_status.clear();
+                                                                    }
+                                                                });
                                                                 draw_console_text(
                                                                     ui,
                                                                     &format!("export_status_{}", m.name),
@@ -7820,11 +8248,29 @@ impl GameEngine for SplatGame {
                                         {
                                             do_pick_startup = true;
                                         }
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        let set_startup_hover = if self.current_scene_path.is_some()
+                                        {
+                                            "Opens this scene on every launch"
+                                        } else {
+                                            "Save Scene… or Load Scene… first -- the \
+                                             start-up scene points at a real file, so \
+                                             it needs one to point at"
+                                        };
+                                        #[cfg(target_arch = "wasm32")]
+                                        let set_startup_hover = "Opens this scene on every launch";
                                         if ui
-                                            .button("Use current scene as start-up")
-                                            .on_hover_text(
-                                                "Opens this scene on every launch",
+                                            .add_enabled(
+                                                {
+                                                    #[cfg(not(target_arch = "wasm32"))]
+                                                    let enabled = self.current_scene_path.is_some();
+                                                    #[cfg(target_arch = "wasm32")]
+                                                    let enabled = true;
+                                                    enabled
+                                                },
+                                                egui::Button::new("Use current scene as start-up"),
                                             )
+                                            .on_hover_text(set_startup_hover)
                                             .clicked()
                                         {
                                             do_set_startup = true;
@@ -8481,6 +8927,14 @@ impl GameEngine for SplatGame {
         if let Some(actor_name) = mujoco_traj_batch_browse_request {
             self.open_mujoco_trajectory_batch_picker(actor_name);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(actor_name) = robomimic_hdf5_browse_request {
+            self.open_robomimic_hdf5_picker(actor_name);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(actor_name) = robomimic_output_dir_browse_request {
+            self.open_robomimic_output_dir_picker(actor_name);
+        }
         // A model tile clicked while still unloaded: load it now (lazy), then
         // select it.  Native loads synchronously; web fetches in the background
         // and the tick that finishes the upload does the select.
@@ -8548,6 +9002,31 @@ impl GameEngine for SplatGame {
                 .find(|a| a.name == actor_name)
             {
                 actor.trajectory_path = path;
+            }
+        }
+        // Likewise for the Robomimic Import section's HDF5 Path / Output Dir
+        // Browse… buttons -- just assigning the field here, unlike the two
+        // above, since there's no scene/trajectory to (re)load off the back
+        // of it: Convert Robomimic Demos… (a separate button) is what
+        // actually does anything with these.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let picked_robomimic_hdf5 = self.picked_robomimic_hdf5.lock().unwrap().take();
+            if let Some((actor_name, path)) = picked_robomimic_hdf5 {
+                if let Some(actor) =
+                    self.scene_mujoco_actors.iter_mut().find(|a| a.name == actor_name)
+                {
+                    actor.robomimic_hdf5_path = path;
+                }
+            }
+            let picked_robomimic_output_dir =
+                self.picked_robomimic_output_dir.lock().unwrap().take();
+            if let Some((actor_name, path)) = picked_robomimic_output_dir {
+                if let Some(actor) =
+                    self.scene_mujoco_actors.iter_mut().find(|a| a.name == actor_name)
+                {
+                    actor.robomimic_output_dir = path;
+                }
             }
         }
         // Likewise for a multi-selected batch of trajectory clips picked via
@@ -8665,23 +9144,48 @@ impl GameEngine for SplatGame {
             self.status = Some(("New scene".to_string(), STATUS_WHITE, 3.0));
         }
         if do_set_startup {
-            // Snapshot the current scene as the startup scene.  Clouds picked
-            // through a browser dialog have no re-readable path and won't
-            // reload; everything else restores on the next launch.
-            if let Ok(json) = serde_json::to_string_pretty(&self.build_scene_file(&model_resources))
+            #[cfg(not(target_arch = "wasm32"))]
             {
-                editor_config::save_startup_scene(&json);
-                editor_config::save_startup_scene_name(self.current_scene_name.as_deref());
-                self.has_custom_startup = editor_config::load_startup_scene().is_some();
-                self.status = Some(if self.has_custom_startup {
-                    ("Start-up scene saved".to_string(), STATUS_WHITE, 4.0)
-                } else {
-                    (
-                        "Couldn't save the start-up scene".to_string(),
-                        STATUS_RED,
-                        6.0,
-                    )
-                });
+                // The Settings tab only enables this once `current_scene_path`
+                // is real (a scene actually saved-as/loaded-from a file), so
+                // this just remembers that existing path -- no
+                // re-serializing/duplicating the scene needed.
+                if let Some(path) = self.current_scene_path.clone() {
+                    editor_config::save_startup_scene_path(&path);
+                    self.has_custom_startup = editor_config::load_startup_scene_path().is_some();
+                    self.status = Some(if self.has_custom_startup {
+                        ("Start-up scene set".to_string(), STATUS_WHITE, 4.0)
+                    } else {
+                        (
+                            "Couldn't save the start-up scene".to_string(),
+                            STATUS_RED,
+                            6.0,
+                        )
+                    });
+                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                // No real filesystem path in the browser, so snapshot the
+                // current scene as the startup scene instead. Clouds picked
+                // through a browser dialog have no re-readable path and won't
+                // reload; everything else restores on the next launch.
+                if let Ok(json) =
+                    serde_json::to_string_pretty(&self.build_scene_file(&model_resources))
+                {
+                    editor_config::save_startup_scene(&json);
+                    editor_config::save_startup_scene_name(self.current_scene_name.as_deref());
+                    self.has_custom_startup = editor_config::load_startup_scene().is_some();
+                    self.status = Some(if self.has_custom_startup {
+                        ("Start-up scene saved".to_string(), STATUS_WHITE, 4.0)
+                    } else {
+                        (
+                            "Couldn't save the start-up scene".to_string(),
+                            STATUS_RED,
+                            6.0,
+                        )
+                    });
+                }
             }
         }
         if do_clear_startup {
@@ -8793,50 +9297,64 @@ impl GameEngine for SplatGame {
                 });
             }
         }
-        // Pick up the file stem from a completed native Save Scene… (async,
-        // see `saved_scene_name`'s field doc).
+        // Pick up the (name, path) from a completed native Save Scene… (async,
+        // see `saved_scene`'s field doc).
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(name) = self.saved_scene_name.lock().unwrap().take() {
+        if let Some((name, path)) = self.saved_scene.lock().unwrap().take() {
             self.current_scene_name = Some(name);
+            self.current_scene_path = Some(path);
         }
         // Apply a loaded scene once its file has been read (async, like the .ply).
         let scene_picked = self.picked_scene.lock().unwrap().take();
-        if let Some((name, bytes)) = scene_picked {
+        if let Some((name, bytes, _path)) = scene_picked {
             self.status = Some(
                 match self.load_scene_from_bytes(&bytes, &model_resources, renderer) {
                     Ok(summary) => {
                         self.current_scene_name = Some(name);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            self.current_scene_path = _path;
+                        }
                         (format!("Loaded scene: {summary}"), STATUS_WHITE, 5.0)
                     }
                     Err(reason) => (format!("Couldn't load scene: {reason}"), STATUS_RED, 10.0),
                 },
             );
         }
-        // Persist a picked startup scene once its file has been read.  Validated
-        // first so a bad pick can't brick the next launch. Name unused -- see
-        // `current_scene_name`'s field doc.
+        // Persist a picked startup scene once its file has been read. Native
+        // just remembers the path (see `editor_config::save_startup_scene_path`);
+        // web has no real path, so it persists the validated bytes as the
+        // startup scene content instead (see `editor_config::save_startup_scene`).
+        // Validated first either way so a bad pick can't brick the next launch.
         let startup_picked = self.picked_startup.lock().unwrap().take();
-        if let Some((name, bytes)) = startup_picked {
+        if let Some((name, bytes, _path)) = startup_picked {
             let valid = std::str::from_utf8(&bytes)
                 .ok()
                 .filter(|text| serde_json::from_str::<SceneFile>(text).is_ok())
-                .map(|text| text.to_string());
-            self.status = Some(match valid {
-                Some(json) => {
-                    editor_config::save_startup_scene(&json);
+                .is_some();
+            self.status = Some(if valid {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(path) = &_path {
+                    editor_config::save_startup_scene_path(path);
+                    self.has_custom_startup = editor_config::load_startup_scene_path().is_some();
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    editor_config::save_startup_scene(std::str::from_utf8(&bytes).unwrap());
                     editor_config::save_startup_scene_name(Some(&name));
                     self.has_custom_startup = editor_config::load_startup_scene().is_some();
-                    (
-                        "Start-up scene set (loads on next launch)".to_string(),
-                        STATUS_WHITE,
-                        5.0,
-                    )
                 }
-                None => (
+                (
+                    format!("Start-up scene set to '{name}' (loads on next launch)"),
+                    STATUS_WHITE,
+                    5.0,
+                )
+            } else {
+                (
                     "That file isn't a valid scene .json".to_string(),
                     STATUS_RED,
                     8.0,
-                ),
+                )
             });
         }
         // Upload splat clouds whose .ply bytes arrived from a scene load.
