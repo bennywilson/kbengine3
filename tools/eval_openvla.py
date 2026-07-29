@@ -133,7 +133,17 @@ def main():
         help="Scene export dir containing demo_*/ and holdout.json (default: %(default)s).",
     )
     parser.add_argument("--vla-path", default="openvla/openvla-7b")
-    parser.add_argument("--unnorm-key", default="black_splat_tool_hang")
+    parser.add_argument(
+        "--unnorm-key",
+        default=None,
+        help="Defaults to the sole key in --dataset-stats's dataset_statistics.json. "
+        "That file always has exactly one dataset's stats for a checkpoint produced by "
+        "retrain_openvla.bat, so guessing a name here (the old default was a stale "
+        "'black_splat_tool_hang', wrong for any dataset built after the per-scene "
+        "naming fix -- see build_rlds_dataset.py's _builder_class_for_scene) is both "
+        "unnecessary and a hardcoded name away from breaking again. Only needed "
+        "explicitly if --dataset-stats ever has more than one key.",
+    )
     parser.add_argument(
         "--dataset-stats",
         default=None,
@@ -176,6 +186,17 @@ def main():
 
     model, processor, device = load_model(adapter_dir, args.vla_path, dataset_stats)
 
+    unnorm_key = args.unnorm_key
+    if unnorm_key is None:
+        stats_keys = list(model.norm_stats.keys())
+        if len(stats_keys) != 1:
+            sys.exit(
+                f"--unnorm-key not given and {dataset_stats} has {len(stats_keys)} keys "
+                f"{stats_keys} -- can't guess which one. Pass --unnorm-key explicitly."
+            )
+        unnorm_key = stats_keys[0]
+    print(f"==> unnorm_key: {unnorm_key}")
+
     preds, truths = [], []
     with torch.inference_mode():
         for i, step in enumerate(steps):
@@ -185,7 +206,7 @@ def main():
             # Same drop as server.py's /act handler -- predict_action() can append a
             # marker token to input_ids without extending attention_mask to match.
             inputs.pop("attention_mask", None)
-            action = model.predict_action(**inputs, unnorm_key=args.unnorm_key, do_sample=False)
+            action = model.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
             preds.append(np.asarray(action, dtype=np.float64))
             truths.append(np.asarray(step["action"], dtype=np.float64))
             if (i + 1) % 10 == 0 or (i + 1) == len(steps):

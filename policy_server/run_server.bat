@@ -48,15 +48,33 @@ if /I "%MODE%"=="stub" (
     docker info >nul 2>&1
     if errorlevel 1 (
         echo Docker daemon isn't responding -- starting Docker Desktop...
-        if not defined DOCKER_DESKTOP_EXE set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+        REM Docker Desktop installs either machine-wide under ProgramFiles or
+        REM per-user under LOCALAPPDATA, so probe both rather than assuming --
+        REM this machine has the per-user layout, and the ProgramFiles-only
+        REM default reported "couldn't find Docker Desktop" while Docker was
+        REM in fact installed and its UI running.
+        if not defined DOCKER_DESKTOP_EXE (
+            set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+            if not exist "!DOCKER_DESKTOP_EXE!" set "DOCKER_DESKTOP_EXE=%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe"
+            if not exist "!DOCKER_DESKTOP_EXE!" set "DOCKER_DESKTOP_EXE=%LOCALAPPDATA%\Programs\Docker\Docker\Docker Desktop.exe"
+        )
         if not exist "!DOCKER_DESKTOP_EXE!" (
-            echo Couldn't find Docker Desktop at "!DOCKER_DESKTOP_EXE!".
+            echo Couldn't find Docker Desktop. Looked in:
+            echo   %ProgramFiles%\Docker\Docker\
+            echo   %LOCALAPPDATA%\Programs\DockerDesktop\
+            echo   %LOCALAPPDATA%\Programs\Docker\Docker\
             echo Set DOCKER_DESKTOP_EXE if it's installed somewhere else, or install it:
             echo   https://www.docker.com/products/docker-desktop/
             echo.
             pause
             exit /b 1
         )
+        REM NOTE: a *running* Docker Desktop UI does not mean a working daemon.
+        REM The Linux engine lives in the `docker-desktop` WSL2 distro, so if
+        REM WSL is wedged (`wsl -l -v` shows it Stopped), `docker info` fails
+        REM and `docker ps` returns a 500 from the dockerDesktopLinuxEngine
+        REM pipe even with every Docker Desktop process alive. Fix WSL first --
+        REM `wsl --shutdown`, then restart Docker Desktop.
         start "" "!DOCKER_DESKTOP_EXE!"
 
         REM Cold start (WSL2 utility VM + engine) commonly takes 30s-2min, so

@@ -6879,8 +6879,18 @@ impl GameEngine for SplatGame {
                 .editor_panel_width
                 .clamp(EDITOR_PANEL_MIN_WIDTH, max_panel_width);
             self.editor_panel_width = panel_width;
-            let panel = egui::Area::new(egui::Id::new("editor_panel"))
-                .fixed_pos(egui::pos2(screen.right() - panel_width, top))
+            egui::Area::new(egui::Id::new("editor_panel"))
+                // Positioned by its own left edge, margins included, so the
+                // right edge lands exactly on the screen edge.  Leaving that
+                // to constrain_to (which nudges an overhanging Area back
+                // inside) only works at a steady width: the nudge is computed
+                // from the *previous* frame's size, so every frame of a resize
+                // drag over-corrected by the width delta and opened a gap
+                // between the panel and the screen edge.
+                .fixed_pos(egui::pos2(
+                    screen.right() - panel_width - frame_margin_x,
+                    top,
+                ))
                 // Constrain to the region below the menu bar: if the panel
                 // ever ends up too tall, egui slides a constrained Area back
                 // inside its rect -- against the whole screen that shoved the
@@ -6907,6 +6917,59 @@ impl GameEngine for SplatGame {
                                 }
                             }
                         });
+
+                        // Grab strip down the panel's left margin: drag to
+                        // resize (the new width lands next frame).  A plain
+                        // widget in the panel's own layer -- as its own Area
+                        // laid over the panel it only ever caught the drag in
+                        // some layouts, and interact() needs no space in the
+                        // layout, so it can claim the margin column the
+                        // vertical layout never hands out.  Drawn ahead of the
+                        // collapsed-panel early-out below so it's there in both
+                        // states.
+                        let margin = frame.total_margin();
+                        let expanded = self.active_tab.is_some();
+                        let strip_rect = egui::Rect::from_min_max(
+                            egui::pos2(
+                                ui.min_rect().left() - margin.left,
+                                ui.min_rect().top() - margin.top,
+                            ),
+                            egui::pos2(
+                                ui.min_rect().left(),
+                                // Expanded, the frame is stretched to
+                                // panel_bottom below; collapsed, it ends just
+                                // under the tab strip just drawn.
+                                if expanded {
+                                    panel_bottom
+                                } else {
+                                    ui.min_rect().bottom() + margin.bottom
+                                },
+                            ),
+                        );
+                        let strip = ui
+                            .interact(
+                                strip_rect,
+                                ui.id().with("resize_strip"),
+                                egui::Sense::drag(),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                        if strip.dragged() {
+                            // Leftward drag (negative x) widens the panel.
+                            self.editor_panel_width = (self.editor_panel_width
+                                - strip.drag_delta().x)
+                                .clamp(EDITOR_PANEL_MIN_WIDTH, max_panel_width);
+                        }
+                        // Short handle line, centered -- shrunk to fit when the
+                        // panel is collapsed to just its tab strip.
+                        let half = 24.0_f32.min(strip_rect.height() * 0.5 - 4.0).max(0.0);
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(strip_rect.center().x, strip_rect.center().y - half),
+                                egui::pos2(strip_rect.center().x, strip_rect.center().y + half),
+                            ],
+                            egui::Stroke::new(2.0, ui.visuals().weak_text_color()),
+                        );
+
                         let Some(active_tab) = self.active_tab else {
                             return;
                         };
@@ -7223,7 +7286,12 @@ impl GameEngine for SplatGame {
                                                 // so every card commits to the same width regardless
                                                 // of which cards are open -- see section_card's own
                                                 // doc for why per-card available_width() doesn't work.
-                                                let card_width = ui.available_width();
+                                                // The gutter keeps the cards' right edge (border and
+                                                // fill both) clear of the panel edge and of the
+                                                // floating scrollbar that hovers over it.
+                                                const CARD_RIGHT_GUTTER: f32 = 8.0;
+                                                let card_width =
+                                                    ui.available_width() - CARD_RIGHT_GUTTER;
                                                 ui.label("Name");
                                                 if ui.text_edit_singleline(&mut m.name).changed() {
                                                     selection_edited = true;
@@ -8325,39 +8393,6 @@ impl GameEngine for SplatGame {
                                 }
                             });
                     });
-                });
-
-            // Grab strip down the panel's left edge: drag to resize (the new
-            // width lands next frame).  Its own Area, laid over the panel's
-            // left margin, rather than a widget inside the panel -- the panel
-            // body is a plain vertical layout and has no full-height column to
-            // hang it off, and being registered after the panel puts it on top
-            // for input.
-            let panel_rect = panel.response.rect;
-            egui::Area::new(egui::Id::new("editor_panel_resize"))
-                .fixed_pos(panel_rect.left_top())
-                .show(&ctx, |ui| {
-                    let (strip_rect, strip) = ui.allocate_exact_size(
-                        egui::vec2(8.0, panel_rect.height()),
-                        egui::Sense::drag(),
-                    );
-                    let strip = strip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-                    if strip.dragged() {
-                        // Leftward drag (negative x) widens the panel.
-                        self.editor_panel_width = (self.editor_panel_width
-                            - strip.drag_delta().x)
-                            .clamp(EDITOR_PANEL_MIN_WIDTH, max_panel_width);
-                    }
-                    // Short handle line, centered -- shrunk to fit when the
-                    // panel is collapsed to just its tab strip.
-                    let half = 24.0_f32.min(strip_rect.height() * 0.5 - 4.0).max(0.0);
-                    ui.painter().line_segment(
-                        [
-                            egui::pos2(strip_rect.center().x, strip_rect.center().y - half),
-                            egui::pos2(strip_rect.center().x, strip_rect.center().y + half),
-                        ],
-                        egui::Stroke::new(2.0, ui.visuals().weak_text_color()),
-                    );
                 });
         }
 
