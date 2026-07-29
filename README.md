@@ -61,6 +61,10 @@ loads the copy in the serve directory, which only a build refreshes.
 
 > The splat demo can talk to a local policy server for robot-policy control;
 > that server runs separately on port 8000 — see `policy_server/README.md`.
+> Parts of that pipeline (the TFDS dataset build, Docker's GPU backend) run
+> under WSL — see [docs/wsl.md](docs/wsl.md) for what needs it and what doesn't.
+> Fine-tuning runs out of a separate OpenVLA clone that carries local patches —
+> see [docs/openvla_patches.md](docs/openvla_patches.md).
 
 **Which backend a demo uses matters for the browser:**
 

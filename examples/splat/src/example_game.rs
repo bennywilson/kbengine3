@@ -487,6 +487,11 @@ fn resource_display_name(path: &str) -> String {
         .to_string()
 }
 
+/// Narrowest the right-hand editor panel gets, and the width it starts at --
+/// the grab strip on its left edge only drags it wider (up to the gizmo
+/// toolbar), never below this.
+const EDITOR_PANEL_MIN_WIDTH: f32 = 260.0;
+
 /// Which tab of the right-hand editor panel is showing.  (Resources is a
 /// separate bottom panel.)
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2748,6 +2753,10 @@ pub struct SplatGame {
     // by dragging the grab strip along its top edge.
     resources_open: bool,
     resources_height: f32,
+    // Right-hand editor panel width, set by dragging the grab strip along its
+    // left edge.  Clamped to [EDITOR_PANEL_MIN_WIDTH, whatever leaves the
+    // gizmo toolbar uncovered] every frame -- see the panel itself.
+    editor_panel_width: f32,
     // Content browser: the type-filter set (empty = show every kind), the
     // selected folder in the tree ("" = root / all folders), and the name
     // search text.  Assets of all kinds show together, narrowed by these.
@@ -5822,6 +5831,7 @@ impl GameEngine for SplatGame {
             browser_filter: String::new(),
             material_rename: None,
             resources_height: 200.0,
+            editor_panel_width: EDITOR_PANEL_MIN_WIDTH,
             next_object_num: 1,
             picked_ply: Arc::new(Mutex::new(None)),
             picked_model: Arc::new(Mutex::new(None)),
@@ -6389,9 +6399,14 @@ impl GameEngine for SplatGame {
         // is refreshed afterwards.
         // Gizmo mode toolbar, centered under the menu bar (both corners are
         // taken by the debug overlays).
+        // Its right edge caps how far the editor panel can be dragged open
+        // (see EDITOR_PANEL_MIN_WIDTH).  Safe to feed back into a layout the
+        // panel depends on: the toolbar is centered on the screen and sized by
+        // its own content, so nothing here reacts to the panel's width.
+        let mut gizmo_toolbar_right = None;
         if editor {
             let top = menu_bar.response.rect.bottom();
-            egui::Area::new(egui::Id::new("gizmo_toolbar"))
+            let toolbar = egui::Area::new(egui::Id::new("gizmo_toolbar"))
                 .pivot(egui::Align2::CENTER_TOP)
                 .fixed_pos(egui::pos2(screen.center().x, top))
                 .constrain(true)
@@ -6479,6 +6494,7 @@ impl GameEngine for SplatGame {
                         });
                     });
                 });
+            gizmo_toolbar_right = Some(toolbar.response.rect.right());
         }
 
         // Resources: a full-width bottom panel (content-browser style).
@@ -6844,11 +6860,27 @@ impl GameEngine for SplatGame {
             }
         }
 
-        const PANEL_WIDTH: f32 = 260.0;
         if editor {
             let top = menu_bar.response.rect.bottom();
-            egui::Area::new(egui::Id::new("editor_panel"))
-                .fixed_pos(egui::pos2(screen.right() - PANEL_WIDTH, top))
+            // Widen limit: the gizmo toolbar's right edge, so dragging the
+            // panel open never buries the snap boxes.  The frame's own margins
+            // sit outside the width set below, hence subtracting them here.
+            let frame_margin_x = egui::Frame::side_top_panel(&ctx.style_of(ctx.theme()))
+                .total_margin()
+                .sum()
+                .x;
+            let max_panel_width = gizmo_toolbar_right
+                .map_or(screen.width() * 0.5, |right| {
+                    screen.right() - right - frame_margin_x - 8.0
+                })
+                .max(EDITOR_PANEL_MIN_WIDTH);
+            // Re-clamped every frame: the limit moves with the window size.
+            let panel_width = self
+                .editor_panel_width
+                .clamp(EDITOR_PANEL_MIN_WIDTH, max_panel_width);
+            self.editor_panel_width = panel_width;
+            let panel = egui::Area::new(egui::Id::new("editor_panel"))
+                .fixed_pos(egui::pos2(screen.right() - panel_width, top))
                 // Constrain to the region below the menu bar: if the panel
                 // ever ends up too tall, egui slides a constrained Area back
                 // inside its rect -- against the whole screen that shoved the
@@ -6861,7 +6893,7 @@ impl GameEngine for SplatGame {
                     let frame = egui::Frame::side_top_panel(ui.style());
                     let frame_bottom = frame.total_margin().bottom;
                     frame.show(ui, |ui| {
-                        ui.set_width(PANEL_WIDTH);
+                        ui.set_width(panel_width);
                         ui.horizontal(|ui| {
                             for (tab, label) in [
                                 (EditorTab::Scene, "Scene"),
@@ -6890,23 +6922,28 @@ impl GameEngine for SplatGame {
                         ui.separator();
                         let scroll_height =
                             (panel_bottom - ui.cursor().top() - frame_bottom).max(60.0);
-                        egui::ScrollArea::vertical()
+                        // Scrollable in both directions with horizontal
+                        // auto-shrink off: that combination is what pins the
+                        // scroll area to the width it was offered.  A
+                        // vertical-only ScrollArea instead takes the width of
+                        // its content, so any widget that couldn't fit (a row
+                        // of DragValues, a long button) stretched the whole
+                        // panel -- which is why it used to change width
+                        // depending on which sections were expanded.  Content
+                        // is still laid out (and text still wrapped) against
+                        // the panel width; only what genuinely can't shrink
+                        // overflows, and the horizontal bar reaches it.
+                        egui::ScrollArea::both()
                             .max_height(scroll_height)
+                            .auto_shrink([false, true])
                             .show(ui, |ui| {
-                                // Not ui.set_width(PANEL_WIDTH): the scroll
-                                // area already reserves room for its own
-                                // vertical scrollbar and hands this closure a
-                                // correspondingly narrower rect whenever the
-                                // bar is visible. Forcing the full panel width
-                                // back here fought that reservation, so the
-                                // content (and the whole fixed-width panel,
-                                // and Area::constrain_to along with it) grew
-                                // and shrank by the scrollbar's width as the
-                                // bar faded in/out -- the panel visibly
-                                // jittering against the right edge of the
-                                // screen. take_available_width() reserves the
-                                // same minimum without exceeding whatever
-                                // width the scroll area actually offered.
+                                // Not ui.set_width(panel_width): what sections
+                                // should fill is the scroll area's own inner
+                                // width, which is the panel width minus
+                                // whatever its scrollbars reserve.
+                                // take_available_width() takes exactly that,
+                                // so every section card reaches the panel's
+                                // right edge at any panel width.
                                 ui.take_available_width();
                                 match active_tab {
                                     EditorTab::Scene => {
@@ -8288,6 +8325,39 @@ impl GameEngine for SplatGame {
                                 }
                             });
                     });
+                });
+
+            // Grab strip down the panel's left edge: drag to resize (the new
+            // width lands next frame).  Its own Area, laid over the panel's
+            // left margin, rather than a widget inside the panel -- the panel
+            // body is a plain vertical layout and has no full-height column to
+            // hang it off, and being registered after the panel puts it on top
+            // for input.
+            let panel_rect = panel.response.rect;
+            egui::Area::new(egui::Id::new("editor_panel_resize"))
+                .fixed_pos(panel_rect.left_top())
+                .show(&ctx, |ui| {
+                    let (strip_rect, strip) = ui.allocate_exact_size(
+                        egui::vec2(8.0, panel_rect.height()),
+                        egui::Sense::drag(),
+                    );
+                    let strip = strip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                    if strip.dragged() {
+                        // Leftward drag (negative x) widens the panel.
+                        self.editor_panel_width = (self.editor_panel_width
+                            - strip.drag_delta().x)
+                            .clamp(EDITOR_PANEL_MIN_WIDTH, max_panel_width);
+                    }
+                    // Short handle line, centered -- shrunk to fit when the
+                    // panel is collapsed to just its tab strip.
+                    let half = 24.0_f32.min(strip_rect.height() * 0.5 - 4.0).max(0.0);
+                    ui.painter().line_segment(
+                        [
+                            egui::pos2(strip_rect.center().x, strip_rect.center().y - half),
+                            egui::pos2(strip_rect.center().x, strip_rect.center().y + half),
+                        ],
+                        egui::Stroke::new(2.0, ui.visuals().weak_text_color()),
+                    );
                 });
         }
 

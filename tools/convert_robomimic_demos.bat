@@ -1,6 +1,7 @@
 @echo off
 REM Converts every demo in a robomimic *_low_dim.hdf5 file into this engine's
 REM trajectory JSON schema, via tools/robomimic_to_trajectory.py --all (see
+REM that script's own module doc for the conversion itself -- states/qpos
 REM slicing, joint renaming, etc). One-time, offline, native Windows Python
 REM (just needs h5py, unlike rebuild_rlds_dataset.bat's WSL+tensorflow path).
 REM

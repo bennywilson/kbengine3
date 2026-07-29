@@ -75,28 +75,13 @@ if not exist "%OPENVLA_VENV%\Scripts\python.exe" (
     exit /b 1
 )
 
-REM finetune.py runs natively on Windows, but the TFDS dataset was built
-REM inside WSL (see rebuild_rlds_dataset.bat -- native Windows has no working
-REM tensorflow-datasets install on this machine). Mirror it to a native path
-REM first so training's many shuffled passes over the data don't all cross
-REM the WSL 9p bridge, which is slow for this kind of access pattern.
-set WSL_TFDS_SRC=\\wsl$\Ubuntu\home\ben_a\tensorflow_datasets\%SCENE_NAME%
-set NATIVE_TFDS_DIR=D:\tfds_datasets\%SCENE_NAME%
-echo Mirroring %WSL_TFDS_SRC% to %NATIVE_TFDS_DIR% ...
-robocopy "%WSL_TFDS_SRC%" "%NATIVE_TFDS_DIR%" /MIR /NFL /NDL /NJH /NJS >nul
-if %errorlevel% GEQ 8 (
-    echo robocopy failed -- has %SCENE_NAME% actually been built yet?
-    echo Run "Rebuild TFDS Dataset" first.
-    echo.
-    pause
-    exit /b 1
-)
-
 REM Read back the exact TFDS dataset name build_rlds_dataset.py registered
 REM for this scene (see that script's _builder_class_for_scene) rather than
 REM guessing it here -- a name computed independently in batch script could
 REM drift from whatever TFDS's class-name-to-dataset-name rule actually
 REM produced, and a mismatch means finetune.py can't find the data at all.
+REM Read before the mirror below, which needs it to identify a usable
+REM fallback copy.
 set DATASET_NAME_FILE=%~dp0..\examples\splat\resources\openvla_datasets\%SCENE_NAME%\dataset_name.txt
 if not exist "%DATASET_NAME_FILE%" (
     echo Couldn't find %DATASET_NAME_FILE%.
@@ -106,6 +91,39 @@ if not exist "%DATASET_NAME_FILE%" (
     exit /b 1
 )
 set /p DATASET_NAME=<"%DATASET_NAME_FILE%"
+
+REM finetune.py runs natively on Windows, but the TFDS dataset was built
+REM inside WSL (see rebuild_rlds_dataset.bat -- native Windows has no working
+REM tensorflow-datasets install on this machine). Mirror it to a native path
+REM first so training's many shuffled passes over the data don't all cross
+REM the WSL 9p bridge, which is slow for this kind of access pattern.
+set WSL_TFDS_SRC=\\wsl$\Ubuntu\home\ben_a\tensorflow_datasets\%SCENE_NAME%
+set NATIVE_TFDS_DIR=D:\tfds_datasets\%SCENE_NAME%
+echo Mirroring %WSL_TFDS_SRC% to %NATIVE_TFDS_DIR% ...
+robocopy "%WSL_TFDS_SRC%" "%NATIVE_TFDS_DIR%" /MIR /NFL /NDL /NJH /NJS >nul
+if %errorlevel% LSS 8 goto tfds_ready
+
+REM An unreadable WSL source is only fatal when no usable native mirror
+REM already exists. A stopped or wedged Ubuntu distro makes \\wsl$ paths hang
+REM instead of failing fast -- robocopy sat doing nothing for 79 minutes
+REM before erroring once -- and aborting there strands a resume whose data is
+REM already on disk from an earlier successful mirror. Warn and continue
+REM instead; the only real hazard is a mirror predating a newer rebuild,
+REM which the warning calls out explicitly.
+if not exist "%NATIVE_TFDS_DIR%\%DATASET_NAME%\" (
+    echo robocopy couldn't read %WSL_TFDS_SRC%, and there is no existing
+    echo mirror at %NATIVE_TFDS_DIR%\%DATASET_NAME%\ to fall back on.
+    echo Has %SCENE_NAME% been built yet? Run "Rebuild TFDS Dataset" first.
+    echo.
+    pause
+    exit /b 1
+)
+echo.
+echo WARNING: couldn't reach %WSL_TFDS_SRC% ^(is the Ubuntu WSL distro running?^)
+echo Training against the EXISTING mirror at %NATIVE_TFDS_DIR%.
+echo That copy is STALE if the dataset has been rebuilt since it was made.
+echo.
+:tfds_ready
 
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%i
 set RUN_NAME=retrain_%SCENE_NAME%_%TS%
