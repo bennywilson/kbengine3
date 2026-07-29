@@ -61,3 +61,11 @@ openvla_datasets/
 # Local docker-compose overrides (machine-specific checkpoint paths) -- see
 # policy_server/.env's own header comment.
 policy_server/.env
+
+# Teed console output from run_editor.bat (examples/splat) -- see that
+# script's own header comment. Local run artifacts, not build output.
+examples/splat/logs/
+
+# Per-job durable logs written by launcher/server.py's Job class -- see its
+# own comment. Same rationale as examples/splat/logs/ above.
+launcher/logs/

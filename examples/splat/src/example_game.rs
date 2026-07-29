@@ -1223,6 +1223,66 @@ fn dataset_namespace_for(xml_path: &str) -> Option<String> {
     (!stem.is_empty()).then(|| stem.to_string())
 }
 
+/// Reads `<scene_namespace>/holdout.json` (written by `build_rlds_dataset.py`'s
+/// `--holdout`, see `dataset_namespace_for` for the namespace convention) --
+/// the demo list `tick_closed_loop_eval` runs through. Deliberately reads the
+/// real recorded holdout rather than trusting `MujocoSceneActor::holdout_demos`
+/// (the Rebuild TFDS Dataset text field), which the user could have edited
+/// since the last rebuild without re-running it -- this way the eval always
+/// tests exactly what the checkpoint actually never trained on.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_holdout_demos(scene_namespace: &str) -> anyhow::Result<Vec<String>> {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = repo_root
+        .join("examples/splat/resources/openvla_datasets")
+        .join(scene_namespace)
+        .join("holdout.json");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("couldn't read {}: {e}", path.display()))?;
+    let demos: Vec<String> = serde_json::from_str(&text)?;
+    if demos.is_empty() {
+        anyhow::bail!(
+            "{} lists zero held-out demos -- nothing to run",
+            path.display()
+        );
+    }
+    Ok(demos)
+}
+
+/// Pops the next demo (if any) off `closed_loop_eval_queue` into
+/// `closed_loop_eval_current`, and points `trajectory_path` at its clip --
+/// this alone is enough to kick off that clip's async load via the existing
+/// trajectory-dispatch reconcile in `tick_mujoco_actors`, the same path a
+/// manual Browse… pick already goes through. Derives the clips' shared
+/// directory from `trajectory_path`'s own current value rather than a
+/// separately-tracked base dir: every demo in one scene's holdout lives
+/// alongside whatever clip was bound when "Run Closed-Loop Eval" was
+/// clicked, so this stays correct across every subsequent call too. Also
+/// resets the per-demo tracking fields so a stale start/peak height can't
+/// leak from the previous demo into this one.
+#[cfg(not(target_arch = "wasm32"))]
+fn advance_closed_loop_eval(actor: &mut MujocoSceneActor) {
+    actor.closed_loop_eval_start_height = None;
+    actor.closed_loop_eval_peak_height = None;
+    actor.closed_loop_eval_grasp_offset = None;
+    actor.closed_loop_eval_grasp_step = None;
+    actor.closed_loop_eval_steps_taken = 0;
+    match actor.closed_loop_eval_queue.pop() {
+        Some(next) => {
+            let dir = std::path::Path::new(&actor.trajectory_path)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            actor.trajectory_path = dir
+                .join(format!("{next}.json"))
+                .to_string_lossy()
+                .into_owned();
+            actor.closed_loop_eval_current = Some(next);
+        }
+        None => actor.closed_loop_eval_current = None,
+    }
+}
+
 /// Starts a training-data export of `actor`'s currently-bound clip (see the
 /// "Export Training Data" button in the Policy Control panel): pre-computes
 /// every frame's `policy_ee_body` world pose + gripper closedness in one
@@ -1532,6 +1592,87 @@ struct MujocoSceneActor {
     /// `export_dir_for` output folder, same as a single manual export.
     #[cfg(not(target_arch = "wasm32"))]
     export_queue: Vec<String>,
+
+    // ---- Closed-loop success eval (see `tick_closed_loop_eval`) -- answers
+    // "does a real rollout pick the object up", unlike `eval_adapter_dir`
+    // above (`tools/eval_openvla.py`), which only measures per-step action
+    // prediction against ground truth and can't see closed-loop drift. Reuses
+    // the live policy-control machinery (`policy_enabled`, `apply_policy_action`)
+    // rather than duplicating it -- this just drives that machinery through
+    // one demo after another and reads the result back. Native-only: needs
+    // `body_world_pose` and a real filesystem read of holdout.json, same
+    // reasons as the export fields above.
+    /// Demo names (e.g. "demo_115") still queued, popped from the end (see
+    /// `advance_closed_loop_eval`) -- empty both before a run starts and
+    /// after it ends.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_queue: Vec<String>,
+    /// Demo currently loaded/running, if any. Separate from peeking the
+    /// queue's front because a clip load is in flight for it before `clip`
+    /// catches up -- see `tick_closed_loop_eval`'s load-wait branch.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_current: Option<String>,
+    /// MuJoCo body name to measure for the lift check (e.g. "cube_main" in
+    /// panda_lift.xml) -- the manipulated object, not the end effector.
+    /// Free-text like `policy_ee_body`, since which body is "the object"
+    /// is scene-specific.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_object_body: String,
+    /// The object body's world-frame Z right after the current demo's reset
+    /// -- the baseline a later rise is measured against. `None` until that
+    /// reset has actually run.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_start_height: Option<f64>,
+    /// Highest world-frame Z the object body has reached so far this demo
+    /// (tracked every tick, not just when an action lands, since physics
+    /// steps every frame -- see `tick_closed_loop_eval`). Peak rather than
+    /// final height, so a grasp-then-place-down sequence that completes
+    /// within the step budget still counts as having lifted the object.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_peak_height: Option<f64>,
+    /// Meters the object must rise above `closed_loop_eval_start_height` to
+    /// count as a successful lift -- big enough that contact/settling
+    /// jitter doesn't false-positive, small enough to register a real grasp.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_lift_threshold: f32,
+    /// Applied actions taken against the current demo so far.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_steps_taken: u32,
+    /// Applied-action budget per demo before giving up and scoring it a
+    /// miss -- a held-out demo is ~13 accumulated-action steps at this
+    /// project's stride 4, so the default leaves real headroom since a live
+    /// rollout doesn't have to match the recording's own pace.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_max_steps: u32,
+    /// `ee_body`'s position minus the object body's, the first tick this
+    /// demo's gripper crosses half-closed (see `policy_dataset::gripper_closedness`)
+    /// -- `None` until that happens, and stays `None` for a demo whose
+    /// gripper never commits to closing at all. Distinguishes two different
+    /// failure modes a raw success/fail count can't: a small offset here
+    /// means the arm was genuinely near the object when it decided to grasp
+    /// (a *timing* problem -- closed a beat early/late), while a large one
+    /// means it wasn't actually there yet (an *alignment* problem, closing
+    /// on a "this looks about right" visual cue rather than real proximity
+    /// -- expected, since this whole setup has no proprioceptive/tactile
+    /// feedback for the policy to correct against, see StateEncoding.NONE
+    /// in openvla's oxe/configs.py).
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_grasp_offset: Option<[f64; 3]>,
+    /// `closed_loop_eval_steps_taken`'s value at the same moment
+    /// `closed_loop_eval_grasp_offset` was recorded -- distinguishes closing
+    /// on literally the first query (points at something wrong from frame
+    /// one, e.g. framing/calibration) from closing a few steps in after some
+    /// real approach (points at closed-loop covariate shift instead -- the
+    /// live rollout drifting off the training distribution within the first
+    /// few self-generated observations, undetectable by any open-loop
+    /// eval). `None` alongside `closed_loop_eval_grasp_offset` being `None`.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_grasp_step: Option<u32>,
+    /// (demo name, succeeded, peak rise in meters, grasp-moment offset, step
+    /// index at that moment) for every demo completed so far this run, in
+    /// completion order.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_results: Vec<(String, bool, f64, Option<[f64; 3]>, Option<u32>)>,
 }
 
 impl MujocoSceneActor {
@@ -1603,6 +1744,28 @@ impl MujocoSceneActor {
             robomimic_output_dir: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             export_queue: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_queue: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_current: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_object_body: "cube_main".to_string(),
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_start_height: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_peak_height: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_lift_threshold: 0.03,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_steps_taken: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_max_steps: 20,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_grasp_offset: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_grasp_step: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_results: Vec::new(),
         }
     }
 
@@ -2133,16 +2296,24 @@ fn scene_bake_fingerprint(actors: &[Actor], lights: &[Light]) -> u64 {
         .iter()
         .filter(|a| !a.is_shadow_catcher() && !a.is_excluded_from_env_capture());
     for actor in capture_actors {
-        vec3_arr(actor.get_position()).map(f32::to_bits).hash(&mut h);
-        quat_arr(actor.get_rotation()).map(f32::to_bits).hash(&mut h);
+        vec3_arr(actor.get_position())
+            .map(f32::to_bits)
+            .hash(&mut h);
+        quat_arr(actor.get_rotation())
+            .map(f32::to_bits)
+            .hash(&mut h);
         vec3_arr(actor.get_scale()).map(f32::to_bits).hash(&mut h);
         actor.get_model().hash(&mut h);
         actor.get_material().hash(&mut h);
     }
     h.write_u8(0xFF); // separator so an actor/light count shuffle can't collide
     for light in lights {
-        vec3_arr(light.get_position()).map(f32::to_bits).hash(&mut h);
-        quat_arr(light.get_rotation()).map(f32::to_bits).hash(&mut h);
+        vec3_arr(light.get_position())
+            .map(f32::to_bits)
+            .hash(&mut h);
+        quat_arr(light.get_rotation())
+            .map(f32::to_bits)
+            .hash(&mut h);
         light.get_light_type().choice_index().hash(&mut h);
         vec3_arr(light.get_color()).map(f32::to_bits).hash(&mut h);
         vec3_arr(light.get_color2()).map(f32::to_bits).hash(&mut h);
@@ -3955,6 +4126,28 @@ impl SplatGame {
                     robomimic_output_dir: String::new(),
                     #[cfg(not(target_arch = "wasm32"))]
                     export_queue: Vec::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_queue: Vec::new(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_current: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_object_body: "cube_main".to_string(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_start_height: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_peak_height: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_lift_threshold: 0.03,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_steps_taken: 0,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_max_steps: 20,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_grasp_offset: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_grasp_step: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_results: Vec::new(),
                 });
                 // scene is None / loaded_path empty, so tick_mujoco_actors
                 // reloads it from xml_path on the next tick.
@@ -4169,10 +4362,20 @@ impl SplatGame {
                                 &arm_actuators,
                                 &actor.policy_gripper_actuator,
                             ) {
-                                Ok(()) => push_policy_log(
-                                    actor,
-                                    format!("[{}] [{action_str}] -> applied", response.model),
-                                ),
+                                Ok(()) => {
+                                    // Counts this applied action toward the current
+                                    // demo's step budget when a closed-loop eval is
+                                    // driving this actor (see tick_closed_loop_eval) --
+                                    // a no-op otherwise (None outside an eval run).
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    if actor.closed_loop_eval_current.is_some() {
+                                        actor.closed_loop_eval_steps_taken += 1;
+                                    }
+                                    push_policy_log(
+                                        actor,
+                                        format!("[{}] [{action_str}] -> applied", response.model),
+                                    )
+                                }
                                 Err(e) => {
                                     log!("MuJoCo actor '{name}': apply_policy_action failed: {e}");
                                     push_policy_log(
@@ -4469,7 +4672,10 @@ impl SplatGame {
                         .map(str::trim)
                         .collect();
                     if let Err(e) = scene.hold_current_pose(&arm_actuators) {
-                        log!("MuJoCo actor '{}': hold_current_pose failed: {e}", actor.name);
+                        log!(
+                            "MuJoCo actor '{}': hold_current_pose failed: {e}",
+                            actor.name
+                        );
                     }
                 }
                 scene.set_kinematic(now_kinematic);
@@ -4889,6 +5095,205 @@ impl SplatGame {
                         }
                     }
                     // else: still loading -- wait for the dispatch above.
+                }
+            }
+        }
+    }
+
+    /// Drives a closed-loop success eval to completion, one demo at a time --
+    /// see the `closed_loop_eval_*` fields' own docs for what's being
+    /// measured and why (rollout success, not per-step prediction accuracy).
+    /// Deliberately thin: this only sequences `trajectory_path`/`policy_enabled`
+    /// through the *existing* clip-load and policy-dispatch machinery in
+    /// `tick_mujoco_actors` above (called just before this, each frame) --
+    /// it doesn't duplicate either. `advance_closed_loop_eval` (called from
+    /// the "Run Closed-Loop Eval…" button, and again here at the end of every
+    /// demo) is the only place `closed_loop_eval_current`/`trajectory_path`
+    /// actually change.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tick_closed_loop_eval(&mut self) {
+        for actor in &mut self.scene_mujoco_actors {
+            let Some(current) = actor.closed_loop_eval_current.clone() else {
+                continue;
+            };
+
+            // Waiting for advance_closed_loop_eval's trajectory_path change to
+            // finish loading -- tick_mujoco_actors' own trajectory dispatch
+            // (above) drives this the same as a manual Browse… pick.
+            if actor.loaded_trajectory_path != actor.trajectory_path {
+                continue;
+            }
+
+            if actor.closed_loop_eval_start_height.is_none() {
+                // First tick since this demo's clip finished loading: seed
+                // the reset pose (identical to the manual "Reset to
+                // Trajectory Start" button -- see that button's own click
+                // handler, which this intentionally mirrors) and start the
+                // clock. A clip that retargeted onto nothing (see
+                // tick_mujoco_actors' own handling of that) can't be run --
+                // score it a miss and move straight to the next one instead
+                // of stalling the whole run on it forever.
+                let Some(clip) = actor.clip.clone() else {
+                    log!(
+                        "Closed-loop eval '{}': {current} -- SKIPPED (clip retargeted onto nothing)",
+                        actor.name
+                    );
+                    actor
+                        .closed_loop_eval_results
+                        .push((current, false, 0.0, None, None));
+                    advance_closed_loop_eval(actor);
+                    continue;
+                };
+                let Some(scene) = &mut actor.scene else {
+                    continue;
+                };
+                scene.reset();
+                scene.apply_trajectory_frame(&clip, 0);
+                let arm_actuators: Vec<&str> = actor
+                    .policy_arm_actuators_csv
+                    .split(',')
+                    .map(str::trim)
+                    .collect();
+                if let Err(e) = scene.hold_current_pose(&arm_actuators) {
+                    log!(
+                        "Closed-loop eval '{}': hold_current_pose failed: {e}",
+                        actor.name
+                    );
+                }
+                actor.clip_time = 0.0;
+                actor.playing = false;
+                let start_z = scene
+                    .body_world_pose(&actor.closed_loop_eval_object_body)
+                    .map(|(pos, _)| pos[2])
+                    .unwrap_or(0.0);
+                actor.closed_loop_eval_start_height = Some(start_z);
+                actor.closed_loop_eval_peak_height = Some(start_z);
+                actor.policy_enabled = true;
+                continue;
+            }
+
+            // Running: track the object's peak height every tick -- physics
+            // steps every frame, but applied actions only land once per
+            // policy_interval_secs (see tick_mujoco_actors), so sampling
+            // only on those would miss most of the actual motion.
+            if let Some(scene) = &actor.scene {
+                if let Some((pos, _)) = scene.body_world_pose(&actor.closed_loop_eval_object_body) {
+                    match &mut actor.closed_loop_eval_peak_height {
+                        Some(peak) if pos[2] > *peak => *peak = pos[2],
+                        _ => {}
+                    }
+                }
+
+                // Grasp-moment diagnostic: the first tick the (real, physics-
+                // settled) finger position crosses half-closed, record how far
+                // the end effector actually was from the object -- see
+                // closed_loop_eval_grasp_offset's own docs for why this is
+                // worth separating from the plain success/fail count. Reads
+                // qpos (not the commanded ctrl target smooth_gripper_t writes)
+                // since actuators are real PD servos that take physical time
+                // to reach a new target -- qpos is when the fingers actually
+                // got there, not when the command was issued.
+                //
+                // Gated on at least one real policy action having landed
+                // (steps_taken >= 1): the recorded Lift demos' own frame 0
+                // sits at ~48% closed (measured directly against demo_115.json
+                // -- gripper_closedness(0.020833, 0.04) = 0.479), a hair under
+                // the 0.5 threshold below. Checking from the very first tick
+                // after reset caught that recorded starting state itself (or
+                // reset-settling noise around it), not anything the live
+                // policy had decided yet -- every "closed at step 0" result
+                // this produced was a measurement artifact, not a finding
+                // about the model.
+                if actor.closed_loop_eval_grasp_offset.is_none()
+                    && actor.closed_loop_eval_steps_taken >= 1
+                {
+                    let finger_qpos = scene.joint_qpos("finger_joint1").unwrap_or(0.0);
+                    let closedness = black_splat::policy_dataset::gripper_closedness(
+                        finger_qpos,
+                        PANDA_FINGER_OPEN_QPOS,
+                    );
+                    if closedness >= 0.5 {
+                        if let (Some((ee_pos, _)), Some((obj_pos, _))) = (
+                            scene.body_world_pose(&actor.policy_ee_body),
+                            scene.body_world_pose(&actor.closed_loop_eval_object_body),
+                        ) {
+                            actor.closed_loop_eval_grasp_offset = Some([
+                                ee_pos[0] - obj_pos[0],
+                                ee_pos[1] - obj_pos[1],
+                                ee_pos[2] - obj_pos[2],
+                            ]);
+                            actor.closed_loop_eval_grasp_step =
+                                Some(actor.closed_loop_eval_steps_taken);
+                        }
+                    }
+                }
+            }
+
+            if actor.closed_loop_eval_steps_taken >= actor.closed_loop_eval_max_steps {
+                let start = actor.closed_loop_eval_start_height.unwrap_or(0.0);
+                let peak = actor.closed_loop_eval_peak_height.unwrap_or(start);
+                let rise = peak - start;
+                let success = rise > actor.closed_loop_eval_lift_threshold as f64;
+                let offset = actor.closed_loop_eval_grasp_offset;
+                let grasp_step = actor.closed_loop_eval_grasp_step;
+                // Logged per demo as it finishes (not just in the UI results
+                // list, which -- like the rest of this panel's status text,
+                // see push_policy_log's own docs -- is a GUI-only buffer that
+                // never reaches stdout) so a durable copy exists in
+                // run_editor.bat's/the launcher's log file, the same reason
+                // that logging exists at all.
+                let offset_str = match (offset, grasp_step) {
+                    (Some(o), Some(step)) => format!(
+                        "closed at step {step}, offset {:+.3},{:+.3},{:+.3} m",
+                        o[0], o[1], o[2]
+                    ),
+                    _ => "never closed".to_string(),
+                };
+                log!(
+                    "Closed-loop eval '{}': {current} -- {} (rise {rise:+.3} m, {offset_str})",
+                    actor.name,
+                    if success { "SUCCESS" } else { "miss" }
+                );
+                actor
+                    .closed_loop_eval_results
+                    .push((current, success, rise, offset, grasp_step));
+                actor.policy_enabled = false;
+                advance_closed_loop_eval(actor);
+                if actor.closed_loop_eval_current.is_none() {
+                    let successes = actor
+                        .closed_loop_eval_results
+                        .iter()
+                        .filter(|(_, s, _, _, _)| *s)
+                        .count();
+                    let total = actor.closed_loop_eval_results.len();
+                    let offsets: Vec<[f64; 3]> = actor
+                        .closed_loop_eval_results
+                        .iter()
+                        .filter_map(|(_, _, _, off, _)| *off)
+                        .collect();
+                    let steps: Vec<u32> = actor
+                        .closed_loop_eval_results
+                        .iter()
+                        .filter_map(|(_, _, _, _, step)| *step)
+                        .collect();
+                    let offset_summary = if offsets.is_empty() {
+                        "no demo ever closed the gripper".to_string()
+                    } else {
+                        let mean_horiz: f64 = offsets.iter().map(|o| o[0].hypot(o[1])).sum::<f64>()
+                            / offsets.len() as f64;
+                        let mean_step: f64 =
+                            steps.iter().map(|s| *s as f64).sum::<f64>() / steps.len() as f64;
+                        format!(
+                            "attempted a grasp in {}/{total}, mean horizontal offset at close \
+                             {mean_horiz:.3} m, mean step at close {mean_step:.1}",
+                            offsets.len()
+                        )
+                    };
+                    log!(
+                        "Closed-loop eval '{}': DONE -- {successes}/{total} succeeded ({:.0}%), {offset_summary}",
+                        actor.name,
+                        100.0 * successes as f32 / total.max(1) as f32
+                    );
                 }
             }
         }
@@ -5477,6 +5882,28 @@ impl SplatGame {
                 robomimic_output_dir: String::new(),
                 #[cfg(not(target_arch = "wasm32"))]
                 export_queue: Vec::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_queue: Vec::new(),
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_current: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_object_body: "cube_main".to_string(),
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_start_height: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_peak_height: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_lift_threshold: 0.03,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_steps_taken: 0,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_max_steps: 20,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_grasp_offset: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_grasp_step: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_results: Vec::new(),
             });
         }
 
@@ -6004,7 +6431,10 @@ impl GameEngine for SplatGame {
                         Some(scene)
                     }
                     Err(e) => {
-                        log!("Bad startup scene ({}): {e}; using the default", path.display());
+                        log!(
+                            "Bad startup scene ({}): {e}; using the default",
+                            path.display()
+                        );
                         None
                     }
                 }
@@ -8006,6 +8436,204 @@ impl GameEngine for SplatGame {
                                                         }
                                                     },
                                                 );
+                                        section_card(
+                                            ui,
+                                            card_width,
+                                            &format!("mujoco_closed_loop_eval_{i}"),
+                                            "🎯",
+                                            "Closed-Loop Success Eval",
+                                            "Answers a different question than Run Eval above: not \
+                                             \"does the model predict the right action\" but \"does a \
+                                             real rollout actually pick the object up.\" Resets to \
+                                             each held-out demo's start pose in turn, runs the live \
+                                             policy for a fixed step budget, and checks whether the \
+                                             object body rose enough above where it started to count \
+                                             as a lift -- reports a success count, not a correlation.",
+                                            false,
+                                            |ui| {
+                                                let scene_namespace = dataset_namespace_for(&m.xml_path);
+                                                if scene_namespace.is_none() {
+                                                    ui.colored_label(
+                                                        egui::Color32::from_rgb(235, 80, 80),
+                                                        "Set an XML Path above first -- the holdout list \
+                                                         is read from the bound MJCF's own export \
+                                                         namespace.",
+                                                    );
+                                                }
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Object body");
+                                                    ui.text_edit_singleline(
+                                                        &mut m.closed_loop_eval_object_body,
+                                                    );
+                                                })
+                                                .response
+                                                .on_hover_text(
+                                                    "MuJoCo body name to measure for the lift check, e.g. \
+                                                     \"cube_main\" in panda_lift.xml -- the manipulated \
+                                                     object, not the end effector.",
+                                                );
+                                                ui.add(
+                                                    egui::Slider::new(
+                                                        &mut m.closed_loop_eval_lift_threshold,
+                                                        0.005..=0.10,
+                                                    )
+                                                    .text("Lift threshold (m)"),
+                                                )
+                                                .on_hover_text(
+                                                    "How far above its start height the object must rise \
+                                                     to count as a successful lift -- big enough that \
+                                                     contact/settling jitter doesn't false-positive, \
+                                                     small enough to register a real grasp.",
+                                                );
+                                                ui.add(
+                                                    egui::Slider::new(
+                                                        &mut m.closed_loop_eval_max_steps,
+                                                        5..=60,
+                                                    )
+                                                    .text("Steps per demo"),
+                                                )
+                                                .on_hover_text(
+                                                    "Applied-action budget before giving up on a demo and \
+                                                     scoring it a miss. A held-out demo is ~13 \
+                                                     accumulated-action steps at this project's stride 4 \
+                                                     -- leave headroom since a live rollout doesn't have \
+                                                     to match the recording's own pace.",
+                                                );
+
+                                                if let Some(current) = m.closed_loop_eval_current.clone() {
+                                                    let done = m.closed_loop_eval_results.len();
+                                                    let remaining = m.closed_loop_eval_queue.len();
+                                                    ui.label(format!(
+                                                        "Running {current}  ({}/{} step budget) -- \
+                                                         {done} done, {remaining} queued…",
+                                                        m.closed_loop_eval_steps_taken,
+                                                        m.closed_loop_eval_max_steps
+                                                    ));
+                                                    if ui.button("Stop").clicked() {
+                                                        m.closed_loop_eval_queue.clear();
+                                                        m.closed_loop_eval_current = None;
+                                                        m.closed_loop_eval_start_height = None;
+                                                        m.closed_loop_eval_peak_height = None;
+                                                        m.policy_enabled = false;
+                                                    }
+                                                } else if let Some(scene_namespace) = scene_namespace {
+                                                    ui.add_enabled_ui(m.clip.is_some(), |ui| {
+                                                        if ui
+                                                            .button(format!(
+                                                                "Run Closed-Loop Eval ({scene_namespace})…"
+                                                            ))
+                                                            .on_hover_text(
+                                                                "Needs a Trajectory bound above (any demo \
+                                                                 -- only its directory is used, to locate \
+                                                                 the others by name) and a holdout.json \
+                                                                 from Rebuild TFDS Dataset. Leaves Enabled/ \
+                                                                 physics running under the hood; watch the \
+                                                                 viewport or come back once it's done.",
+                                                            )
+                                                            .clicked()
+                                                        {
+                                                            match load_holdout_demos(&scene_namespace) {
+                                                                Ok(mut demos) => {
+                                                                    demos.reverse();
+                                                                    m.closed_loop_eval_results.clear();
+                                                                    m.closed_loop_eval_queue = demos;
+                                                                    advance_closed_loop_eval(m);
+                                                                }
+                                                                Err(e) => log!(
+                                                                    "Closed-loop eval '{}': couldn't load \
+                                                                     holdout.json: {e}",
+                                                                    m.name
+                                                                ),
+                                                            }
+                                                        }
+                                                    });
+                                                    if m.clip.is_none() {
+                                                        ui.label("Bind a Trajectory above first.");
+                                                    }
+                                                }
+
+                                                if !m.closed_loop_eval_results.is_empty() {
+                                                    let successes = m
+                                                        .closed_loop_eval_results
+                                                        .iter()
+                                                        .filter(|(_, s, _, _, _)| *s)
+                                                        .count();
+                                                    let total = m.closed_loop_eval_results.len();
+                                                    ui.separator();
+                                                    ui.label(
+                                                        egui::RichText::new(format!(
+                                                            "{successes}/{total} succeeded ({:.0}%)",
+                                                            100.0 * successes as f32
+                                                                / total.max(1) as f32
+                                                        ))
+                                                        .strong(),
+                                                    );
+                                                    // Timing (gripper fired near the object) vs. alignment
+                                                    // (it wasn't there yet) -- see
+                                                    // closed_loop_eval_grasp_offset's own docs. Horizontal
+                                                    // only (x/y): height at grasp time is expected to vary
+                                                    // (the approach is still descending), the question this
+                                                    // answers is specifically about lateral placement. Step
+                                                    // index (closed_loop_eval_grasp_step) separates two very
+                                                    // different causes for the same offset: closing on
+                                                    // literally the first query points at something wrong
+                                                    // from frame one (framing/calibration); closing a few
+                                                    // steps into a real approach points at closed-loop
+                                                    // covariate shift instead.
+                                                    let offsets: Vec<[f64; 3]> = m
+                                                        .closed_loop_eval_results
+                                                        .iter()
+                                                        .filter_map(|(_, _, _, off, _)| *off)
+                                                        .collect();
+                                                    let steps: Vec<u32> = m
+                                                        .closed_loop_eval_results
+                                                        .iter()
+                                                        .filter_map(|(_, _, _, _, step)| *step)
+                                                        .collect();
+                                                    if !offsets.is_empty() {
+                                                        let mean_horiz: f64 = offsets
+                                                            .iter()
+                                                            .map(|o| o[0].hypot(o[1]))
+                                                            .sum::<f64>()
+                                                            / offsets.len() as f64;
+                                                        let mean_step: f64 = steps
+                                                            .iter()
+                                                            .map(|s| *s as f64)
+                                                            .sum::<f64>()
+                                                            / steps.len() as f64;
+                                                        ui.label(format!(
+                                                            "Attempted a grasp in {}/{total} demos -- \
+                                                             mean horizontal gripper/object offset at \
+                                                             close time: {:.3} m, mean step at close: \
+                                                             {mean_step:.1}",
+                                                            offsets.len(),
+                                                            mean_horiz
+                                                        ));
+                                                    }
+                                                    egui::ScrollArea::vertical()
+                                                        .max_height(150.0)
+                                                        .show(ui, |ui| {
+                                                            for (demo, success, rise, offset, step) in
+                                                                &m.closed_loop_eval_results
+                                                            {
+                                                                let mark =
+                                                                    if *success { "✓" } else { "✗" };
+                                                                let offset_str = match (offset, step) {
+                                                                    (Some(o), Some(s)) => format!(
+                                                                        "closed at step {s}, offset: \
+                                                                         {:+.3},{:+.3},{:+.3} m",
+                                                                        o[0], o[1], o[2]
+                                                                    ),
+                                                                    _ => "never closed".to_string(),
+                                                                };
+                                                                ui.label(format!(
+                                                                    "{mark} {demo}   rise: {rise:+.3} m   {offset_str}"
+                                                                ));
+                                                            }
+                                                        });
+                                                }
+                                            },
+                                        );
                                             }
                                         }
                                         Some(Selection::PostProcess) => {
@@ -9118,8 +9746,10 @@ impl GameEngine for SplatGame {
         {
             let picked_robomimic_hdf5 = self.picked_robomimic_hdf5.lock().unwrap().take();
             if let Some((actor_name, path)) = picked_robomimic_hdf5 {
-                if let Some(actor) =
-                    self.scene_mujoco_actors.iter_mut().find(|a| a.name == actor_name)
+                if let Some(actor) = self
+                    .scene_mujoco_actors
+                    .iter_mut()
+                    .find(|a| a.name == actor_name)
                 {
                     actor.robomimic_hdf5_path = path;
                 }
@@ -9127,8 +9757,10 @@ impl GameEngine for SplatGame {
             let picked_robomimic_output_dir =
                 self.picked_robomimic_output_dir.lock().unwrap().take();
             if let Some((actor_name, path)) = picked_robomimic_output_dir {
-                if let Some(actor) =
-                    self.scene_mujoco_actors.iter_mut().find(|a| a.name == actor_name)
+                if let Some(actor) = self
+                    .scene_mujoco_actors
+                    .iter_mut()
+                    .find(|a| a.name == actor_name)
                 {
                     actor.robomimic_output_dir = path;
                 }
@@ -9467,6 +10099,8 @@ impl GameEngine for SplatGame {
 
         // Reconcile + step + draw every MuJoCo actor.
         self.tick_mujoco_actors(renderer, game_config);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.tick_closed_loop_eval();
 
         // A skylight's "Bake Environment Cubemap" checkbox is a one-shot
         // trigger (see Light::take_cubemap_bake_request): fire the bake and

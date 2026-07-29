@@ -132,12 +132,22 @@ set RUN_DIR=D:\openvla_runs\%RUN_NAME%
 set RESUME_ARG=
 if not "%RESUME_ADAPTER_DIR%"=="" set RESUME_ARG=--resume_adapter_dir "%RESUME_ADAPTER_DIR%"
 
+if not exist "%RUN_DIR%" mkdir "%RUN_DIR%"
+set TRAIN_LOG=%RUN_DIR%\train.log
+
 echo.
 echo Starting fine-tune -- run: %RUN_NAME%
 echo Logs/checkpoints: %RUN_DIR%
+echo Full console output also going to: %TRAIN_LOG%
 if not "%RESUME_ADAPTER_DIR%"=="" echo Resuming LoRA weights from: %RESUME_ADAPTER_DIR%
 echo.
 cd /d "%OPENVLA_REPO%"
+REM cmd.exe has no built-in `tee` -- piping through a one-line PowerShell
+REM Tee-Object keeps this window's live output (so save_steps/action_accuracy
+REM are still watchable in real time, see this file's own WANDB_MODE comment
+REM above) while also writing a durable copy. Without this, a crash mid-run
+REM only leaves whatever's still in the console's own scrollback -- exactly
+REM what made a real wgpu crash's log hard to recover from once already.
 "%OPENVLA_VENV%\Scripts\python.exe" vla-scripts\finetune.py ^
     --vla_path "openvla/openvla-7b" ^
     --data_root_dir "%NATIVE_TFDS_DIR%" ^
@@ -153,10 +163,11 @@ cd /d "%OPENVLA_REPO%"
     --image_aug False ^
     --save_steps 100 ^
     --shuffle_buffer_size 2000 ^
-    %RESUME_ARG%
+    %RESUME_ARG% 2>&1 | powershell -NoProfile -Command "$input | Tee-Object -FilePath '%TRAIN_LOG%'"
 
 echo.
 echo Training stopped (or see error above). Checkpoints under %RUN_DIR%.
+echo Full log: %TRAIN_LOG%
 echo Ctrl+C anytime to stop early -- save_latest_checkpoint_only keeps just
 echo the most recent save, so the last checkpoint before stopping is what
 echo you get (matches how lora_run2 was stopped at step 500 to evaluate).

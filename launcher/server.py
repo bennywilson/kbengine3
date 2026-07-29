@@ -28,12 +28,23 @@ import re
 import signal
 import sys
 import threading
+import time
 
 import build
 from build import EXAMPLES, PORTS, CRATES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONTROL_PORT = build.DEFAULT_DASHBOARD_PORT
+
+# Durable per-job logs (see Job.__init__/log below) -- everything else about
+# a job's output only ever lived in Job.events, an in-memory list gone the
+# moment this server process restarts or the machine reboots. That's the same
+# gap as a Windows console's own limited scrollback with none of the mitigations
+# (can't even copy-paste out what's still on screen once the tab's closed),
+# and it's the actual launch path day-to-day use goes through -- run_editor.bat
+# (examples/splat) covers the OTHER path, invoking cargo run directly instead
+# of through this dashboard, and doesn't help here at all.
+LOGS_DIR = os.path.join(HERE, "logs")
 
 # cloudflared colorises its logs; those ANSI/OSC escapes render as junk in the
 # browser <pre>, so strip them (CSI ...m colour codes and OSC ...BEL sequences).
@@ -54,6 +65,19 @@ class Job:
         self.proc = None            # the long-lived (serve) process, if any
         self.status = "running"     # running | ok | failed | stopped
         self.stop_requested = False
+        # Durable copy of every committed (non-transient, see log() below)
+        # line -- opened once per job so a long-lived native run's file
+        # exists (and is readable) from the moment it starts, not only once
+        # the job ends. Best-effort: a log file the dashboard itself can't
+        # write to shouldn't take the actual build/run down with it.
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        self.log_path = os.path.join(LOGS_DIR, f"{example}_{action}_{ts}.log")
+        try:
+            self.log_file = open(self.log_path, "a", encoding="utf-8")
+        except OSError as e:
+            print(f"couldn't open {self.log_path}: {e}", file=sys.stderr)
+            self.log_file = None
 
     def emit(self, ev, history=True):
         with self.lock:
@@ -78,11 +102,21 @@ class Job:
             # partial "[===> ]" lingering under the next step's output.
             self.last_transient = None
             self.emit(ev)
+            # Same committed-only filter as `events` above (a redrawing
+            # progress bar would otherwise write thousands of lines), flushed
+            # per line rather than buffered -- a crash should still leave a
+            # complete file, not lose whatever hadn't hit disk yet.
+            if self.log_file:
+                self.log_file.write(ev["line"] + "\n")
+                self.log_file.flush()
 
     def set_status(self, status):
         self.status = status
         if status != "running":
             self.last_transient = None  # no stale bar line after the job ends
+            if self.log_file:
+                self.log_file.close()
+                self.log_file = None
         self.emit({"type": "status", "status": status})
 
     def url(self, label, url):
@@ -116,6 +150,9 @@ def worker(job):
 
     def on_proc(p):
         job.proc = p
+
+    if job.log_file:
+        job.log(f"Logging to {job.log_path}")
 
     try:
         if job.action == "native":

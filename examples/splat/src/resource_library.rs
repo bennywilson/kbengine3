@@ -338,7 +338,9 @@ mod imp {
         std::path::Path::new(path)
             .extension()
             .and_then(|e| e.to_str())
-            .map_or(false, |ext| exts.iter().any(|e| e.eq_ignore_ascii_case(ext)))
+            .map_or(false, |ext| {
+                exts.iter().any(|e| e.eq_ignore_ascii_case(ext))
+            })
     }
 
     // Stored keys under any of `prefixes` whose extension is in `exts`, unioned
@@ -363,7 +365,11 @@ mod imp {
     pub async fn scan_textures() -> Vec<String> {
         scan(
             load_manifest().await.textures,
-            &["game_assets/textures/", "game_assets/fx/", "game_assets/models/"],
+            &[
+                "game_assets/textures/",
+                "game_assets/fx/",
+                "game_assets/models/",
+            ],
             IMAGE_EXTS,
         )
         .await

@@ -28,6 +28,13 @@ COPY server.py .
 # path as a volume (see docker-compose.yml) so a re-run doesn't re-download
 # several GB of weights.
 ENV HF_HOME=/root/.cache/huggingface
+# Python fully block-buffers stdout when it isn't a TTY, which `docker logs`
+# never is -- server.py's own print()s (which adapter/stats loaded, whether
+# it's on CPU) sat unflushed until enough output accumulated, while tqdm's
+# progress bars (stderr, flushed per update) appeared immediately. That gap
+# once made a correctly-loaded checkpoint look unconfirmed from the logs
+# alone, requiring an actual request against the running server to verify.
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 

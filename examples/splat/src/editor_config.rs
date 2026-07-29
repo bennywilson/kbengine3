@@ -247,7 +247,10 @@ pub fn save_startup_scene_name(name: Option<&str>) {
 
 #[cfg(target_arch = "wasm32")]
 pub fn load_startup_scene_name() -> Option<String> {
-    local_storage()?.get_item(STARTUP_SCENE_NAME_KEY).ok().flatten()
+    local_storage()?
+        .get_item(STARTUP_SCENE_NAME_KEY)
+        .ok()
+        .flatten()
 }
 
 // --- Last-used picker folders ------------------------------------------------
@@ -291,7 +294,10 @@ pub fn save_last_dir(category: &str, dir: &std::path::Path) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let text: String = entries.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+    let text: String = entries
+        .iter()
+        .map(|(k, v)| format!("{k} = {v}\n"))
+        .collect();
     let _ = std::fs::write(path, text);
 }
 
