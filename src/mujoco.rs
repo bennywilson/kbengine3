@@ -1009,7 +1009,21 @@ impl MujocoScene {
 
         let raw_t = (action[6] as f64).clamp(0.0, 1.0);
         let t = self.smooth_gripper_t(raw_t);
-        self.mj_data.ctrl_mut()[gripper_id] = gripper_lo + t * (gripper_hi - gripper_lo);
+        // `t` is *closedness* (0 = open, 1 = shut -- this crate's convention,
+        // and what `policy_dataset::gripper_closedness` labels training data
+        // with), but panda_robot.xml's `actuator8` runs the opposite way: it
+        // drives the `split` tendon's length, so ctrl at its range minimum
+        // pulls the fingers shut and at its maximum opens them. Mapping
+        // closedness onto ctrl ascending (`lo + t * span`) therefore inverted
+        // every gripper command. Measured, not inferred: at `lo`,
+        // `finger_joint1` settles at qpos 0.0 (fully shut) and at `hi` at
+        // 0.04 (fully open).
+        //
+        // This silently broke every grasp a served policy ever attempted --
+        // a "close now" prediction opened the hand instead -- while looking
+        // fine in any test that only checked the ctrl number rather than
+        // where the fingers physically ended up.
+        self.mj_data.ctrl_mut()[gripper_id] = gripper_hi - t * (gripper_hi - gripper_lo);
 
         Ok(())
     }
@@ -1073,7 +1087,9 @@ impl MujocoScene {
         // on the Rust side, with JS just told exactly where to put ctrl.
         let raw_t = (action[6] as f64).clamp(0.0, 1.0);
         let t = self.smooth_gripper_t(raw_t);
-        let gripper_ctrl_target = gripper.ctrl_lo + t * (gripper.ctrl_hi - gripper.ctrl_lo);
+        // Descending in `t`, matching native above -- see that branch's
+        // comment for why closedness maps onto ctrl backwards here.
+        let gripper_ctrl_target = gripper.ctrl_hi - t * (gripper.ctrl_hi - gripper.ctrl_lo);
 
         let action64: Vec<f64> = action[..6].iter().map(|&v| v as f64).collect();
         wasm_bridge::apply_policy_action(
@@ -1209,6 +1225,49 @@ impl MujocoScene {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn joint_qpos(&self, name: &str) -> Option<f64> {
         Some(self.mj_data.joint(name)?.view(&self.mj_data).qpos[0])
+    }
+
+    /// A named joint's *whole* `qpos` slice -- 1 value for a hinge/slide, 4
+    /// for a ball, 7 for a free joint, matching the widths
+    /// [`joint_tracks`](Self::joint_tracks) reports. Widens
+    /// [`joint_qpos`](Self::joint_qpos) above, which only ever hands back a
+    /// 1-dof joint's scalar: recording a whole pose (every joint in
+    /// `joint_tracks` order, e.g. to author a
+    /// [`crate::trajectory::TrajectoryClip`] offline) needs the multi-dof
+    /// joints too, or a manipulated object's free joint comes back as just
+    /// its x coordinate. Native-only, same reason as `body_world_pose`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn joint_qpos_slice(&self, name: &str) -> Option<Vec<f64>> {
+        Some(self.mj_data.joint(name)?.view(&self.mj_data).qpos.to_vec())
+    }
+
+    /// Writes one named joint's `qpos` and re-runs forward kinematics, so a
+    /// later `body_world_pose`/geom read reflects it without stepping
+    /// physics. The single-joint counterpart to
+    /// [`apply_trajectory_frame`](Self::apply_trajectory_frame), which this
+    /// deliberately mirrors (including that trailing `forward()`), for
+    /// callers placing *one* thing rather than replaying a whole recorded
+    /// pose -- e.g. randomizing a manipulated object's start pose when
+    /// generating trajectories offline.
+    ///
+    /// Returns `false` if no joint has this name, or if `values` doesn't
+    /// match its dof width: a short slice would otherwise leave a free
+    /// joint's pose half-written (new position, stale orientation), which
+    /// reads as a puzzling physics bug rather than the caller error it is.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_joint_qpos(&mut self, name: &str, values: &[f64]) -> bool {
+        let Some(joint) = self.mj_data.joint(name) else {
+            return false;
+        };
+        {
+            let mut view = joint.view_mut(&mut self.mj_data);
+            if view.qpos.len() != values.len() {
+                return false;
+            }
+            view.qpos.copy_from_slice(values);
+        }
+        self.mj_data.forward();
+        true
     }
 
     /// Writes one frame of a [`crate::trajectory::RetargetedClip`] straight
@@ -2225,12 +2284,73 @@ mod tests {
 
         let model = scene.mj_data.model();
         let gripper_id = model.name_to_id(MjtObj::mjOBJ_ACTUATOR, "actuator8").unwrap();
-        let [_, hi] = model.actuator_ctrlrange()[gripper_id];
-        assert_eq!(ctrl[gripper_id], hi, "gripper=1.0 (fully closed) should map to ctrlrange's max");
+        let [lo, _] = model.actuator_ctrlrange()[gripper_id];
+        // Descending: `actuator8` drives the `split` tendon's *length*, so
+        // ctrl's minimum is what pulls the fingers shut. See
+        // apply_policy_action's own comment -- an earlier version of this
+        // assertion expected the maximum here and so locked in an inverted
+        // gripper for every served policy.
+        assert_eq!(
+            ctrl[gripper_id], lo,
+            "gripper=1.0 (fully closed) should map to ctrlrange's min, which shuts the fingers"
+        );
 
         // Physics should tolerate the new ctrl targets, not blow up.
         scene.step_once();
         assert!(scene.mj_data.qpos().iter().all(|v| v.is_finite()), "qpos went non-finite after stepping");
+    }
+
+    /// The regression guard the `ctrl`-only assertions above couldn't be:
+    /// it drives the gripper to each extreme and checks where the fingers
+    /// *physically end up*, so a mapping that's self-consistently backwards
+    /// (which is exactly what shipped) fails here even though every ctrl
+    /// number looks reasonable.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn gripper_command_moves_fingers_the_direction_it_claims() {
+        let arm_actuators =
+            ["actuator1", "actuator2", "actuator3", "actuator4", "actuator5", "actuator6", "actuator7"];
+        // panda_robot.xml's `home` keyframe -- qpos0 leaves the arm straight
+        // out, which can rest the hand on the floor and jam the fingers.
+        let home = [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853];
+        let finger_open_qpos = 0.04;
+
+        // `gripper` here is this crate's convention: 0 = open, 1 = closed.
+        for (gripper, want_closed) in [(0.0_f32, false), (1.0_f32, true)] {
+            let mut scene =
+                MujocoScene::from_xml_path(&format!("{PANDA_DIR}/panda_lift.xml")).unwrap();
+            for (i, name) in
+                ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"]
+                    .iter()
+                    .enumerate()
+            {
+                scene.set_joint_qpos(name, &[home[i]]);
+            }
+            for name in ["finger_joint1", "finger_joint2"] {
+                scene.set_joint_qpos(name, &[finger_open_qpos]);
+            }
+            scene.hold_current_pose(&arm_actuators).unwrap();
+
+            let action = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, gripper];
+            // Long enough for both the command smoothing (see
+            // smooth_gripper_t) and the position servo to settle.
+            for _ in 0..40 {
+                scene.apply_policy_action(&action, "hand", &arm_actuators, "actuator8").unwrap();
+                for _ in 0..25 {
+                    scene.step_once();
+                }
+            }
+
+            let qpos = scene.joint_qpos("finger_joint1").unwrap();
+            let closedness = crate::policy_dataset::gripper_closedness(qpos, finger_open_qpos);
+            assert_eq!(
+                closedness > 0.5,
+                want_closed,
+                "gripper={gripper} should leave the fingers {}, but finger_joint1 settled at \
+                 qpos {qpos:.4} (closedness {closedness:.2})",
+                if want_closed { "shut" } else { "open" }
+            );
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -2244,11 +2364,12 @@ mod tests {
         let [lo, hi] = model.actuator_ctrlrange()[gripper_id];
 
         // First call ever: no prior sample to smooth against, so it should
-        // pass the raw (fully open) target straight through.
+        // pass the raw (fully open) target straight through. Open is
+        // ctrlrange's *max* here -- see apply_policy_action's own comment.
         let open = [0.0_f32; 7];
         scene.apply_policy_action(&open, "hand", &arm_actuators, "actuator8").unwrap();
         assert_eq!(
-            scene.mj_data.ctrl()[gripper_id], lo,
+            scene.mj_data.ctrl()[gripper_id], hi,
             "the first-ever call should pass its raw target through unsmoothed"
         );
 
@@ -2273,10 +2394,10 @@ mod tests {
         let settled = scene.mj_data.ctrl()[gripper_id];
         // Exponential smoothing only asymptotically reaches its target, so
         // "closed" here means comfortably converged (well under 1% of the
-        // full ctrlrange away), not bit-for-bit equal to `hi`.
+        // full ctrlrange away), not bit-for-bit equal to `lo`.
         assert!(
-            (settled - hi).abs() < (hi - lo) * 0.01,
-            "a sustained closed command should still fully close eventually, got {settled} (target {hi})"
+            (settled - lo).abs() < (hi - lo) * 0.01,
+            "a sustained closed command should still fully close eventually, got {settled} (target {lo})"
         );
     }
 

@@ -768,6 +768,30 @@ const DEFAULT_POLICY_INTERVAL_SECS: f32 = 0.5;
 #[cfg(not(target_arch = "wasm32"))]
 const PANDA_FINGER_OPEN_QPOS: f64 = 0.04;
 
+/// Height of the `hand` body's origin above the object's centre at a correct
+/// grasp, in metres. Read out of `panda_robot.xml` (`left_finger` sits at
+/// hand-local z 0.0584, the grasp pad a further 0.0445 below it) and shared
+/// with `tools/generate_lift_trajectories`' own `GRASP_OFFSET_Z`, so the
+/// scripted demos and the closed-loop eval agree on where a grasp is.
+///
+/// The eval measures approach against this pose rather than the object's
+/// centre, which the hand can never occupy: an offset taken to the centre
+/// bottoms out near 0.10 for a flawless grasp, so a perfect run reads like a
+/// 10cm miss and the number that decides success is buried in the
+/// components.
+#[cfg(not(target_arch = "wasm32"))]
+const PANDA_GRASP_OFFSET_Z: f64 = 0.103;
+
+/// `gripper_closedness` above which the hand counts as shut around the
+/// object. A finger holding this ~4cm cube stops near half its travel, so a
+/// real grip reads ~0.5 and only an *empty* grasp approaches 1.0 -- across
+/// all 320 exported demos the highest per-episode closedness is 0.635 and
+/// the mean is 0.50, including the scripted demos that provably lift the
+/// cube. The threshold sits below that so a genuine grip registers, and well
+/// above the ~0.15 mean idle value so an open hand doesn't.
+#[cfg(not(target_arch = "wasm32"))]
+const PANDA_GRIPPER_SHUT_CLOSEDNESS: f64 = 0.35;
+
 /// The `(width, height)` a policy-camera capture renders at. Shared by the
 /// three call sites (`tick_mujoco_actors`'s live policy dispatch, the Details
 /// panel's camera preview, and training-data export) so they can't drift
@@ -838,6 +862,46 @@ fn launch_robomimic_convert(input_hdf5: &str, output_dir: &str) {
     match result {
         Ok(_) => log!("Launched robomimic conversion of '{input_hdf5}' -> '{output_dir}' -- watch the new console window for progress/errors."),
         Err(e) => log!("Failed to launch robomimic conversion: {e}"),
+    }
+}
+
+/// Launches `tools/generate_lift_trajectories.bat <count> <out_dir> <seed>` in
+/// its own visible console window, same rationale as the other `launch_*`
+/// helpers: it runs real physics per episode (a few hundred sim steps each,
+/// several minutes for a full set) and streams its own progress.
+///
+/// Produces the same `TrajectoryClip` JSON the robomimic converter above does,
+/// so its output binds in the Trajectory field and exports identically -- the
+/// difference is entirely in the *distribution*. The converted demos all
+/// approach the cube the same way from near-identical arm poses, which is what
+/// a policy trained on them latches onto; these randomize the approach (hover
+/// offset and height, arm configuration) as well as the cube's position.
+///
+/// Keep `out_dir` separate from the converted clips: the two sets are not
+/// interchangeable, and mixing them makes it impossible to tell afterwards
+/// which distribution a dataset was built from. Native-only, same as the rest.
+#[cfg(not(target_arch = "wasm32"))]
+fn launch_generate_trajectories(count: usize, out_dir: &str, seed: u64, start_index: usize) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = repo_root
+        .join("tools")
+        .join("generate_lift_trajectories.bat");
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "Generate Scripted Demos"])
+        .arg("cmd")
+        .arg("/K")
+        .arg(&script)
+        .arg(count.to_string())
+        .arg(out_dir)
+        .arg(seed.to_string())
+        .arg(start_index.to_string())
+        .current_dir(&repo_root)
+        .spawn();
+    match result {
+        Ok(_) => log!(
+            "Launched scripted demo generation ({count} demos from demo_{start_index}, seed {seed}) -> '{out_dir}' -- watch the new console window for progress/errors."
+        ),
+        Err(e) => log!("Failed to launch scripted demo generation: {e}"),
     }
 }
 
@@ -1223,6 +1287,30 @@ fn dataset_namespace_for(xml_path: &str) -> Option<String> {
     (!stem.is_empty()).then(|| stem.to_string())
 }
 
+/// One demo's outcome in a closed-loop eval run. A struct rather than a
+/// tuple purely for readability -- six positional fields at the call sites
+/// stopped being possible to read at a glance.
+#[cfg(not(target_arch = "wasm32"))]
+struct ClosedLoopResult {
+    demo: String,
+    success: bool,
+    /// Peak height the object reached above where it started.
+    rise: f64,
+    /// See `MujocoSceneActor::closed_loop_eval_closest_dist`.
+    closest_dist: f64,
+    closest_offset: [f64; 3],
+    closest_closedness: f64,
+    /// See `MujocoSceneActor::closed_loop_eval_grasp_ready_dist`.
+    grasp_ready_dist: f64,
+    grasp_ready_offset: [f64; 3],
+    peak_closedness: f64,
+    /// Achieved / commanded end-effector travel per axis over this demo (see
+    /// `MujocoSceneActor::closed_loop_eval_commanded`). 1.0 means the arm
+    /// went exactly as far as it was told; NaN when nothing was commanded on
+    /// that axis.
+    delivery: [f64; 3],
+}
+
 /// Reads `<scene_namespace>/holdout.json` (written by `build_rlds_dataset.py`'s
 /// `--holdout`, see `dataset_namespace_for` for the namespace convention) --
 /// the demo list `tick_closed_loop_eval` runs through. Deliberately reads the
@@ -1264,8 +1352,15 @@ fn load_holdout_demos(scene_namespace: &str) -> anyhow::Result<Vec<String>> {
 fn advance_closed_loop_eval(actor: &mut MujocoSceneActor) {
     actor.closed_loop_eval_start_height = None;
     actor.closed_loop_eval_peak_height = None;
-    actor.closed_loop_eval_grasp_offset = None;
-    actor.closed_loop_eval_grasp_step = None;
+    actor.closed_loop_eval_closest_dist = f64::INFINITY;
+    actor.closed_loop_eval_closest_offset = [0.0; 3];
+    actor.closed_loop_eval_closest_closedness = 0.0;
+    actor.closed_loop_eval_grasp_ready_dist = f64::INFINITY;
+    actor.closed_loop_eval_grasp_ready_offset = [0.0; 3];
+    actor.closed_loop_eval_peak_closedness = 0.0;
+    actor.closed_loop_eval_commanded = [0.0; 3];
+    actor.closed_loop_eval_achieved = [0.0; 3];
+    actor.policy_last_command = None;
     actor.closed_loop_eval_steps_taken = 0;
     match actor.closed_loop_eval_queue.pop() {
         Some(next) => {
@@ -1585,6 +1680,25 @@ struct MujocoSceneActor {
     /// Trajectory field's Browse… picker finds them afterward.
     #[cfg(not(target_arch = "wasm32"))]
     robomimic_output_dir: String,
+    /// Scripted-demo generation inputs (see `launch_generate_trajectories`).
+    /// Transient UI state, not persisted, same as the robomimic fields above.
+    /// The seed is exposed rather than hidden because the generator is
+    /// deterministic: the same seed reproduces a dataset exactly, which is
+    /// what makes the (gitignored, ~17MB) output regenerable from a number.
+    #[cfg(not(target_arch = "wasm32"))]
+    generate_count: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    generate_seed: u64,
+    #[cfg(not(target_arch = "wasm32"))]
+    generate_output_dir: String,
+    /// First `demo_<N>` index the generator writes. Exports are namespaced by
+    /// each clip's *file stem* (see `policy_dataset::export_dir_for`), so two
+    /// trajectory folders that both count from 0 collide in the export
+    /// directory and silently overwrite each other. Offsetting one set past
+    /// the other is what lets scripted and converted demos be exported into a
+    /// single training set.
+    #[cfg(not(target_arch = "wasm32"))]
+    generate_start_index: usize,
     /// Remaining trajectory-clip paths for a "Batch Export…" run, front of
     /// the queue first -- drained one clip at a time by `tick_mujoco_actors`
     /// once the previous clip's export finishes (or is skipped, e.g. a clip
@@ -1644,35 +1758,71 @@ struct MujocoSceneActor {
     /// rollout doesn't have to match the recording's own pace.
     #[cfg(not(target_arch = "wasm32"))]
     closed_loop_eval_max_steps: u32,
-    /// `ee_body`'s position minus the object body's, the first tick this
-    /// demo's gripper crosses half-closed (see `policy_dataset::gripper_closedness`)
-    /// -- `None` until that happens, and stays `None` for a demo whose
-    /// gripper never commits to closing at all. Distinguishes two different
-    /// failure modes a raw success/fail count can't: a small offset here
-    /// means the arm was genuinely near the object when it decided to grasp
-    /// (a *timing* problem -- closed a beat early/late), while a large one
-    /// means it wasn't actually there yet (an *alignment* problem, closing
-    /// on a "this looks about right" visual cue rather than real proximity
-    /// -- expected, since this whole setup has no proprioceptive/tactile
-    /// feedback for the policy to correct against, see StateEncoding.NONE
-    /// in openvla's oxe/configs.py).
+    /// Closest the end effector got to the object this demo, and the state
+    /// at that moment. Replaces an earlier "offset the first tick the
+    /// gripper crossed half-closed" measurement, which fired once and never
+    /// updated: with a gripper that opens and shuts repeatedly it latched
+    /// onto an early twitch metres from the object and reported that
+    /// forever, so a rollout that visibly reached the cube and fumbled the
+    /// grip was indistinguishable from one that never approached at all.
+    ///
+    /// Measured against the grasp pose (`PANDA_GRASP_OFFSET_Z` above the
+    /// object's centre) rather than the centre itself, so 0 means the hand is
+    /// exactly where it needs to be to close, and each component reads
+    /// directly as alignment error in that axis.
     #[cfg(not(target_arch = "wasm32"))]
-    closed_loop_eval_grasp_offset: Option<[f64; 3]>,
-    /// `closed_loop_eval_steps_taken`'s value at the same moment
-    /// `closed_loop_eval_grasp_offset` was recorded -- distinguishes closing
-    /// on literally the first query (points at something wrong from frame
-    /// one, e.g. framing/calibration) from closing a few steps in after some
-    /// real approach (points at closed-loop covariate shift instead -- the
-    /// live rollout drifting off the training distribution within the first
-    /// few self-generated observations, undetectable by any open-loop
-    /// eval). `None` alongside `closed_loop_eval_grasp_offset` being `None`.
+    closed_loop_eval_closest_dist: f64,
     #[cfg(not(target_arch = "wasm32"))]
-    closed_loop_eval_grasp_step: Option<u32>,
-    /// (demo name, succeeded, peak rise in meters, grasp-moment offset, step
-    /// index at that moment) for every demo completed so far this run, in
-    /// completion order.
+    closed_loop_eval_closest_offset: [f64; 3],
+    /// `policy_dataset::gripper_closedness` at the closest approach: whether
+    /// the hand was actually shut when it was nearest the object, which is
+    /// the thing a success/fail count can't tell you.
     #[cfg(not(target_arch = "wasm32"))]
-    closed_loop_eval_results: Vec<(String, bool, f64, Option<[f64; 3]>, Option<u32>)>,
+    closed_loop_eval_closest_closedness: f64,
+    /// Closest the hand got to the grasp pose on any tick where it was
+    /// actually shut (`PANDA_GRIPPER_SHUT_CLOSEDNESS`) -- the best attempt it
+    /// made with a hand that could hold something, as opposed to
+    /// `closed_loop_eval_closest_dist`, which is the best approach in any
+    /// hand state. Infinite when the hand never shut at all.
+    ///
+    /// The pair separates two failures that `closest_dist` alone reports
+    /// identically: arriving in position with the hand open, and shutting the
+    /// hand somewhere else. Both read as "close approach, gripper open at
+    /// that instant", but only the second is a timing problem.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_grasp_ready_dist: f64,
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_grasp_ready_offset: [f64; 3],
+    /// Highest closedness reached at any point this demo, wherever the hand
+    /// was -- distinguishes "never commanded a close" from "closed in the
+    /// wrong place". Note the gripper channel is smoothed on the way to
+    /// `ctrl` (see `MujocoScene::smooth_gripper_t`), so this is what the
+    /// fingers actually did, several ticks behind what the policy asked for.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_peak_closedness: f64,
+    /// Per-axis totals of |commanded| and |achieved| end-effector translation
+    /// over the current demo, whose ratio says how much of what the policy
+    /// asked for the arm actually delivered.
+    ///
+    /// Worth measuring separately from the policy's own accuracy because the
+    /// two are independently wrong-able: `apply_policy_action` solves for
+    /// joint deltas by damped least squares, which deliberately suppresses
+    /// motion along ill-conditioned directions. Near full extension that's
+    /// the reach axis specifically, so a policy predicting perfectly can
+    /// still under-travel in one axis and no per-step accuracy metric would
+    /// show it.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_commanded: [f64; 3],
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_achieved: [f64; 3],
+    /// End-effector position and commanded translation from the previous
+    /// applied action, so the next one can measure what the arm did with it.
+    /// `None` before the first action of a demo (nothing to compare against).
+    #[cfg(not(target_arch = "wasm32"))]
+    policy_last_command: Option<([f64; 3], [f64; 3])>,
+    /// Per-demo outcomes for this run, in completion order.
+    #[cfg(not(target_arch = "wasm32"))]
+    closed_loop_eval_results: Vec<ClosedLoopResult>,
 }
 
 impl MujocoSceneActor {
@@ -1743,6 +1893,15 @@ impl MujocoSceneActor {
             #[cfg(not(target_arch = "wasm32"))]
             robomimic_output_dir: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
+            generate_count: 120,
+            #[cfg(not(target_arch = "wasm32"))]
+            generate_seed: 1,
+            #[cfg(not(target_arch = "wasm32"))]
+            generate_output_dir: "examples/splat/game_assets/mujoco/trajectories/lift_scripted"
+                .to_string(),
+            #[cfg(not(target_arch = "wasm32"))]
+            generate_start_index: 200,
+            #[cfg(not(target_arch = "wasm32"))]
             export_queue: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             closed_loop_eval_queue: Vec::new(),
@@ -1761,9 +1920,23 @@ impl MujocoSceneActor {
             #[cfg(not(target_arch = "wasm32"))]
             closed_loop_eval_max_steps: 20,
             #[cfg(not(target_arch = "wasm32"))]
-            closed_loop_eval_grasp_offset: None,
+            closed_loop_eval_closest_dist: f64::INFINITY,
             #[cfg(not(target_arch = "wasm32"))]
-            closed_loop_eval_grasp_step: None,
+            closed_loop_eval_closest_offset: [0.0; 3],
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_closest_closedness: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_grasp_ready_dist: f64::INFINITY,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_grasp_ready_offset: [0.0; 3],
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_peak_closedness: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_commanded: [0.0; 3],
+            #[cfg(not(target_arch = "wasm32"))]
+            closed_loop_eval_achieved: [0.0; 3],
+            #[cfg(not(target_arch = "wasm32"))]
+            policy_last_command: None,
             #[cfg(not(target_arch = "wasm32"))]
             closed_loop_eval_results: Vec::new(),
         }
@@ -4125,6 +4298,15 @@ impl SplatGame {
                     #[cfg(not(target_arch = "wasm32"))]
                     robomimic_output_dir: String::new(),
                     #[cfg(not(target_arch = "wasm32"))]
+                    generate_count: 120,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    generate_seed: 1,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    generate_output_dir:
+                        "examples/splat/game_assets/mujoco/trajectories/lift_scripted".to_string(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    generate_start_index: 200,
+                    #[cfg(not(target_arch = "wasm32"))]
                     export_queue: Vec::new(),
                     #[cfg(not(target_arch = "wasm32"))]
                     closed_loop_eval_queue: Vec::new(),
@@ -4143,9 +4325,23 @@ impl SplatGame {
                     #[cfg(not(target_arch = "wasm32"))]
                     closed_loop_eval_max_steps: 20,
                     #[cfg(not(target_arch = "wasm32"))]
-                    closed_loop_eval_grasp_offset: None,
+                    closed_loop_eval_closest_dist: f64::INFINITY,
                     #[cfg(not(target_arch = "wasm32"))]
-                    closed_loop_eval_grasp_step: None,
+                    closed_loop_eval_closest_offset: [0.0; 3],
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_closest_closedness: 0.0,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_grasp_ready_dist: f64::INFINITY,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_grasp_ready_offset: [0.0; 3],
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_peak_closedness: 0.0,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_commanded: [0.0; 3],
+                    #[cfg(not(target_arch = "wasm32"))]
+                    closed_loop_eval_achieved: [0.0; 3],
+                    #[cfg(not(target_arch = "wasm32"))]
+                    policy_last_command: None,
                     #[cfg(not(target_arch = "wasm32"))]
                     closed_loop_eval_results: Vec::new(),
                 });
@@ -4356,6 +4552,15 @@ impl SplatGame {
                                 .split(',')
                                 .map(str::trim)
                                 .collect();
+                            // Sampled before the action is applied, so it's
+                            // where the arm ended up after the *previous*
+                            // one had a full policy interval to settle --
+                            // the commanded delta and the delta actually
+                            // delivered, over the same window.
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let ee_before = scene
+                                .body_world_pose(&actor.policy_ee_body)
+                                .map(|(p, _)| p);
                             match scene.apply_policy_action(
                                 step,
                                 &actor.policy_ee_body,
@@ -4363,6 +4568,28 @@ impl SplatGame {
                                 &actor.policy_gripper_actuator,
                             ) {
                                 Ok(()) => {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    if let Some(now) = ee_before {
+                                        if let (Some((prev, cmd)), true) = (
+                                            actor.policy_last_command,
+                                            actor.closed_loop_eval_current.is_some(),
+                                        ) {
+                                            for i in 0..3 {
+                                                actor.closed_loop_eval_commanded[i] +=
+                                                    cmd[i].abs();
+                                                actor.closed_loop_eval_achieved[i] +=
+                                                    (now[i] - prev[i]).abs();
+                                            }
+                                        }
+                                        actor.policy_last_command = Some((
+                                            now,
+                                            [
+                                                step[0] as f64,
+                                                step[1] as f64,
+                                                step[2] as f64,
+                                            ],
+                                        ));
+                                    }
                                     // Counts this applied action toward the current
                                     // demo's step budget when a closed-loop eval is
                                     // driving this actor (see tick_closed_loop_eval) --
@@ -5138,9 +5365,18 @@ impl SplatGame {
                         "Closed-loop eval '{}': {current} -- SKIPPED (clip retargeted onto nothing)",
                         actor.name
                     );
-                    actor
-                        .closed_loop_eval_results
-                        .push((current, false, 0.0, None, None));
+                    actor.closed_loop_eval_results.push(ClosedLoopResult {
+                        demo: current,
+                        success: false,
+                        rise: 0.0,
+                        closest_dist: f64::INFINITY,
+                        closest_offset: [0.0; 3],
+                        closest_closedness: 0.0,
+                        grasp_ready_dist: f64::INFINITY,
+                        grasp_ready_offset: [0.0; 3],
+                        peak_closedness: 0.0,
+                        delivery: [f64::NAN; 3],
+                    });
                     advance_closed_loop_eval(actor);
                     continue;
                 };
@@ -5184,47 +5420,49 @@ impl SplatGame {
                     }
                 }
 
-                // Grasp-moment diagnostic: the first tick the (real, physics-
-                // settled) finger position crosses half-closed, record how far
-                // the end effector actually was from the object -- see
-                // closed_loop_eval_grasp_offset's own docs for why this is
-                // worth separating from the plain success/fail count. Reads
-                // qpos (not the commanded ctrl target smooth_gripper_t writes)
-                // since actuators are real PD servos that take physical time
-                // to reach a new target -- qpos is when the fingers actually
-                // got there, not when the command was issued.
-                //
-                // Gated on at least one real policy action having landed
-                // (steps_taken >= 1): the recorded Lift demos' own frame 0
-                // sits at ~48% closed (measured directly against demo_115.json
-                // -- gripper_closedness(0.020833, 0.04) = 0.479), a hair under
-                // the 0.5 threshold below. Checking from the very first tick
-                // after reset caught that recorded starting state itself (or
-                // reset-settling noise around it), not anything the live
-                // policy had decided yet -- every "closed at step 0" result
-                // this produced was a measurement artifact, not a finding
-                // about the model.
-                if actor.closed_loop_eval_grasp_offset.is_none()
-                    && actor.closed_loop_eval_steps_taken >= 1
-                {
+                // Closest-approach tracking. Sampled every tick (physics steps
+                // every frame, applied actions only land every
+                // policy_interval_secs) and kept as a running minimum, so a
+                // gripper that opens and shuts repeatedly can't hide the one
+                // moment that matters -- see
+                // closed_loop_eval_closest_dist's own docs for why a
+                // first-threshold-crossing measurement couldn't.
+                if let (Some((ee_pos, _)), Some((obj_pos, _))) = (
+                    scene.body_world_pose(&actor.policy_ee_body),
+                    scene.body_world_pose(&actor.closed_loop_eval_object_body),
+                ) {
+                    let offset = [
+                        ee_pos[0] - obj_pos[0],
+                        ee_pos[1] - obj_pos[1],
+                        ee_pos[2] - obj_pos[2] - PANDA_GRASP_OFFSET_Z,
+                    ];
+                    let dist = (offset[0].powi(2) + offset[1].powi(2) + offset[2].powi(2)).sqrt();
+                    // Reads qpos rather than the commanded ctrl target: the
+                    // actuators are real servos, so this is where the fingers
+                    // physically were, not where they were told to go.
                     let finger_qpos = scene.joint_qpos("finger_joint1").unwrap_or(0.0);
                     let closedness = black_splat::policy_dataset::gripper_closedness(
                         finger_qpos,
                         PANDA_FINGER_OPEN_QPOS,
                     );
-                    if closedness >= 0.5 {
-                        if let (Some((ee_pos, _)), Some((obj_pos, _))) = (
-                            scene.body_world_pose(&actor.policy_ee_body),
-                            scene.body_world_pose(&actor.closed_loop_eval_object_body),
-                        ) {
-                            actor.closed_loop_eval_grasp_offset = Some([
-                                ee_pos[0] - obj_pos[0],
-                                ee_pos[1] - obj_pos[1],
-                                ee_pos[2] - obj_pos[2],
-                            ]);
-                            actor.closed_loop_eval_grasp_step =
-                                Some(actor.closed_loop_eval_steps_taken);
-                        }
+                    if closedness > actor.closed_loop_eval_peak_closedness {
+                        actor.closed_loop_eval_peak_closedness = closedness;
+                    }
+                    if dist < actor.closed_loop_eval_closest_dist {
+                        actor.closed_loop_eval_closest_dist = dist;
+                        actor.closed_loop_eval_closest_offset = offset;
+                        actor.closed_loop_eval_closest_closedness = closedness;
+                    }
+                    // Tracked separately from the unconditional minimum above:
+                    // the best approach and the best approach *with the hand
+                    // shut* are different moments whenever the grip is
+                    // mistimed, and only the second one could ever have lifted
+                    // anything.
+                    if closedness > PANDA_GRIPPER_SHUT_CLOSEDNESS
+                        && dist < actor.closed_loop_eval_grasp_ready_dist
+                    {
+                        actor.closed_loop_eval_grasp_ready_dist = dist;
+                        actor.closed_loop_eval_grasp_ready_offset = offset;
                     }
                 }
             }
@@ -5234,63 +5472,125 @@ impl SplatGame {
                 let peak = actor.closed_loop_eval_peak_height.unwrap_or(start);
                 let rise = peak - start;
                 let success = rise > actor.closed_loop_eval_lift_threshold as f64;
-                let offset = actor.closed_loop_eval_grasp_offset;
-                let grasp_step = actor.closed_loop_eval_grasp_step;
                 // Logged per demo as it finishes (not just in the UI results
                 // list, which -- like the rest of this panel's status text,
                 // see push_policy_log's own docs -- is a GUI-only buffer that
                 // never reaches stdout) so a durable copy exists in
-                // run_editor.bat's/the launcher's log file, the same reason
-                // that logging exists at all.
-                let offset_str = match (offset, grasp_step) {
-                    (Some(o), Some(step)) => format!(
-                        "closed at step {step}, offset {:+.3},{:+.3},{:+.3} m",
-                        o[0], o[1], o[2]
-                    ),
-                    _ => "never closed".to_string(),
+                // run_editor.bat's/the launcher's log file.
+                let mut delivery = [f64::NAN; 3];
+                for i in 0..3 {
+                    if actor.closed_loop_eval_commanded[i] > 1e-9 {
+                        delivery[i] = actor.closed_loop_eval_achieved[i]
+                            / actor.closed_loop_eval_commanded[i];
+                    }
+                }
+                let grasp_ready = if actor.closed_loop_eval_grasp_ready_dist.is_finite() {
+                    format!(
+                        "shut at {:.3} m [{:+.3},{:+.3},{:+.3}]",
+                        actor.closed_loop_eval_grasp_ready_dist,
+                        actor.closed_loop_eval_grasp_ready_offset[0],
+                        actor.closed_loop_eval_grasp_ready_offset[1],
+                        actor.closed_loop_eval_grasp_ready_offset[2],
+                    )
+                } else {
+                    format!(
+                        "never shut (peak {:.2})",
+                        actor.closed_loop_eval_peak_closedness
+                    )
                 };
                 log!(
-                    "Closed-loop eval '{}': {current} -- {} (rise {rise:+.3} m, {offset_str})",
+                    "Closed-loop eval '{}': {current} -- {} (rise {rise:+.3} m, closest {:.3} m                      [{:+.3},{:+.3},{:+.3}], gripper {:.2} there; {grasp_ready}; delivered                      x {:.2} y {:.2} z {:.2})",
                     actor.name,
-                    if success { "SUCCESS" } else { "miss" }
+                    if success { "SUCCESS" } else { "miss" },
+                    actor.closed_loop_eval_closest_dist,
+                    actor.closed_loop_eval_closest_offset[0],
+                    actor.closed_loop_eval_closest_offset[1],
+                    actor.closed_loop_eval_closest_offset[2],
+                    actor.closed_loop_eval_closest_closedness,
+                    delivery[0],
+                    delivery[1],
+                    delivery[2]
                 );
-                actor
-                    .closed_loop_eval_results
-                    .push((current, success, rise, offset, grasp_step));
+                actor.closed_loop_eval_results.push(ClosedLoopResult {
+                    demo: current,
+                    success,
+                    rise,
+                    closest_dist: actor.closed_loop_eval_closest_dist,
+                    closest_offset: actor.closed_loop_eval_closest_offset,
+                    closest_closedness: actor.closed_loop_eval_closest_closedness,
+                    grasp_ready_dist: actor.closed_loop_eval_grasp_ready_dist,
+                    grasp_ready_offset: actor.closed_loop_eval_grasp_ready_offset,
+                    peak_closedness: actor.closed_loop_eval_peak_closedness,
+                    delivery,
+                });
                 actor.policy_enabled = false;
                 advance_closed_loop_eval(actor);
                 if actor.closed_loop_eval_current.is_none() {
-                    let successes = actor
-                        .closed_loop_eval_results
+                    let results = &actor.closed_loop_eval_results;
+                    let successes = results.iter().filter(|r| r.success).count();
+                    let total = results.len();
+                    let reached: Vec<&ClosedLoopResult> = results
                         .iter()
-                        .filter(|(_, s, _, _, _)| *s)
-                        .count();
-                    let total = actor.closed_loop_eval_results.len();
-                    let offsets: Vec<[f64; 3]> = actor
-                        .closed_loop_eval_results
-                        .iter()
-                        .filter_map(|(_, _, _, off, _)| *off)
+                        .filter(|r| r.closest_dist.is_finite())
                         .collect();
-                    let steps: Vec<u32> = actor
-                        .closed_loop_eval_results
-                        .iter()
-                        .filter_map(|(_, _, _, _, step)| *step)
-                        .collect();
-                    let offset_summary = if offsets.is_empty() {
-                        "no demo ever closed the gripper".to_string()
+                    let summary = if reached.is_empty() {
+                        "no demo produced a usable approach".to_string()
                     } else {
-                        let mean_horiz: f64 = offsets.iter().map(|o| o[0].hypot(o[1])).sum::<f64>()
-                            / offsets.len() as f64;
-                        let mean_step: f64 =
-                            steps.iter().map(|s| *s as f64).sum::<f64>() / steps.len() as f64;
+                        let mean_dist = reached.iter().map(|r| r.closest_dist).sum::<f64>()
+                            / reached.len() as f64;
+                        let mean_horiz = reached
+                            .iter()
+                            .map(|r| r.closest_offset[0].hypot(r.closest_offset[1]))
+                            .sum::<f64>()
+                            / reached.len() as f64;
+                        let gripped = reached
+                            .iter()
+                            .filter(|r| r.closest_closedness > PANDA_GRIPPER_SHUT_CLOSEDNESS)
+                            .count();
+                        // The grasp-ready mean is over the demos that shut the
+                        // hand at all, so it answers "when it did commit, how
+                        // well was it aligned" without demos that never closed
+                        // dragging it anywhere.
+                        let ready: Vec<&ClosedLoopResult> = results
+                            .iter()
+                            .filter(|r| r.grasp_ready_dist.is_finite())
+                            .collect();
+                        let ready_note = if ready.is_empty() {
+                            let peak = results
+                                .iter()
+                                .map(|r| r.peak_closedness)
+                                .fold(0.0_f64, f64::max);
+                            format!("never shut anywhere (best closedness {peak:.2})")
+                        } else {
+                            let mean_ready = ready.iter().map(|r| r.grasp_ready_dist).sum::<f64>()
+                                / ready.len() as f64;
+                            format!(
+                                "shut somewhere in {}/{total}, mean alignment when shut {mean_ready:.3} m",
+                                ready.len()
+                            )
+                        };
+                        // Per-axis mean of the ratios rather than a ratio of
+                        // the summed totals, so one long demo can't dominate
+                        // the answer to a per-step question.
+                        let mut mean_delivery = [f64::NAN; 3];
+                        for i in 0..3 {
+                            let vals: Vec<f64> = results
+                                .iter()
+                                .map(|r| r.delivery[i])
+                                .filter(|v| v.is_finite())
+                                .collect();
+                            if !vals.is_empty() {
+                                mean_delivery[i] =
+                                    vals.iter().sum::<f64>() / vals.len() as f64;
+                            }
+                        }
                         format!(
-                            "attempted a grasp in {}/{total}, mean horizontal offset at close \
-                             {mean_horiz:.3} m, mean step at close {mean_step:.1}",
-                            offsets.len()
+                            "mean closest approach {mean_dist:.3} m from the grasp pose (horizontal {mean_horiz:.3} m),                              gripper shut at closest approach in {gripped}/{total}; {ready_note};                              mean delivered/commanded x {:.2} y {:.2} z {:.2}",
+                            mean_delivery[0], mean_delivery[1], mean_delivery[2]
                         )
                     };
                     log!(
-                        "Closed-loop eval '{}': DONE -- {successes}/{total} succeeded ({:.0}%), {offset_summary}",
+                        "Closed-loop eval '{}': DONE -- {successes}/{total} succeeded ({:.0}%), {summary}",
                         actor.name,
                         100.0 * successes as f32 / total.max(1) as f32
                     );
@@ -5881,6 +6181,15 @@ impl SplatGame {
                 #[cfg(not(target_arch = "wasm32"))]
                 robomimic_output_dir: String::new(),
                 #[cfg(not(target_arch = "wasm32"))]
+                generate_count: 120,
+                #[cfg(not(target_arch = "wasm32"))]
+                generate_seed: 1,
+                #[cfg(not(target_arch = "wasm32"))]
+                generate_output_dir: "examples/splat/game_assets/mujoco/trajectories/lift_scripted"
+                    .to_string(),
+                #[cfg(not(target_arch = "wasm32"))]
+                generate_start_index: 200,
+                #[cfg(not(target_arch = "wasm32"))]
                 export_queue: Vec::new(),
                 #[cfg(not(target_arch = "wasm32"))]
                 closed_loop_eval_queue: Vec::new(),
@@ -5899,9 +6208,23 @@ impl SplatGame {
                 #[cfg(not(target_arch = "wasm32"))]
                 closed_loop_eval_max_steps: 20,
                 #[cfg(not(target_arch = "wasm32"))]
-                closed_loop_eval_grasp_offset: None,
+                closed_loop_eval_closest_dist: f64::INFINITY,
                 #[cfg(not(target_arch = "wasm32"))]
-                closed_loop_eval_grasp_step: None,
+                closed_loop_eval_closest_offset: [0.0; 3],
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_closest_closedness: 0.0,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_grasp_ready_dist: f64::INFINITY,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_grasp_ready_offset: [0.0; 3],
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_peak_closedness: 0.0,
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_commanded: [0.0; 3],
+                #[cfg(not(target_arch = "wasm32"))]
+                closed_loop_eval_achieved: [0.0; 3],
+                #[cfg(not(target_arch = "wasm32"))]
+                policy_last_command: None,
                 #[cfg(not(target_arch = "wasm32"))]
                 closed_loop_eval_results: Vec::new(),
             });
@@ -7834,6 +8157,56 @@ impl GameEngine for SplatGame {
                                                         {
                                                             launch_robomimic_convert(hdf5_path, output_dir);
                                                         }
+
+                                                        ui.separator();
+                                                        ui.label(
+                                                            "Scripted demos: same clip format, but the                                                              approach is randomized as well as the cube,                                                              which the converted demos above don't vary.",
+                                                        );
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Count");
+                                                            ui.add(
+                                                                egui::DragValue::new(&mut m.generate_count)
+                                                                    .range(1..=1000),
+                                                            );
+                                                            ui.label("Seed");
+                                                            ui.add(egui::DragValue::new(&mut m.generate_seed));
+                                                            ui.label("Start index");
+                                                            ui.add(egui::DragValue::new(
+                                                                &mut m.generate_start_index,
+                                                            ));
+                                                        })
+                                                        .response
+                                                        .on_hover_text(
+                                                            "The generator is deterministic: the same seed                                                              reproduces a dataset exactly. Expect roughly                                                              a third of attempts to be discarded -- every                                                              episode is checked for an actual lift before                                                              it's kept, so the output is all successes.                                                              Start index offsets the demo_<N> filenames:                                                              exports are keyed by clip filename, so leave                                                              room above any other clip set you intend to                                                              export alongside these or they overwrite each                                                              other.",
+                                                        );
+                                                        ui.horizontal(|ui| {
+                                                            ui.label("Output dir");
+                                                            ui.text_edit_singleline(
+                                                                &mut m.generate_output_dir,
+                                                            );
+                                                        })
+                                                        .response
+                                                        .on_hover_text(
+                                                            "Keep this separate from the converted                                                              robomimic clips -- the two sets have                                                              deliberately different approach                                                              distributions and aren't interchangeable.",
+                                                        );
+                                                        let gen_dir = m.generate_output_dir.trim();
+                                                        if ui
+                                                            .add_enabled(
+                                                                !gen_dir.is_empty(),
+                                                                egui::Button::new("Generate Scripted Demos…"),
+                                                            )
+                                                            .on_hover_text(
+                                                                "Runs tools/generate_lift_trajectories.bat                                                                  in a new console window. Headless physics,                                                                  no policy server needed -- a scripted                                                                  controller reads the cube's true pose from                                                                  the sim and drives the arm through the same                                                                  IK the live policy uses. Takes a few                                                                  minutes for a full set; bind one of the                                                                  results in Trajectory above afterwards.",
+                                                            )
+                                                            .clicked()
+                                                        {
+                                                            launch_generate_trajectories(
+                                                                m.generate_count,
+                                                                gen_dir,
+                                                                m.generate_seed,
+                                                                m.generate_start_index,
+                                                            );
+                                                        }
                                                     },
                                                 );
                                                 section_card(
@@ -8553,12 +8926,10 @@ impl GameEngine for SplatGame {
                                                 }
 
                                                 if !m.closed_loop_eval_results.is_empty() {
-                                                    let successes = m
-                                                        .closed_loop_eval_results
-                                                        .iter()
-                                                        .filter(|(_, s, _, _, _)| *s)
-                                                        .count();
-                                                    let total = m.closed_loop_eval_results.len();
+                                                    let results = &m.closed_loop_eval_results;
+                                                    let successes =
+                                                        results.iter().filter(|r| r.success).count();
+                                                    let total = results.len();
                                                     ui.separator();
                                                     ui.label(
                                                         egui::RichText::new(format!(
@@ -8568,66 +8939,106 @@ impl GameEngine for SplatGame {
                                                         ))
                                                         .strong(),
                                                     );
-                                                    // Timing (gripper fired near the object) vs. alignment
-                                                    // (it wasn't there yet) -- see
-                                                    // closed_loop_eval_grasp_offset's own docs. Horizontal
-                                                    // only (x/y): height at grasp time is expected to vary
-                                                    // (the approach is still descending), the question this
-                                                    // answers is specifically about lateral placement. Step
-                                                    // index (closed_loop_eval_grasp_step) separates two very
-                                                    // different causes for the same offset: closing on
-                                                    // literally the first query points at something wrong
-                                                    // from frame one (framing/calibration); closing a few
-                                                    // steps into a real approach points at closed-loop
-                                                    // covariate shift instead.
-                                                    let offsets: Vec<[f64; 3]> = m
-                                                        .closed_loop_eval_results
+                                                    // Closest approach, not a first-threshold
+                                                    // crossing -- see
+                                                    // closed_loop_eval_closest_dist's docs. Offsets
+                                                    // are relative to the grasp pose, so a clean
+                                                    // grasp reads ~0; horizontal is broken out
+                                                    // separately since that's the alignment error
+                                                    // that actually decides a grasp.
+                                                    let reached: Vec<&ClosedLoopResult> = results
                                                         .iter()
-                                                        .filter_map(|(_, _, _, off, _)| *off)
+                                                        .filter(|r| r.closest_dist.is_finite())
                                                         .collect();
-                                                    let steps: Vec<u32> = m
-                                                        .closed_loop_eval_results
-                                                        .iter()
-                                                        .filter_map(|(_, _, _, _, step)| *step)
-                                                        .collect();
-                                                    if !offsets.is_empty() {
-                                                        let mean_horiz: f64 = offsets
+                                                    if !reached.is_empty() {
+                                                        let mean_dist = reached
                                                             .iter()
-                                                            .map(|o| o[0].hypot(o[1]))
+                                                            .map(|r| r.closest_dist)
                                                             .sum::<f64>()
-                                                            / offsets.len() as f64;
-                                                        let mean_step: f64 = steps
+                                                            / reached.len() as f64;
+                                                        let mean_horiz = reached
                                                             .iter()
-                                                            .map(|s| *s as f64)
+                                                            .map(|r| {
+                                                                r.closest_offset[0]
+                                                                    .hypot(r.closest_offset[1])
+                                                            })
                                                             .sum::<f64>()
-                                                            / steps.len() as f64;
+                                                            / reached.len() as f64;
+                                                        let gripped = reached
+                                                            .iter()
+                                                            .filter(|r| {
+                                                                r.closest_closedness
+                                                                    > PANDA_GRIPPER_SHUT_CLOSEDNESS
+                                                            })
+                                                            .count();
                                                         ui.label(format!(
-                                                            "Attempted a grasp in {}/{total} demos -- \
-                                                             mean horizontal gripper/object offset at \
-                                                             close time: {:.3} m, mean step at close: \
-                                                             {mean_step:.1}",
-                                                            offsets.len(),
-                                                            mean_horiz
+                                                            "Mean closest approach {mean_dist:.3} m                                                              from the grasp pose (horizontal                                                              {mean_horiz:.3} m) -- gripper shut at                                                              closest approach in {gripped}/{total}"
                                                         ));
+                                                        let ready: Vec<&ClosedLoopResult> = results
+                                                            .iter()
+                                                            .filter(|r| {
+                                                                r.grasp_ready_dist.is_finite()
+                                                            })
+                                                            .collect();
+                                                        if ready.is_empty() {
+                                                            let peak = results
+                                                                .iter()
+                                                                .map(|r| r.peak_closedness)
+                                                                .fold(0.0_f64, f64::max);
+                                                            ui.label(format!(
+                                                                "Hand never shut in any demo (best                                                                  closedness {peak:.2})"
+                                                            ));
+                                                        } else {
+                                                            let mean_ready = ready
+                                                                .iter()
+                                                                .map(|r| r.grasp_ready_dist)
+                                                                .sum::<f64>()
+                                                                / ready.len() as f64;
+                                                            ui.label(format!(
+                                                                "Hand shut somewhere in {}/{total} --                                                                  mean alignment when shut                                                                  {mean_ready:.3} m",
+                                                                ready.len()
+                                                            ));
+                                                        }
                                                     }
                                                     egui::ScrollArea::vertical()
                                                         .max_height(150.0)
                                                         .show(ui, |ui| {
-                                                            for (demo, success, rise, offset, step) in
-                                                                &m.closed_loop_eval_results
-                                                            {
+                                                            for r in results {
                                                                 let mark =
-                                                                    if *success { "✓" } else { "✗" };
-                                                                let offset_str = match (offset, step) {
-                                                                    (Some(o), Some(s)) => format!(
-                                                                        "closed at step {s}, offset: \
-                                                                         {:+.3},{:+.3},{:+.3} m",
-                                                                        o[0], o[1], o[2]
-                                                                    ),
-                                                                    _ => "never closed".to_string(),
+                                                                    if r.success { "✓" } else { "✗" };
+                                                                let detail = if r.closest_dist.is_finite()
+                                                                {
+                                                                    let shut = if r
+                                                                        .grasp_ready_dist
+                                                                        .is_finite()
+                                                                    {
+                                                                        format!(
+                                                                            "shut at {:.3}                                                                              [{:+.3},{:+.3},{:+.3}]",
+                                                                            r.grasp_ready_dist,
+                                                                            r.grasp_ready_offset[0],
+                                                                            r.grasp_ready_offset[1],
+                                                                            r.grasp_ready_offset[2]
+                                                                        )
+                                                                    } else {
+                                                                        format!(
+                                                                            "never shut (peak {:.2})",
+                                                                            r.peak_closedness
+                                                                        )
+                                                                    };
+                                                                    format!(
+                                                                        "closest {:.3} m                                                                          [{:+.3},{:+.3},{:+.3}]                                                                          gripper {:.2}   {shut}",
+                                                                        r.closest_dist,
+                                                                        r.closest_offset[0],
+                                                                        r.closest_offset[1],
+                                                                        r.closest_offset[2],
+                                                                        r.closest_closedness
+                                                                    )
+                                                                } else {
+                                                                    "no approach recorded".to_string()
                                                                 };
                                                                 ui.label(format!(
-                                                                    "{mark} {demo}   rise: {rise:+.3} m   {offset_str}"
+                                                                    "{mark} {}   rise: {:+.3} m   {detail}",
+                                                                    r.demo, r.rise
                                                                 ));
                                                             }
                                                         });
@@ -10131,10 +10542,19 @@ impl GameEngine for SplatGame {
         // training-data exports, and anything else rendered all read
         // whatever's currently baked, and that used to require remembering
         // to click "Bake Environment Cubemap" by hand first.
+        // Deliberately excludes `pending_mujoco_trajectories`: a trajectory
+        // clip is joint data, contributing nothing a cubemap bake captures.
+        // Including it meant a batch export -- which loads a fresh clip per
+        // demo -- re-armed this debounce on every single clip and fired a
+        // full six-face bake in each gap between them, hundreds of times
+        // across a run. Harmless to the output (the bake restores size and
+        // camera, `tick_mujoco_actors` captures earlier in the same tick, and
+        // an unchanged fingerprint rebakes an identical cubemap) but a large
+        // amount of wasted work. The other three are genuine scene geometry
+        // the bake does see.
         let still_loading = !self.pending_splats.lock().unwrap().is_empty()
             || !self.pending_model_uploads.lock().unwrap().is_empty()
-            || !self.pending_mujoco_loads.lock().unwrap().is_empty()
-            || !self.pending_mujoco_trajectories.lock().unwrap().is_empty();
+            || !self.pending_mujoco_loads.lock().unwrap().is_empty();
         // wasm only: mesh bytes fetched via an async browser request, applied
         // by a later tick (see the field's own doc).
         #[cfg(target_arch = "wasm32")]

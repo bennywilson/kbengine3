@@ -1,0 +1,10 @@
+[env]
+# mujoco-rs's build script downloads and extracts the MuJoCo binaries here on
+# first build (auto-download-mujoco feature). Must be an absolute path.
+#
+# Deliberately points at examples/splat's existing download rather than a
+# fresh one of this tool's own: it's a few hundred MB, the extract is
+# idempotent (a missing dir just re-downloads), and every crate here pins the
+# same mujoco-rs version. Repoint this at a local .mujoco_dl if that ever
+# stops being true.
+MUJOCO_DOWNLOAD_DIR = "D:/black_splat/examples/splat/.mujoco_dl"

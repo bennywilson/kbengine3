@@ -54,6 +54,12 @@ source_assets/mujoco_trajectories/*.hdf5
 # sample set -- unaffected by this rule.
 examples/splat/game_assets/mujoco/trajectories/tool_hang/
 
+# Scripted Lift demos from tools/generate_lift_trajectories (~17MB for 200).
+# Same rationale as tool_hang above: deterministically regenerable, and more
+# so here since the generator is seeded -- `--seed N` reproduces a dataset
+# exactly, so the seed is the artifact worth keeping, not the JSON.
+examples/splat/game_assets/mujoco/trajectories/lift_scripted/
+
 node_modules/
 
 openvla_datasets/

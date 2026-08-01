@@ -1,0 +1,13 @@
+[package]
+name = "black_splat_generate_lift_trajectories"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+serde_json = "1"
+
+# MujocoScene (sim + Jacobian IK via apply_policy_action) and TrajectoryClip
+# (the output format). Headless: this tool never builds a Renderer, so the
+# engine's wgpu/winit side is linked but never initialized.
+black_splat = { path = "../../", features = ["mujoco"] }

@@ -41,9 +41,40 @@
     manipulated object's pose that way): the cube's resting height only
     ever gets as low as z=-0.099 (center), and its geom is 0.0214241 tall
     at the half-extent, so its lowest resting bottom face is z=-0.1204.
-    -0.14 clears that by ~2cm, matching panda_hang.xml's own margin rather
-    than sitting flush against the worst case. -->
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.14"/>
+
+    -0.14 clears that by ~2cm. But clearing the worst case is not the only
+    thing this height controls, and the extra margin is not free.
+
+    NOW -0.125, and staying there (2026-07-29). This is the height the real
+    splat table sits at, derived the same way panda_hang.xml's own floor was
+    (Shadow Catcher Y minus this actor's own Y in panda_scene.json). At -0.14
+    the cube instead rested at -0.14 + 0.0214 = -0.119, roughly 2cm below the
+    -0.099 the recorded demos rest at, and visibly sunk into the splat table.
+    Kept for that visual fidelity alone.
+
+    It did NOT fix the policy, though, and the reasoning that motivated the
+    change is worth recording precisely because it was wrong. The gap only
+    existed at *inference* time (training-data export replays qpos
+    kinematically and never resolves contact, so every training image showed
+    the cube at its recorded height, while a live rollout let physics settle
+    it 2cm lower before the first capture), and with the policy camera only
+    ~13 degrees above horizontal a 2cm height error is nearly
+    indistinguishable from ~9cm of horizontal displacement, in the direction
+    that would make the arm stop short. That predicted the observed
+    systematically negative dx. Measured across 20 held-out demos, closing
+    the gap changed nothing: mean horizontal error at closest approach 0.038m
+    at -0.14 versus 0.039m here, dx still negative in every single demo.
+
+    So cube height is ruled out, alongside capture framing, the gripper
+    mapping inversion (a real bug, fixed, see apply_policy_action), and
+    accumulated per-step open-loop bias (held-out dx bias/MAE 0.17, predicting
+    +1.0cm of drift per episode against the -3.5cm actually observed). The
+    policy is essentially unbiased on training-distribution images and
+    systematically short on the images it generates for itself during a
+    rollout, which leaves genuine closed-loop covariate shift as the
+    remaining explanation. See openvla_policy_finetune_project.md for the
+    full eval history. -->
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.125"/>
 
     <!-- Default pose only shown before a trajectory clip is bound:
     apply_trajectory_frame overwrites this every frame once one is (see

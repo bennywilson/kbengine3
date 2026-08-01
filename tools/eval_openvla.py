@@ -216,18 +216,52 @@ def main():
     truths = np.stack(truths)
     baseline = np.tile(truths.mean(axis=0), (len(truths), 1))
 
-    print(f"\n{'dim':<8}{'r':>8}{'model MAE':>12}{'baseline MAE':>14}{'better':>10}")
-    model_mae_all, baseline_mae_all = [], []
+    # `bias` (mean *signed* error) is the column that matters most for closed-loop
+    # behaviour, and the one correlation is structurally blind to: Pearson r is
+    # invariant to a constant offset, so a dimension can track ground truth's shape
+    # beautifully (high r) while being consistently wrong in one direction. This
+    # project hit exactly that -- `dx` scored the best r of any dimension while
+    # carrying the systematic shortfall that made every live grasp miss.
+    #
+    # `bias/MAE` says how much of the error is systematic rather than noise: near
+    # 1.0 means almost every step errs the same way (it accumulates over a rollout
+    # and is potentially correctable), near 0.0 means it's zero-mean scatter (it
+    # partly cancels out instead).
+    print(
+        f"\n{'dim':<8}{'r':>7}{'bias':>10}{'bias/MAE':>10}"
+        f"{'model MAE':>12}{'baseline MAE':>14}{'better':>10}"
+    )
+    model_mae_all, baseline_mae_all, bias_all = [], [], []
     for d, name in enumerate(ACTION_DIMS):
         # Correlation is undefined (not just zero) against a constant series --
         # report NaN honestly rather than a misleading number.
         r = float("nan") if np.std(truths[:, d]) < 1e-9 else float(np.corrcoef(preds[:, d], truths[:, d])[0, 1])
-        model_mae = float(np.mean(np.abs(preds[:, d] - truths[:, d])))
+        errors = preds[:, d] - truths[:, d]
+        bias = float(np.mean(errors))
+        model_mae = float(np.mean(np.abs(errors)))
         baseline_mae = float(np.mean(np.abs(baseline[:, d] - truths[:, d])))
         model_mae_all.append(model_mae)
         baseline_mae_all.append(baseline_mae)
+        bias_all.append(bias)
+        systematic = abs(bias) / model_mae if model_mae > 1e-12 else 0.0
         ratio = baseline_mae / model_mae if model_mae > 1e-12 else float("inf")
-        print(f"{name:<8}{r:>8.2f}{model_mae:>12.4f}{baseline_mae:>14.4f}{ratio:>9.2f}x")
+        print(
+            f"{name:<8}{r:>7.2f}{bias:>+10.4f}{systematic:>10.2f}"
+            f"{model_mae:>12.4f}{baseline_mae:>14.4f}{ratio:>9.2f}x"
+        )
+
+    # What the per-step translation bias actually costs over a rollout. Reported
+    # in the same units as the closed-loop eval's own closest-approach offset, so
+    # the two are directly comparable -- if they agree, the live miss is explained
+    # by accumulated open-loop bias rather than anything closed-loop-specific.
+    steps_per_episode = len(steps) / max(len(names), 1)
+    drift = [b * steps_per_episode for b in bias_all[:3]]
+    print(
+        f"\n==> Accumulated translation bias over an average episode "
+        f"({steps_per_episode:.0f} steps): "
+        f"dx {drift[0]:+.3f} m, dy {drift[1]:+.3f} m, dz {drift[2]:+.3f} m "
+        f"(horizontal {np.hypot(drift[0], drift[1]):.3f} m)"
+    )
 
     overall_ratio = float(np.mean(baseline_mae_all) / np.mean(model_mae_all))
     if demos:

@@ -30,12 +30,26 @@ REM this intentionally doesn't expose every finetune.py flag as its own
 REM override, since that's most of its CLI surface.
 REM
 REM shuffle_buffer_size is the one default explicitly overridden below
-REM (100,000 -> 2,000): the dataclass default is sized for OpenVLA's
+REM (100,000 -> 20,000): the dataclass default is sized for OpenVLA's
 REM original OXE-scale training sets (hundreds of thousands of frames), and
 REM tf.data insists on filling that whole buffer before training starts --
-REM against this dataset's few hundred/thousand frames, that's a long
-REM "filling shuffle buffer" stall for no shuffling benefit (a real one
-REM cost ~1.5 hours doing nothing else here).
+REM against a dataset this size that's a long "filling shuffle buffer" stall
+REM for no shuffling benefit (a real one cost ~1.5 hours doing nothing else
+REM here).
+REM
+REM It must still comfortably EXCEED the dataset, though, or the "shuffle"
+REM degenerates into a sliding window over whatever order
+REM build_rlds_dataset.py emitted episodes in -- which is lexicographic by
+REM folder name (demo_0, demo_1, demo_10, demo_100, ...), i.e. not random at
+REM all. This bit once: 2,000 covered 94% of a 2,130-sample dataset and was
+REM effectively a full shuffle, but after the dataset grew to 7,691 samples
+REM the same 2,000 covered only 26%. Training then fit each slice as the
+REM window slid over it and forgot the last -- action_accuracy climbed to
+REM 0.82 by step 700 and collapsed to ~0.37 by step 1800, while reporting
+REM "how well does it fit the current window" rather than anything about the
+REM dataset. 20,000 leaves room for the set to grow several times over
+REM before this needs revisiting; raise it if the training set ever
+REM approaches that.
 REM
 REM WANDB_MODE=disabled: no W&B account needed. finetune.py separately
 REM echoes loss/action_accuracy to stdout every 10 steps (see its own
@@ -162,7 +176,7 @@ REM what made a real wgpu crash's log hard to recover from once already.
     --use_quantization True ^
     --image_aug False ^
     --save_steps 100 ^
-    --shuffle_buffer_size 2000 ^
+    --shuffle_buffer_size 20000 ^
     %RESUME_ARG% 2>&1 | powershell -NoProfile -Command "$input | Tee-Object -FilePath '%TRAIN_LOG%'"
 
 echo.
